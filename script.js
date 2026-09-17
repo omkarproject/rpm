@@ -4416,8 +4416,8 @@ Response #${resp}
       if (!r || r.status !== 'pending') return false;
       const rVeh = String(r.vehicleNo || '').trim().toUpperCase().replace(/[^A-Z0-9]/gi, '');
       if (!rVeh || rVeh !== cleanV) return false;
-      const rKm = String(r.currentKm || '').replace(/[^0-9]/g, '');
-      if (cleanK && rKm) return cleanK === rKm;
+      if (cleanK && String(r.currentKm || '').replace(/[^0-9]/g, '') === cleanK) return true;
+      if (dispDate && r.date && String(r.date).trim() === String(dispDate).trim()) return true;
       return false;
     });
 
@@ -4989,8 +4989,8 @@ function processData(text, attachedPhotos = null) {
       if (!r) return false;
       const rVeh = String(r.vehicleNo || '').trim().toUpperCase().replace(/[^A-Z0-9]/gi, '');
       if (!rVeh || rVeh !== cleanV) return false;
-      const rKm = String(r.currentKm || '').replace(/[^0-9]/g, '');
-      if (cleanK && rKm) return cleanK === rKm;
+      if (cleanK && String(r.currentKm || '').replace(/[^0-9]/g, '') === cleanK) return true;
+      if (e.date && r.date && String(r.date).trim() === String(e.date).trim()) return true;
       return false;
     });
 
@@ -20204,8 +20204,9 @@ function handleReceiptModalMultiUpload(event) {
             if (!r) return false;
             if (String(r.linkedResponseNumber || '') === String(currentReceiptRecordId)) return true;
             const rVeh = String(r.vehicleNo || '').trim().toUpperCase().replace(/[^A-Z0-9]/gi, '');
-            if (cleanV && rVeh === cleanV && cleanK) {
-              if (String(r.currentKm || '').replace(/[^0-9]/g, '') === cleanK) return true;
+            if (cleanV && rVeh === cleanV) {
+              if (cleanK && String(r.currentKm || '').replace(/[^0-9]/g, '') === cleanK) return true;
+              if (entry && entry.date && r.date && String(r.date).trim() === String(entry.date).trim()) return true;
             }
             return false;
           });
@@ -20248,8 +20249,9 @@ function handleReceiptModalMultiUpload(event) {
               const matchingEntry = historyEntries.find(e => {
                 if (!e) return false;
                 const eVeh = String(e.vehicleNo || '').trim().toUpperCase().replace(/[^A-Z0-9]/gi, '');
-                if (cleanV && eVeh === cleanV && cleanK) {
-                  if (String(e.currentKm || '').replace(/[^0-9]/g, '') === cleanK) return true;
+                if (cleanV && eVeh === cleanV) {
+                  if (cleanK && String(e.currentKm || '').replace(/[^0-9]/g, '') === cleanK) return true;
+                  if (reqItem.date && e.date && String(e.date).trim() === String(reqItem.date).trim()) return true;
                 }
                 return false;
               });
@@ -20345,8 +20347,9 @@ function removeReceiptModalPhoto(idx) {
         if (!r) return false;
         if (String(r.linkedResponseNumber || '') === String(currentReceiptRecordId)) return true;
         const rVeh = String(r.vehicleNo || '').trim().toUpperCase().replace(/[^A-Z0-9]/gi, '');
-        if (cleanV && rVeh === cleanV && cleanK) {
-          if (String(r.currentKm || '').replace(/[^0-9]/g, '') === cleanK) return true;
+        if (cleanV && rVeh === cleanV) {
+          if (cleanK && String(r.currentKm || '').replace(/[^0-9]/g, '') === cleanK) return true;
+          if (entry && entry.date && r.date && String(r.date).trim() === String(entry.date).trim()) return true;
         }
         return false;
       });
@@ -20387,8 +20390,9 @@ function removeReceiptModalPhoto(idx) {
           const matchingEntry = historyEntries.find(e => {
             if (!e) return false;
             const eVeh = String(e.vehicleNo || '').trim().toUpperCase().replace(/[^A-Z0-9]/gi, '');
-            if (cleanV && eVeh === cleanV && cleanK) {
-              if (String(e.currentKm || '').replace(/[^0-9]/g, '') === cleanK) return true;
+            if (cleanV && eVeh === cleanV) {
+              if (cleanK && String(e.currentKm || '').replace(/[^0-9]/g, '') === cleanK) return true;
+              if (reqItem.date && e.date && String(e.date).trim() === String(reqItem.date).trim()) return true;
             }
             return false;
           });
@@ -20585,19 +20589,17 @@ function viewReceiptPhotoOnDemand(type, recordId, vehicleNo, optKmVal = '', extr
         return;
       }
 
-      // Fallback: Check driverRequests & driverRequestPhotos ONLY if directly linked or exact KM match
+      // Robust fallback: Check driverRequests & driverRequestPhotos
       const reqList = (typeof driverRequestsList !== 'undefined' && Array.isArray(driverRequestsList)) ? driverRequestsList : [];
       let matchingReq = reqList.find(r => r && String(r.linkedResponseNumber || '') === String(recordId));
       if (!matchingReq && targetVehClean) {
-        const entryKm = cleanKm(entryData.currentKm || optKmVal);
-        if (entryKm) {
-          matchingReq = reqList.find(r => {
-            if (!r) return false;
-            if (cleanVeh(r.vehicleNo) !== targetVehClean) return false;
-            if (cleanKm(r.currentKm) === entryKm) return true;
-            return false;
-          });
-        }
+        matchingReq = reqList.find(r => {
+          if (!r) return false;
+          if (cleanVeh(r.vehicleNo) !== targetVehClean) return false;
+          if (isKm && targetKmClean && cleanKm(r.currentKm) === targetKmClean) return true;
+          if (entryData.date && r.date && String(r.date).trim() === String(entryData.date).trim()) return true;
+          return false;
+        });
       }
 
       const applyReqPhotos = (reqData) => {
@@ -20698,20 +20700,18 @@ function viewReceiptPhotoOnDemand(type, recordId, vehicleNo, optKmVal = '', extr
         return;
       }
 
-      // Fallback: Check linked ledger entry & entryPhotos ONLY if directly linked or exact KM match
+      // Robust fallback: Check linked ledger entry & entryPhotos
       let linkedNum = reqData.linkedResponseNumber;
-      if (!linkedNum && targetVehClean) {
-        const reqKm = cleanKm(reqData.currentKm || optKmVal);
-        if (reqKm) {
-          const entries = (typeof historyEntries !== 'undefined' && Array.isArray(historyEntries)) ? historyEntries : [];
-          const matchingEntry = entries.find(e => {
-            if (!e) return false;
-            if (cleanVeh(e.vehicleNo) !== targetVehClean) return false;
-            if (cleanKm(e.currentKm) === reqKm) return true;
-            return false;
-          });
-          if (matchingEntry) linkedNum = matchingEntry.responseNumber;
-        }
+      if (!linkedNum) {
+        const entries = (typeof historyEntries !== 'undefined' && Array.isArray(historyEntries)) ? historyEntries : [];
+        const matchingEntry = entries.find(e => {
+          if (!e) return false;
+          if (cleanVeh(e.vehicleNo) !== targetVehClean) return false;
+          if (isKm && targetKmClean && cleanKm(e.currentKm) === targetKmClean) return true;
+          if (reqData.date && e.date && String(e.date).trim() === String(reqData.date).trim()) return true;
+          return false;
+        });
+        if (matchingEntry) linkedNum = matchingEntry.responseNumber;
       }
 
       if (linkedNum) {
