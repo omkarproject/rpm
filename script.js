@@ -10152,6 +10152,35 @@ function isNonDieselEntry(e) {
   return false;
 }
 
+// Global user manual override map for entry exclusion
+window.manuallyExcludedEntries = window.manuallyExcludedEntries || {};
+
+function getEntryUniqueKey(e) {
+  if (!e) return '';
+  if (e.responseNumber) return 'resp_' + String(e.responseNumber).trim();
+  if (e.key) return 'key_' + String(e.key).trim();
+  if (e.id) return 'id_' + String(e.id).trim();
+  const v = (e.vehicleNo || e.vehicle_no || e.vehicle || '').trim().toUpperCase();
+  const d = (e.date || e.created_at || '').trim();
+  const km = (e.currentKm || e.km || e.endKm || '').toString().trim();
+  const amt = (e.dieselAmount || e.amount || '').toString().trim();
+  return `entry_${v}_${d}_${km}_${amt}`;
+}
+
+function isEntryExcluded(e) {
+  if (!e) return false;
+  const k = getEntryUniqueKey(e);
+  if (k && window.manuallyExcludedEntries && window.manuallyExcludedEntries[k] !== undefined) {
+    return !!window.manuallyExcludedEntries[k];
+  }
+  if (e.manuallyExcluded !== undefined) {
+    return !!e.manuallyExcluded;
+  }
+  return isNonDieselEntry(e);
+}
+window.isEntryExcluded = isEntryExcluded;
+window.getEntryUniqueKey = getEntryUniqueKey;
+
 // Robust Date string parsing helper
 function parseDateStr(str) {
   if (!str) return null;
@@ -10339,7 +10368,7 @@ function runCalculation() {
   });
 
   // Filter out non-diesel items for fuel calculations
-  const calcEntries = matchedEntries.filter(e => !isNonDieselEntry(e));
+  const calcEntries = matchedEntries.filter(e => !isEntryExcluded(e));
 
   const sortedCalc = [...calcEntries].sort((a, b) => {
     const dA = parseDateStr(a.date) || 0;
@@ -10435,10 +10464,13 @@ function runCalculation() {
     lblDueAmount.textContent = 'Extra Due / Deficit Cost';
   }
 
+  // Save current sorted entries for interactive row toggle
+  window.currentCalcSortedEntries = sorted;
+
   // Calculate per-trip extra left
   const leftovers = new Array(sorted.length).fill(null);
   sorted.forEach((e, i) => {
-    const isExcluded = isNonDieselEntry(e);
+    const isExcluded = isEntryExcluded(e);
     if (isExcluded) return;
 
     const currKm = parseFloat(String(e.currentKm).replace(/[^0-9.\-]/g, '')) || 0;
@@ -10448,7 +10480,7 @@ function runCalculation() {
     if (i < sorted.length - 1) {
       let nextDiesel = null;
       for (let j = i + 1; j < sorted.length; j++) {
-        if (!isNonDieselEntry(sorted[j])) {
+        if (!isEntryExcluded(sorted[j])) {
           nextDiesel = sorted[j];
           break;
         }
@@ -10481,7 +10513,7 @@ function runCalculation() {
     const tr = document.createElement('tr');
     tr.dataset.note = e.note || '';
 
-    const isExcluded = isNonDieselEntry(e);
+    const isExcluded = isEntryExcluded(e);
     if (isExcluded) {
       tr.className = 'bg-red-50/40 dark:bg-red-950/10 hover:bg-red-100/30 dark:hover:bg-red-900/20 transition-all';
     } else {
@@ -10506,7 +10538,12 @@ function runCalculation() {
     }
 
     tr.innerHTML = `
-      <td class="px-3 py-2 font-medium whitespace-nowrap">${idx + 1}</td>
+      <td class="px-3 py-2 font-medium whitespace-nowrap text-center">
+        <label class="inline-flex items-center justify-center gap-1.5 cursor-pointer select-none">
+          <input type="checkbox" class="calc-exclude-cb rounded border-slate-300 dark:border-slate-600 text-rose-600 focus:ring-rose-500 w-3.5 h-3.5 cursor-pointer" data-idx="${idx}" ${isExcluded ? 'checked' : ''} onchange="toggleCalcRowExclude(${idx}, this.checked)" title="Click to toggle Exclude">
+          <span>${idx + 1}</span>
+        </label>
+      </td>
       <td class="px-3 py-2 text-sm whitespace-nowrap">${e.date}</td>
       <td class="px-3 py-2 text-sm whitespace-nowrap font-bold text-slate-800 dark:text-slate-200">${e.vehicleNo}</td>
       <td class="px-3 py-2 text-sm whitespace-nowrap max-w-[140px] truncate" title="${e.fromLocation || ''}">${e.fromLocation}</td>
@@ -10528,6 +10565,25 @@ function runCalculation() {
 
   showAlert('success', 'Calculation Done!', `${vehicle} — Total ${totalKm.toLocaleString('en-IN')} KM, Excluded ${matchedEntries.length - calcEntries.length} non-diesel items.`);
 }
+
+// Toggle exclusion from Diesel Calculator rows
+function toggleCalcRowExclude(idx, isChecked) {
+  const sorted = window.currentCalcSortedEntries;
+  if (!sorted || !sorted[idx]) return;
+
+  const entry = sorted[idx];
+  entry.manuallyExcluded = isChecked;
+  const key = getEntryUniqueKey(entry);
+  if (key) {
+    window.manuallyExcludedEntries = window.manuallyExcludedEntries || {};
+    window.manuallyExcludedEntries[key] = isChecked;
+  }
+
+  if (typeof calculateDiesel === 'function') {
+    calculateDiesel();
+  }
+}
+window.toggleCalcRowExclude = toggleCalcRowExclude;
 
 // Check if a string contains either UREA or URIYA (case-insensitive)
 function containsUreaOrUriya(str) {
@@ -10981,7 +11037,7 @@ function exportCalculatorPDF() {
   trs.forEach((tr) => {
     const tds = tr.querySelectorAll('td');
     if (tds.length >= 8) {
-      const isExcluded = tr.className.includes('bg-red-50/40') || tr.className.includes('dark:bg-red-950/10');
+      const isExcluded = tr.className.includes('bg-red') || tr.className.includes('bg-rose') || tr.innerHTML.includes('EXCLUDED');
       const typeText = isExcluded ? "Excluded (Urea/Oil)" : "Diesel Filled";
       
       const amountClean = tds[6].textContent.trim().replace(/₹/g, '').trim();
@@ -15277,8 +15333,8 @@ function calculateVehicleMonthlyDue(vehicleNo, currentKm, vehicleType, returnFul
     return null;
   }
 
-  // Filter out non-diesel items (e.g., Urea, Oil)
-  const calcEntries = matchedEntries.filter(e => !isNonDieselEntry(e));
+  // Filter out non-diesel items (e.g., Urea, Oil, or manually excluded)
+  const calcEntries = matchedEntries.filter(e => !isEntryExcluded(e));
   const workingEntries = calcEntries.length > 0 ? calcEntries : matchedEntries;
 
   // Sort matched entries: Chronologically by Date ASC; if same date, by KM ASC (lower KM 1st, higher KM 2nd)
@@ -15480,8 +15536,8 @@ function calculateVehicleLastMonthDue(vehicleNo, currentKm, vehicleType, returnF
     return null;
   }
 
-  // Filter out non-diesel items (e.g., Urea, Oil)
-  const calcEntries = lastMonthEntries.filter(e => !isNonDieselEntry(e));
+  // Filter out non-diesel items (e.g., Urea, Oil, or manually excluded)
+  const calcEntries = lastMonthEntries.filter(e => !isEntryExcluded(e));
   const workingEntries = calcEntries.length > 0 ? calcEntries : lastMonthEntries;
 
   // Sort matched entries: Chronologically by Date ASC; if same date, by KM ASC (lower KM 1st, higher KM 2nd)
@@ -15840,7 +15896,7 @@ function syncToCalculatorDom(data, sorted, leftovers) {
       sorted.forEach((e, idx) => {
         const tr = document.createElement('tr');
         tr.dataset.note = e.note || '';
-        const isExcluded = isNonDieselEntry(e);
+        const isExcluded = isEntryExcluded(e);
         if (isExcluded) {
           tr.className = 'bg-red-50/40 dark:bg-red-950/10 hover:bg-red-100/30 dark:hover:bg-red-900/20 transition-all';
         } else {
@@ -15864,7 +15920,12 @@ function syncToCalculatorDom(data, sorted, leftovers) {
         }
 
         tr.innerHTML = `
-          <td class="px-3 py-2 font-medium whitespace-nowrap">${idx + 1}</td>
+          <td class="px-3 py-2 font-medium whitespace-nowrap text-center">
+            <label class="inline-flex items-center justify-center gap-1.5 cursor-pointer select-none">
+              <input type="checkbox" class="calc-exclude-cb rounded border-slate-300 dark:border-slate-600 text-rose-600 focus:ring-rose-500 w-3.5 h-3.5 cursor-pointer" data-idx="${idx}" ${isExcluded ? 'checked' : ''} onchange="toggleCalcRowExclude(${idx}, this.checked)" title="Click to toggle Exclude">
+              <span>${idx + 1}</span>
+            </label>
+          </td>
           <td class="px-3 py-2 text-sm whitespace-nowrap">${e.date || '-'}</td>
           <td class="px-3 py-2 text-sm whitespace-nowrap font-bold text-slate-800 dark:text-slate-200">${e.vehicleNo || data.vehicleNo}</td>
           <td class="px-3 py-2 text-sm whitespace-nowrap max-w-[140px] truncate" title="${e.fromLocation || ''}">${e.fromLocation || ''}</td>
@@ -15881,6 +15942,213 @@ function syncToCalculatorDom(data, sorted, leftovers) {
     console.error("Error syncing to calculator DOM:", err);
   }
 }
+
+// Recalculate Matching Entries History & update DOM on row exclude toggle
+function recalculateDueMatchingHistory(ctx, sorted) {
+  if (!ctx || !ctx.data || !sorted) return;
+  const data = ctx.data;
+  const mileage = data.mileage || 4.0;
+  const activeRate = data.activeRate || (typeof dieselRate !== 'undefined' && dieselRate > 0 ? dieselRate : 98.00);
+  const currentKm = data.endKm || data.currentKm || 0;
+
+  // Filter diesel vs excluded
+  const calcEntries = sorted.filter(e => !isEntryExcluded(e));
+
+  // 1st KM logic: lowest KM on vehicle's earliest entry date among diesel entries
+  let firstKm = 0;
+  const pool = calcEntries.length > 0 ? calcEntries : sorted;
+  if (pool.length > 0) {
+    const firstDateObj = (typeof parseDateStr === 'function' ? parseDateStr(pool[0].date) : null);
+    const firstDateTime = firstDateObj ? firstDateObj.getTime() : 0;
+    const firstDayEntries = pool.filter(e => {
+      const d = (typeof parseDateStr === 'function' ? parseDateStr(e.date) : null);
+      return d && d.getTime() === firstDateTime;
+    });
+    const firstDayKmPool = [];
+    firstDayEntries.forEach(e => {
+      const start = parseFloat(String(e.startKm || e.start_km || e.previousKm || e.startReading || 0).replace(/[^0-9.\-]/g, '')) || 0;
+      const curr = parseFloat(String(e.currentKm || e.km || e.endKm || 0).replace(/[^0-9.\-]/g, '')) || 0;
+      if (start > 1) firstDayKmPool.push(start);
+      if (curr > 1) firstDayKmPool.push(curr);
+    });
+    if (firstDayKmPool.length > 0) {
+      firstKm = Math.min(...firstDayKmPool);
+    } else {
+      const allKmPool = [];
+      pool.forEach(e => {
+        const start = parseFloat(String(e.startKm || e.start_km || e.previousKm || e.startReading || 0).replace(/[^0-9.\-]/g, '')) || 0;
+        const curr = parseFloat(String(e.currentKm || e.km || e.endKm || 0).replace(/[^0-9.\-]/g, '')) || 0;
+        if (start > 1) allKmPool.push(start);
+        if (curr > 1) allKmPool.push(curr);
+      });
+      if (allKmPool.length > 0) firstKm = Math.min(...allKmPool);
+    }
+  }
+
+  // Total Diesel Amount
+  let totalDieselAmount = 0;
+  calcEntries.forEach(e => {
+    const amt = parseFloat(String(e.dieselAmount || e.amount || 0).replace(/[^0-9.\-]/g, '')) || 0;
+    totalDieselAmount += amt;
+  });
+
+  // Total KM & Expected Amount & Due Amount
+  const totalKm = (currentKm > firstKm) ? (currentKm - firstKm) : 0;
+  const expectedLitres = (mileage > 0) ? (totalKm / mileage) : 0;
+  const expectedAmount = expectedLitres * activeRate;
+  const dueAmountVal = totalDieselAmount - expectedAmount;
+
+  // Calculate per-trip extra left
+  const leftovers = new Array(sorted.length).fill(null);
+  sorted.forEach((e, i) => {
+    const isExcluded = isEntryExcluded(e);
+    if (isExcluded) return;
+
+    const currKm = parseFloat(String(e.currentKm || e.km || 0).replace(/[^0-9.\-]/g, '')) || 0;
+    let nextKm;
+    let shouldCalculate = true;
+
+    if (i < sorted.length - 1) {
+      let nextDiesel = null;
+      for (let j = i + 1; j < sorted.length; j++) {
+        if (!isEntryExcluded(sorted[j])) {
+          nextDiesel = sorted[j];
+          break;
+        }
+      }
+      if (nextDiesel) {
+        nextKm = parseFloat(String(nextDiesel.currentKm || nextDiesel.km || 0).replace(/[^0-9.\-]/g, '')) || 0;
+      } else {
+        nextKm = currentKm;
+        if (nextKm === currKm) shouldCalculate = false;
+      }
+    } else {
+      nextKm = currentKm;
+      if (nextKm === currKm) shouldCalculate = false;
+    }
+
+    if (shouldCalculate) {
+      const distance = nextKm - currKm;
+      const consumedLitres = distance > 0 ? (distance / mileage) : 0;
+      const filledAmount = parseFloat(String(e.dieselAmount || e.amount || 0).replace(/[^0-9.\-]/g, '')) || 0;
+      const filledLitres = activeRate > 0 ? (filledAmount / activeRate) : 0;
+      leftovers[i] = filledLitres - consumedLitres;
+    }
+  });
+
+  // Update data in context
+  data.firstKm = firstKm;
+  data.totalKm = totalKm;
+  data.totalDieselAmount = totalDieselAmount;
+  data.expectedAmount = expectedAmount;
+  data.dueAmountVal = dueAmountVal;
+
+  // Update Due Card breakdown fields in DOM if present
+  const startKmEl = document.getElementById('due-card-start-km');
+  if (startKmEl) startKmEl.textContent = `${Math.round(firstKm).toLocaleString('en-IN')} KM`;
+  const totalKmEl = document.getElementById('due-card-total-km');
+  if (totalKmEl) totalKmEl.textContent = `${Math.round(totalKm).toLocaleString('en-IN')} KM`;
+  const totalAmtEl = document.getElementById('due-card-total-amount');
+  if (totalAmtEl) totalAmtEl.textContent = `₹${Math.round(totalDieselAmount).toLocaleString('en-IN')}`;
+  const expCostEl = document.getElementById('due-card-expected-cost');
+  if (expCostEl) expCostEl.textContent = `₹${Math.round(expectedAmount).toLocaleString('en-IN')}`;
+  const finalDueEl = document.getElementById('due-card-final-due');
+  const containerEl = document.getElementById('due-card-final-container');
+  if (finalDueEl) {
+    const abs = Math.round(Math.abs(dueAmountVal)).toLocaleString('en-IN');
+    const sign = dueAmountVal >= 0 ? '' : '-';
+    finalDueEl.textContent = `${sign}₹${abs}`;
+    if (dueAmountVal >= 0) {
+      finalDueEl.className = 'font-black text-emerald-600 dark:text-emerald-400 text-xl';
+      if (containerEl) containerEl.className = 'p-3.5 mt-2 rounded-2xl bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-500/25 flex justify-between items-center';
+    } else {
+      finalDueEl.className = 'font-black text-rose-600 dark:text-rose-400 text-xl';
+      if (containerEl) containerEl.className = 'p-3.5 mt-2 rounded-2xl bg-rose-500/10 dark:bg-rose-500/15 border border-rose-500/25 flex justify-between items-center';
+    }
+  }
+
+  // Re-render table rows in #due-history-entries-body
+  const tbody = document.getElementById('due-history-entries-body');
+  if (tbody) {
+    tbody.innerHTML = '';
+    const fragment = document.createDocumentFragment();
+
+    sorted.forEach((e, idx) => {
+      const tr = document.createElement('tr');
+      tr.dataset.note = e.note || '';
+
+      const isExcluded = isEntryExcluded(e);
+      if (isExcluded) {
+        tr.className = 'bg-rose-50/40 dark:bg-rose-950/20 hover:bg-rose-100/30 dark:hover:bg-rose-900/30 transition-all';
+      } else {
+        tr.className = 'hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-all';
+      }
+
+      const dieselVal = parseFloat(String(e.dieselAmount || e.amount || 0).replace(/[^0-9.\-]/g, '')) || 0;
+      const statusBadge = isExcluded
+        ? `<span class="px-2 py-0.5 text-[10px] font-bold bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 rounded border border-rose-200 dark:border-rose-800"><i class="fas fa-exclamation-triangle mr-1"></i> EXCLUDED</span>`
+        : `<span class="px-2 py-0.5 text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 rounded border border-emerald-200 dark:border-emerald-800"><i class="fas fa-gas-pump mr-1"></i> DIESEL</span>`;
+
+      const leftoverVal = leftovers[idx];
+      let leftoverHtml = '';
+      if (leftoverVal !== null && leftoverVal !== undefined) {
+        const cost = leftoverVal * activeRate;
+        const formattedL = (leftoverVal >= 0 ? '+' : '') + leftoverVal.toFixed(2) + ' L';
+        const formattedCost = (cost >= 0 ? '+' : '') + '₹' + cost.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+        const colorClass = leftoverVal >= 0 ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-rose-600 dark:text-rose-400 font-bold';
+        leftoverHtml = `<span class="${colorClass}">${formattedL} / ${formattedCost}</span>`;
+      } else {
+        leftoverHtml = `<span class="text-slate-400 dark:text-slate-600">-</span>`;
+      }
+
+      tr.innerHTML = `
+        <td class="px-3.5 py-3 font-semibold text-slate-700 dark:text-slate-300 text-center whitespace-nowrap">
+          <label class="inline-flex items-center justify-center gap-1.5 cursor-pointer select-none">
+            <input type="checkbox" class="due-history-exclude-cb rounded border-slate-300 dark:border-slate-600 text-rose-600 focus:ring-rose-500 w-3.5 h-3.5 cursor-pointer" data-idx="${idx}" ${isExcluded ? 'checked' : ''} onchange="toggleDueHistoryRowExclude(${idx}, this.checked)" title="Click to toggle Exclude">
+            <span>${idx + 1}</span>
+          </label>
+        </td>
+        <td class="px-3.5 py-3 text-slate-800 dark:text-slate-200 whitespace-nowrap font-medium">${e.date || '-'}</td>
+        <td class="px-3.5 py-3 font-bold text-slate-900 dark:text-white whitespace-nowrap">${e.vehicleNo || data.vehicleNo}</td>
+        <td class="px-3.5 py-3 text-slate-600 dark:text-slate-400 whitespace-nowrap max-w-[140px] truncate" title="${e.fromLocation || ''}">${e.fromLocation || '-'}</td>
+        <td class="px-3.5 py-3 text-slate-600 dark:text-slate-400 whitespace-nowrap max-w-[140px] truncate" title="${e.lastLocation || ''}">${e.lastLocation || '-'}</td>
+        <td class="px-3.5 py-3 text-slate-800 dark:text-slate-200 whitespace-nowrap"><div class="inline-flex items-center gap-2">${e.currentKm || e.km || 0} ${statusBadge}</div></td>
+        <td class="px-3.5 py-3 text-right font-bold text-slate-900 dark:text-white whitespace-nowrap ${isExcluded ? 'text-slate-400 line-through dark:text-slate-500' : ''}">₹${dieselVal.toLocaleString('en-IN')}</td>
+        <td class="px-3.5 py-3 text-right whitespace-nowrap">${leftoverHtml}</td>
+      `;
+      fragment.appendChild(tr);
+    });
+
+    tbody.appendChild(fragment);
+  }
+
+  // Summary Text
+  const summaryEl = document.getElementById('due-history-summary-text');
+  if (summaryEl) {
+    summaryEl.textContent = `Total Entries: ${sorted.length} | Total Fuel: ₹${Math.round(totalDieselAmount).toLocaleString('en-IN')} | Total Run: ${Math.round(totalKm).toLocaleString('en-IN')} KM`;
+  }
+
+  // Sync to Diesel Calculator DOM so existing exportCalculatorExcel & exportCalculatorPDF work out-of-the-box
+  syncToCalculatorDom(data, sorted, leftovers);
+}
+
+// Toggle row exclusion from Matching Entries History modal
+function toggleDueHistoryRowExclude(idx, isChecked) {
+  const ctx = window.currentDueCardContext;
+  const sorted = window.currentDueMatchingSorted;
+  if (!ctx || !sorted || !sorted[idx]) return;
+
+  const entry = sorted[idx];
+  entry.manuallyExcluded = isChecked;
+  const key = getEntryUniqueKey(entry);
+  if (key) {
+    window.manuallyExcludedEntries = window.manuallyExcludedEntries || {};
+    window.manuallyExcludedEntries[key] = isChecked;
+  }
+
+  recalculateDueMatchingHistory(ctx, sorted);
+}
+window.toggleDueHistoryRowExclude = toggleDueHistoryRowExclude;
 
 // Open Matching Entries History modal from Due breakdown card (matches Image 4 design)
 function openDueCardMatchingHistory() {
@@ -15926,106 +16194,10 @@ function openDueCardMatchingHistory() {
     return (parseInt(a.responseNumber || a.key || 0) || 0) - (parseInt(b.responseNumber || b.key || 0) || 0);
   });
 
-  const mileage = data.mileage || 4.0;
-  const activeRate = data.activeRate || (typeof dieselRate !== 'undefined' && dieselRate > 0 ? dieselRate : 98.00);
-  const currentKm = data.endKm || data.currentKm || 0;
+  window.currentDueMatchingSorted = sorted;
+  window.currentCalcSortedEntries = sorted;
 
-  // Calculate per-trip extra left
-  const leftovers = new Array(sorted.length).fill(null);
-  sorted.forEach((e, i) => {
-    const isExcluded = isNonDieselEntry(e);
-    if (isExcluded) return;
-
-    const currKm = parseFloat(String(e.currentKm || e.km || 0).replace(/[^0-9.\-]/g, '')) || 0;
-    let nextKm;
-    let shouldCalculate = true;
-
-    if (i < sorted.length - 1) {
-      let nextDiesel = null;
-      for (let j = i + 1; j < sorted.length; j++) {
-        if (!isNonDieselEntry(sorted[j])) {
-          nextDiesel = sorted[j];
-          break;
-        }
-      }
-      if (nextDiesel) {
-        nextKm = parseFloat(String(nextDiesel.currentKm || nextDiesel.km || 0).replace(/[^0-9.\-]/g, '')) || 0;
-      } else {
-        nextKm = currentKm;
-        if (nextKm === currKm) shouldCalculate = false;
-      }
-    } else {
-      nextKm = currentKm;
-      if (nextKm === currKm) shouldCalculate = false;
-    }
-
-    if (shouldCalculate) {
-      const distance = nextKm - currKm;
-      const consumedLitres = distance > 0 ? (distance / mileage) : 0;
-      const filledAmount = parseFloat(String(e.dieselAmount || e.amount || 0).replace(/[^0-9.\-]/g, '')) || 0;
-      const filledLitres = activeRate > 0 ? (filledAmount / activeRate) : 0;
-      leftovers[i] = filledLitres - consumedLitres;
-    }
-  });
-
-  // Populate #due-history-entries-body
-  const tbody = document.getElementById('due-history-entries-body');
-  if (tbody) {
-    tbody.innerHTML = '';
-    const fragment = document.createDocumentFragment();
-
-    sorted.forEach((e, idx) => {
-      const tr = document.createElement('tr');
-      tr.dataset.note = e.note || '';
-
-      const isExcluded = isNonDieselEntry(e);
-      if (isExcluded) {
-        tr.className = 'bg-rose-50/40 dark:bg-rose-950/20 hover:bg-rose-100/30 dark:hover:bg-rose-900/30 transition-all';
-      } else {
-        tr.className = 'hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-all';
-      }
-
-      const dieselVal = parseFloat(String(e.dieselAmount || e.amount || 0).replace(/[^0-9.\-]/g, '')) || 0;
-      const statusBadge = isExcluded
-        ? `<span class="px-2 py-0.5 text-[10px] font-bold bg-rose-100 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 rounded border border-rose-200 dark:border-rose-800"><i class="fas fa-exclamation-triangle mr-1"></i> EXCLUDED</span>`
-        : `<span class="px-2 py-0.5 text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 rounded border border-emerald-200 dark:border-emerald-800"><i class="fas fa-gas-pump mr-1"></i> DIESEL</span>`;
-
-      const leftoverVal = leftovers[idx];
-      let leftoverHtml = '';
-      if (leftoverVal !== null && leftoverVal !== undefined) {
-        const cost = leftoverVal * activeRate;
-        const formattedL = (leftoverVal >= 0 ? '+' : '') + leftoverVal.toFixed(2) + ' L';
-        const formattedCost = (cost >= 0 ? '+' : '') + '₹' + cost.toLocaleString('en-IN', { maximumFractionDigits: 0 });
-        const colorClass = leftoverVal >= 0 ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-rose-600 dark:text-rose-400 font-bold';
-        leftoverHtml = `<span class="${colorClass}">${formattedL} / ${formattedCost}</span>`;
-      } else {
-        leftoverHtml = `<span class="text-slate-400 dark:text-slate-600">-</span>`;
-      }
-
-      tr.innerHTML = `
-        <td class="px-3.5 py-3 font-semibold text-slate-700 dark:text-slate-300 text-center whitespace-nowrap">${idx + 1}</td>
-        <td class="px-3.5 py-3 text-slate-800 dark:text-slate-200 whitespace-nowrap font-medium">${e.date || '-'}</td>
-        <td class="px-3.5 py-3 font-bold text-slate-900 dark:text-white whitespace-nowrap">${e.vehicleNo || data.vehicleNo}</td>
-        <td class="px-3.5 py-3 text-slate-600 dark:text-slate-400 whitespace-nowrap max-w-[140px] truncate" title="${e.fromLocation || ''}">${e.fromLocation || '-'}</td>
-        <td class="px-3.5 py-3 text-slate-600 dark:text-slate-400 whitespace-nowrap max-w-[140px] truncate" title="${e.lastLocation || ''}">${e.lastLocation || '-'}</td>
-        <td class="px-3.5 py-3 text-slate-800 dark:text-slate-200 whitespace-nowrap"><div class="inline-flex items-center gap-2">${e.currentKm || e.km || 0} ${statusBadge}</div></td>
-        <td class="px-3.5 py-3 text-right font-bold text-slate-900 dark:text-white whitespace-nowrap ${isExcluded ? 'text-slate-400 line-through dark:text-slate-500' : ''}">₹${dieselVal.toLocaleString('en-IN')}</td>
-        <td class="px-3.5 py-3 text-right whitespace-nowrap">${leftoverHtml}</td>
-      `;
-      fragment.appendChild(tr);
-    });
-
-    tbody.appendChild(fragment);
-  }
-
-  // Summary Text
-  const summaryEl = document.getElementById('due-history-summary-text');
-  if (summaryEl) {
-    summaryEl.textContent = `Total Entries: ${sorted.length} | Total Fuel: ₹${Math.round(data.totalDieselAmount || 0).toLocaleString('en-IN')} | Total Run: ${Math.round(data.totalKm || 0).toLocaleString('en-IN')} KM`;
-  }
-
-  // Sync to Diesel Calculator DOM so existing exportCalculatorExcel & exportCalculatorPDF work out-of-the-box
-  syncToCalculatorDom(data, sorted, leftovers);
+  recalculateDueMatchingHistory(ctx, sorted);
 
   // Show matching history modal
   const historyModal = document.getElementById('modal-matching-entries-history');

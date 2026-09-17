@@ -1650,6 +1650,32 @@
       return false;
     }
 
+    window.manuallyExcludedEntries = window.manuallyExcludedEntries || {};
+
+    function getEntryUniqueKey(e) {
+      if (!e) return '';
+      if (e.responseNumber) return 'resp_' + String(e.responseNumber).trim();
+      if (e.key) return 'key_' + String(e.key).trim();
+      if (e.id) return 'id_' + String(e.id).trim();
+      const v = (e.vehicleNo || e.vehicle_no || e.vehicle || '').trim().toUpperCase();
+      const d = (e.date || e.created_at || '').trim();
+      const km = (e.currentKm || e.km || e.endKm || '').toString().trim();
+      const amt = (e.dieselAmount || e.amount || '').toString().trim();
+      return `entry_${v}_${d}_${km}_${amt}`;
+    }
+
+    function isEntryExcluded(e) {
+      if (!e) return false;
+      const k = getEntryUniqueKey(e);
+      if (k && window.manuallyExcludedEntries && window.manuallyExcludedEntries[k] !== undefined) {
+        return !!window.manuallyExcludedEntries[k];
+      }
+      if (e.manuallyExcluded !== undefined) {
+        return !!e.manuallyExcluded;
+      }
+      return isNonDieselEntry(e);
+    }
+
     // Monthly total due diesel calculation using Diesel Calculator logic
     function calculateVehicleMonthlyDue(vehicleNo, currentKm, vehicleType) {
       const entriesList = (typeof historyEntries !== 'undefined' && Array.isArray(historyEntries)) ? historyEntries : (window.allLoadedEntries || []);
@@ -1678,8 +1704,8 @@
         return null;
       }
 
-      // Filter out non-diesel items (e.g., Urea, Oil)
-      const calcEntries = matchedEntries.filter(e => !isNonDieselEntry(e));
+      // Filter out non-diesel items (e.g., Urea, Oil, or manually excluded)
+      const calcEntries = matchedEntries.filter(e => !isEntryExcluded(e));
       const sortedEntries = [...(calcEntries.length > 0 ? calcEntries : matchedEntries)].sort((a, b) => {
         const dtA = parseDateStr(a.date) || new Date(0);
         const dtB = parseDateStr(b.date) || new Date(0);
