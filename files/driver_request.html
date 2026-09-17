@@ -626,20 +626,57 @@
     } catch (e) {}
 
     let driverRequestsCache = null;
-    // Pre-populate driverRequests in background when idle (photos stripped for ultra-lightweight ~20KB load)
-    whenIdle(() => {
-      db.ref('driverRequests').orderByKey().limitToLast(60).on('value', snapshot => {
-        const raw = snapshot.val() || {};
-        const slim = {};
-        Object.keys(raw).forEach(k => {
-          const r = raw[k];
-          if (!r) return;
-          const { kmPhoto, photo, image, ...rest } = r;
-          slim[k] = rest;
+    let allEntriesCache = [];
+    try {
+      const cachedEntries = localStorage.getItem('rpm_cache_entries_slim') || localStorage.getItem('rpm_cache_entries');
+      if (cachedEntries) {
+        allEntriesCache = JSON.parse(cachedEntries);
+        window.allLoadedEntries = allEntriesCache;
+      }
+    } catch(e) {}
 
-          const v = cleanVehicleNo(r.vehicleNo);
-          if (v) {
-            uniqueVehicles.add(v);
+    // Live entries and driver requests hydration
+    // 1. Live entries (Diesel Records)
+    db.ref('entries').on('value', snapshot => {
+      const raw = snapshot.val() || {};
+      allEntriesCache = Object.values(raw);
+      window.allLoadedEntries = allEntriesCache;
+      try {
+        localStorage.setItem('rpm_cache_entries_slim', JSON.stringify(allEntriesCache));
+      } catch(e) {}
+
+      allEntriesCache.forEach(e => {
+        if (!e) return;
+        const v = cleanVehicleNo(e.vehicleNo || e.vehicle_no || e.vehicle || e.truckNo);
+        if (v) uniqueVehicles.add(v);
+      });
+
+      const curVeh = typeof getCompleteVehicleNo === 'function' ? getCompleteVehicleNo() : '';
+      if (curVeh && typeof applyVehicleAutofillFields === 'function') {
+        applyVehicleAutofillFields(curVeh);
+      }
+
+      const calcOverlay = document.getElementById('calculator-overlay');
+      if (calcOverlay && !calcOverlay.classList.contains('hidden')) {
+        if (typeof onCalcVehicleInput === 'function') onCalcVehicleInput();
+      }
+    });
+
+    // 2. Live driverRequests
+    db.ref('driverRequests').orderByKey().limitToLast(100).on('value', snapshot => {
+      const raw = snapshot.val() || {};
+      const slim = {};
+      Object.keys(raw).forEach(k => {
+        const r = raw[k];
+        if (!r) return;
+        const { kmPhoto, photo, image, ...rest } = r;
+        slim[k] = rest;
+
+        const v = cleanVehicleNo(r.vehicleNo);
+        if (v) {
+          uniqueVehicles.add(v);
+          // Only adopt completed/approved/filled requests for autofill history (ignore pending or rejected)
+          if (r.status !== 'rejected' && r.status !== 'pending') {
             if (!vehicleAutofillMap[v]) {
               vehicleAutofillMap[v] = {
                 vehicleType: (r.vehicleType || '').trim().toUpperCase(),
@@ -663,26 +700,29 @@
                 vehicleAutofillMap[v].lastAmount = r.dieselAmount;
               }
             }
-            if (r.vehicleType) {
-              vehicleToTypeMap[v] = r.vehicleType.trim().toUpperCase();
-            }
           }
-        });
-        driverRequestsCache = slim;
-        try {
-          localStorage.setItem('rpm_veh_cache_v2', JSON.stringify(vehicleAutofillMap));
-        } catch (e) {}
-
-        if (typeof getCompleteVehicleNo === 'function' && typeof applyVehicleAutofillFields === 'function') {
-          const curVeh = getCompleteVehicleNo();
-          if (curVeh && vehicleAutofillMap[curVeh]) {
-            applyVehicleAutofillFields(curVeh);
+          if (r.vehicleType) {
+            vehicleToTypeMap[v] = r.vehicleType.trim().toUpperCase();
           }
         }
-      }, error => {
-        console.error("Unable to load driver request status:", error);
-        driverRequestsCache = null;
       });
+      driverRequestsCache = slim;
+      try {
+        localStorage.setItem('rpm_veh_cache_v2', JSON.stringify(vehicleAutofillMap));
+      } catch (e) {}
+
+      const curVeh = typeof getCompleteVehicleNo === 'function' ? getCompleteVehicleNo() : '';
+      if (curVeh && typeof applyVehicleAutofillFields === 'function') {
+        applyVehicleAutofillFields(curVeh);
+      }
+
+      const calcOverlay = document.getElementById('calculator-overlay');
+      if (calcOverlay && !calcOverlay.classList.contains('hidden')) {
+        if (typeof onCalcVehicleInput === 'function') onCalcVehicleInput();
+      }
+    }, error => {
+      console.error("Unable to load driver request status:", error);
+      driverRequestsCache = null;
     });
 
     // Geolocation and Camera permission check & blocker overlay management
@@ -854,6 +894,126 @@
 
     let calcLastTripAmount = 0;
 
+    // Helper: Find accurate latest completed trip (KM and Amount) from live entries and driver requests
+    function getVehicleLatestTrip(cleanNo) {
+      if (!cleanNo) return null;
+      cleanNo = cleanVehicleNo(cleanNo);
+      if (!cleanNo) return null;
+
+      const candidates = [];
+
+      const parseSafeDate = (dStr) => {
+        if (!dStr) return 0;
+        if (typeof parseDateStr === 'function') {
+          const res = parseDateStr(dStr);
+          if (res) return res.getTime();
+        }
+        const parts = String(dStr).split('-');
+        if (parts.length === 3) {
+          if (parts[0].length === 4) return new Date(parts[0], parts[1] - 1, parts[2]).getTime();
+          return new Date(parts[2], parts[1] - 1, parts[0]).getTime();
+        }
+        return 0;
+      };
+
+      const getScore = (dateStr, timeStr, respOrSub) => {
+        const d = parseSafeDate(dateStr);
+        let tMs = 0;
+        if (timeStr) {
+          const [h, m] = String(timeStr).split(':').map(Number);
+          if (!isNaN(h) && !isNaN(m)) tMs = (h * 60 + m) * 60 * 1000;
+        }
+        if (typeof respOrSub === 'number' && respOrSub > 1000000000000) {
+          return respOrSub;
+        }
+        return d + tMs + (parseInt(respOrSub) || 0);
+      };
+
+      // 1. Check allLoadedEntries / allEntriesCache (from live entries)
+      const entriesList = (Array.isArray(window.allLoadedEntries) && window.allLoadedEntries.length > 0)
+        ? window.allLoadedEntries
+        : (typeof allEntriesCache !== 'undefined' && Array.isArray(allEntriesCache) ? allEntriesCache : []);
+
+      if (Array.isArray(entriesList)) {
+        entriesList.forEach(e => {
+          if (!e) return;
+          const v = cleanVehicleNo(e.vehicleNo || e.vehicle_no || e.vehicle || e.truckNo || e.vehicleNumber);
+          if (v !== cleanNo) return;
+          const km = parseFloat(String(e.currentKm || e.endKm || e.km || 0).replace(/[^0-9.]/g, '')) || 0;
+          if (km <= 10) return;
+          const amt = parseFloat(String(e.dieselAmount || e.amount || 0).replace(/[^0-9.]/g, '')) || 0;
+          const score = getScore(e.date, e.time, e.responseNumber);
+          candidates.push({
+            source: 'ledger',
+            km,
+            amt,
+            date: e.date || '',
+            time: e.time || '',
+            score,
+            vehicleType: e.vehicleType || '',
+            vendorName: e.vendorName || '',
+            fromLocation: e.fromLocation || '',
+            lastLocation: e.lastLocation || ''
+          });
+        });
+      }
+
+      // 2. Check driverRequestsCache (only approved / filled, never pending or rejected)
+      if (driverRequestsCache && typeof driverRequestsCache === 'object') {
+        Object.values(driverRequestsCache).forEach(r => {
+          if (!r || r.status === 'rejected' || r.status === 'pending') return;
+          const v = cleanVehicleNo(r.vehicleNo || r.vehicle_no || r.vehicle);
+          if (v !== cleanNo) return;
+          const km = parseFloat(String(r.currentKm || 0).replace(/[^0-9.]/g, '')) || 0;
+          if (km <= 10) return;
+          const amt = parseFloat(String(r.dieselAmount || 0).replace(/[^0-9.]/g, '')) || 0;
+          const score = typeof r.submittedAt === 'number' && r.submittedAt > 0
+            ? r.submittedAt
+            : getScore(r.date, r.time, 0);
+          candidates.push({
+            source: 'request',
+            km,
+            amt,
+            date: r.date || '',
+            time: r.time || '',
+            score,
+            vehicleType: r.vehicleType || '',
+            vendorName: r.vendorName || '',
+            fromLocation: r.fromLocation || '',
+            lastLocation: r.lastLocation || ''
+          });
+        });
+      }
+
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => {
+          const timeDiff = b.score - a.score;
+          if (Math.abs(timeDiff) > 60000) return timeDiff;
+          if (b.km !== a.km) return b.km - a.km;
+          return b.amt - a.amt;
+        });
+        return candidates[0];
+      }
+
+      // 3. Fallback to vehicleAutofillMap if no entries found
+      const m = vehicleAutofillMap[cleanNo];
+      if (m && (m.currentKm || m.lastAmount)) {
+        return {
+          source: 'cache',
+          km: parseFloat(String(m.currentKm || 0).replace(/[^0-9.]/g, '')) || 0,
+          amt: parseFloat(String(m.lastAmount || m.lastDieselAmount || 0).replace(/[^0-9.]/g, '')) || 0,
+          date: '',
+          time: '',
+          vehicleType: m.vehicleType || '',
+          vendorName: m.vendorName || '',
+          fromLocation: m.fromLocation || '',
+          lastLocation: m.lastLocation || ''
+        };
+      }
+
+      return null;
+    }
+
     // Vehicle No -> pull last recorded KM + vehicle type from saved data
     function onCalcVehicleInput() {
       const input = document.getElementById('calc-vehicle-no');
@@ -871,73 +1031,25 @@
         return;
       }
 
-      const match = vehicleAutofillMap[cleanNo];
-      calcLastTripAmount = match ? (parseFloat(String(match.lastAmount || match.lastDieselAmount || '').replace(/[^0-9.]/g, '')) || 0) : 0;
+      const trip = getVehicleLatestTrip(cleanNo);
 
-      // Fallback 1: if calcLastTripAmount is 0, check window.allLoadedEntries
-      if (!calcLastTripAmount && window.allLoadedEntries && window.allLoadedEntries.length) {
-        const vEntries = window.allLoadedEntries.filter(e => e && cleanVehicleNo(e.vehicleNo || e.vehicle_no || e.vehicle) === cleanNo);
-        if (vEntries.length > 0) {
-          const lastEntry = vEntries[vEntries.length - 1];
-          const amt = parseFloat(String(lastEntry.dieselAmount || lastEntry.amount || '').replace(/[^0-9.]/g, '')) || 0;
-          if (amt > 0) {
-            calcLastTripAmount = amt;
-            if (match) match.lastAmount = amt;
-          }
-        }
-      }
-
-      // Fallback 2: check driverRequestsCache
-      if (!calcLastTripAmount && driverRequestsCache) {
-        const reqList = Object.values(driverRequestsCache).filter(Boolean);
-        const vReqs = reqList.filter(r => cleanVehicleNo(r.vehicleNo || r.vehicle_no || r.vehicle) === cleanNo);
-        if (vReqs.length > 0) {
-          const lastReq = vReqs[vReqs.length - 1];
-          const amt = parseFloat(String(lastReq.dieselAmount || lastReq.amount || '').replace(/[^0-9.]/g, '')) || 0;
-          if (amt > 0) {
-            calcLastTripAmount = amt;
-            if (match) match.lastAmount = amt;
-          }
-        }
-      }
-
-      // Fallback 3: if still no lastAmount or no match, and vehicle has >= 8 characters, fetch summary in background
-      if ((!calcLastTripAmount || !match || !match.currentKm) && cleanNo.length >= 8 && typeof db !== 'undefined') {
-        db.ref('vehicle_summaries/' + cleanNo).once('value').then(snap => {
-          const s = snap.val();
-          if (s) {
-            const sAmt = parseFloat(String(s.lastAmount || s.lastDieselAmount || '').replace(/[^0-9.]/g, '')) || 0;
-            if (sAmt > 0) {
-              if (!vehicleAutofillMap[cleanNo]) vehicleAutofillMap[cleanNo] = {};
-              vehicleAutofillMap[cleanNo].lastAmount = sAmt;
-              try { localStorage.setItem('rpm_veh_cache_v2', JSON.stringify(vehicleAutofillMap)); } catch(e){}
-              const curCalcNo = (document.getElementById('calc-vehicle-no')?.value || '').replace(/[^A-Z0-9]/g, '');
-              if (curCalcNo === cleanNo) {
-                calcLastTripAmount = sAmt;
-                runModalCalculation();
-              }
-            }
-          }
-        }).catch(() => {});
-      }
-
-      const lastKm = match ? parseFloat(String(match.currentKm || '').replace(/[^0-9.]/g, '')) : NaN;
-
-      if (match && isFinite(lastKm) && lastKm > 0) {
-        startInput.value = lastKm;
-        hint.textContent = `Last trip KM: ${lastKm.toLocaleString('en-IN')} KM`;
+      if (trip && trip.km > 0) {
+        startInput.value = Math.round(trip.km);
+        hint.textContent = `Last trip KM: ${Math.round(trip.km).toLocaleString('en-IN')} KM`;
         hint.className = 'text-[10px] font-bold text-emerald-600 mt-1';
+        calcLastTripAmount = trip.amt > 0 ? trip.amt : 0;
       } else {
         if (cleanNo.length >= 8 && typeof fetchVehicleDataRealtime === 'function') {
           fetchVehicleDataRealtime(cleanNo);
         }
+        calcLastTripAmount = 0;
         hint.textContent = 'Is vehicle ka koi purana record nahi mila - Last Trip KM manually daalein.';
         hint.className = 'text-[10px] font-bold text-amber-600 mt-1';
       }
 
       // Autofill vehicle type from the last known type for this vehicle
       const vtypeSelect = document.getElementById('calc-vtype');
-      const knownType = (match && match.vehicleType) || vehicleToTypeMap[cleanNo] || '';
+      const knownType = (trip && trip.vehicleType) || (vehicleAutofillMap[cleanNo] && vehicleAutofillMap[cleanNo].vehicleType) || vehicleToTypeMap[cleanNo] || '';
       if (knownType) {
         const target = String(knownType).trim().toUpperCase();
         for (let opt of vtypeSelect.options) {
@@ -1195,10 +1307,12 @@
     }
 
     function applyRealtimeVehicleEntries(cleanNo, entries, driverRequests, summaryData) {
-      // 1. Maintain complete current month entries from summaryData and merge any fresh entries
-      const existingEntries = (summaryData && Array.isArray(summaryData.currentMonthEntries) && summaryData.currentMonthEntries.length > 0)
-        ? [...summaryData.currentMonthEntries]
-        : (Array.isArray(window.allLoadedEntries) ? [...window.allLoadedEntries] : []);
+      // 1. Maintain complete current month entries from window.allLoadedEntries, fallback to summaryData
+      const existingEntries = (Array.isArray(window.allLoadedEntries) && window.allLoadedEntries.length > 0)
+        ? [...window.allLoadedEntries]
+        : ((summaryData && Array.isArray(summaryData.currentMonthEntries) && summaryData.currentMonthEntries.length > 0)
+          ? [...summaryData.currentMonthEntries]
+          : []);
 
       const entryMap = new Map();
       existingEntries.forEach(e => {
@@ -1220,75 +1334,18 @@
       });
 
       window.allLoadedEntries = Array.from(entryMap.values());
-      const entriesList = Object.values(entries || {});
+      allEntriesCache = window.allLoadedEntries;
 
-      // Existing cached data for this vehicle
+      // Authoritative latest trip computation from live entries & driverRequests
+      const trip = typeof getVehicleLatestTrip === 'function' ? getVehicleLatestTrip(cleanNo) : null;
+
       const prevData = vehicleAutofillMap[cleanNo] || {};
-
-      let bestKm = prevData.currentKm || '';
-      let bestAmount = prevData.lastAmount || '';
-      let bestDayTs = prevData.lastKmDayTs || null;
-      let matchedVehicleType = prevData.vehicleType || vehicleToTypeMap[cleanNo] || '';
-      let matchedVendorName = prevData.vendorName || '';
-      let matchedFromLoc = prevData.fromLocation || '';
-      let matchedLastLoc = prevData.lastLocation || '';
-
-      // Sort entries chronologically to ensure latest trip data wins
-      const sortedEntries = entriesList.filter(Boolean).sort((a, b) => {
-        const dtA = parseDateStr(a.date) || new Date(0);
-        const dtB = parseDateStr(b.date) || new Date(0);
-        return dtA.getTime() - dtB.getTime();
-      });
-
-      sortedEntries.forEach(e => {
-        const vNo = cleanVehicleNo(e.vehicleNo || e.vehicle_no || e.vehicle || e.truckNo || e.vehicleNumber);
-        if (vNo !== cleanNo) return;
-        uniqueVehicles.add(String(e.vehicleNo || cleanNo).trim().toUpperCase());
-
-        if (e.vehicleType) matchedVehicleType = String(e.vehicleType).trim().toUpperCase();
-        if (e.vendorName) matchedVendorName = String(e.vendorName).trim().toUpperCase();
-        if (e.lastLocation) matchedLastLoc = String(e.lastLocation).trim();
-        if (e.fromLocation) matchedFromLoc = String(e.fromLocation).trim();
-
-        const entryKmRaw = e.currentKm || e.endKm || '';
-        const entryKmNum = parseFloat(String(entryKmRaw).replace(/[^0-9.]/g, ''));
-        const entryDate = parseDateStr(e.date);
-        const entryDayTs = entryDate ? new Date(entryDate.getFullYear(), entryDate.getMonth(), entryDate.getDate()).getTime() : null;
-        const prevKmNum = parseFloat(String(bestKm).replace(/[^0-9.]/g, ''));
-        const entryAmount = e.dieselAmount || e.amount || '';
-
-        if (isFinite(entryKmNum) && entryKmNum > 0) {
-          const takeIt =
-            !bestKm ||
-            bestDayTs === null ||
-            (entryDayTs !== null && entryDayTs > bestDayTs) ||
-            (entryDayTs !== null && entryDayTs === bestDayTs && (!isFinite(prevKmNum) || entryKmNum > prevKmNum));
-          if (takeIt) {
-            bestKm = entryKmRaw;
-            bestAmount = entryAmount || bestAmount;
-            bestDayTs = entryDayTs;
-          }
-        }
-      });
-
-      // Also check recent driverRequests for any fresher information
-      if (driverRequests && typeof driverRequests === 'object') {
-        const reqList = Object.values(driverRequests).filter(Boolean).sort((a, b) => (a.submittedAt || 0) - (b.submittedAt || 0));
-        reqList.forEach(r => {
-          const rVeh = cleanVehicleNo(r.vehicleNo || r.vehicle_no || r.vehicle);
-          if (rVeh !== cleanNo) return;
-          if (r.vehicleType) matchedVehicleType = String(r.vehicleType).trim().toUpperCase();
-          if (r.vendorName) matchedVendorName = String(r.vendorName).trim().toUpperCase();
-          if (r.lastLocation) matchedLastLoc = String(r.lastLocation).trim();
-          if (r.fromLocation) matchedFromLoc = String(r.fromLocation).trim();
-          if (r.currentKm && (!bestKm || parseFloat(r.currentKm) > parseFloat(bestKm))) {
-            bestKm = r.currentKm;
-          }
-          if (r.dieselAmount || r.amount) {
-            bestAmount = r.dieselAmount || r.amount;
-          }
-        });
-      }
+      let bestKm = (trip && trip.km > 0) ? trip.km : (prevData.currentKm || '');
+      let bestAmount = (trip && trip.amt > 0) ? trip.amt : (prevData.lastAmount || '');
+      let matchedVehicleType = (trip && trip.vehicleType) || prevData.vehicleType || vehicleToTypeMap[cleanNo] || '';
+      let matchedVendorName = (trip && trip.vendorName) || prevData.vendorName || '';
+      let matchedFromLoc = (trip && trip.fromLocation) || prevData.fromLocation || '';
+      let matchedLastLoc = (trip && trip.lastLocation) || prevData.lastLocation || '';
 
       if (matchedVehicleType) {
         vehicleToTypeMap[cleanNo] = matchedVehicleType;
@@ -1300,8 +1357,7 @@
         fromLocation: matchedFromLoc,
         lastLocation: matchedLastLoc,
         currentKm: bestKm,
-        lastKmDayTs: bestDayTs,
-        lastAmount: bestAmount || (vehicleAutofillMap[cleanNo]?.lastAmount || '')
+        lastAmount: bestAmount
       };
 
       // Save to persistent storage for instant 0ms future lookups
@@ -1327,10 +1383,11 @@
       }
 
       // If calculator modal is open with this vehicle, refresh it
-      if (typeof onCalcVehicleInput === 'function') {
+      const calcOverlay = document.getElementById('calculator-overlay');
+      if (calcOverlay && !calcOverlay.classList.contains('hidden')) {
         const calcVehInput = document.getElementById('calc-vehicle-no');
         if (calcVehInput && cleanVehicleNo(calcVehInput.value) === cleanNo) {
-          onCalcVehicleInput();
+          if (typeof onCalcVehicleInput === 'function') onCalcVehicleInput();
         }
       }
     }
@@ -1338,17 +1395,29 @@
     // Fetches live from Firebase Realtime Database with active loading bar until complete
     function fetchVehicleDataRealtime(cleanNo) {
       if (!cleanNo || cleanNo.length < 7) return;
+      cleanNo = cleanVehicleNo(cleanNo);
 
       // Show animated loading bar overlay until summary arrives
       showVehicleLoadingOverlay(cleanNo);
 
-      // Pre-apply cached values if already available so user has immediate feedback
+      // Pre-apply authoritative latest trip if already available so user has immediate feedback
+      const trip = typeof getVehicleLatestTrip === 'function' ? getVehicleLatestTrip(cleanNo) : null;
+      if (trip && trip.km > 0) {
+        if (!vehicleAutofillMap[cleanNo]) vehicleAutofillMap[cleanNo] = {};
+        vehicleAutofillMap[cleanNo].currentKm = trip.km;
+        if (trip.amt > 0) vehicleAutofillMap[cleanNo].lastAmount = trip.amt;
+        if (trip.vehicleType) vehicleAutofillMap[cleanNo].vehicleType = trip.vehicleType;
+        if (trip.vendorName) vehicleAutofillMap[cleanNo].vendorName = trip.vendorName;
+        if (trip.fromLocation) vehicleAutofillMap[cleanNo].fromLocation = trip.fromLocation;
+        if (trip.lastLocation) vehicleAutofillMap[cleanNo].lastLocation = trip.lastLocation;
+      }
+
       const cached = vehicleAutofillMap[cleanNo];
       if (cached && (cached.vehicleType || cached.vendorName || cached.currentKm)) {
         applyVehicleAutofillFields(cleanNo);
         const startKmInput = document.getElementById('req-start-km');
-        if (startKmInput && cached.currentKm) {
-          startKmInput.value = cached.currentKm;
+        if (startKmInput && (trip?.km || cached.currentKm)) {
+          startKmInput.value = trip?.km || cached.currentKm;
         }
         if (typeof updateMonthlyDueDisplay === 'function') updateMonthlyDueDisplay();
         if (typeof calculateVoucherDueAmount === 'function') calculateVoucherDueAmount();
@@ -1357,26 +1426,32 @@
       isFetchingLiveVehicle = true;
       const token = ++vehicleFetchToken;
 
-      // Rocket speed on 2G/4G: fetch pre-calculated vehicle summary (~1.2KB total payload)
-      // Downloads in ~50ms to 80ms even on slow 2G connections!
       db.ref('vehicle_summaries/' + cleanNo).once('value')
         .then(snap => {
           if (token !== vehicleFetchToken) return;
           const summaryData = snap.val();
           if (summaryData) {
-            if (Array.isArray(summaryData.currentMonthEntries) && summaryData.currentMonthEntries.length > 0) {
-              summaryData.currentMonthEntries.forEach(e => { if (e && !e.vehicleNo) e.vehicleNo = cleanNo; });
-              window.allLoadedEntries = summaryData.currentMonthEntries;
+            // Only use summaryData entries if we have no entries at all
+            if (!Array.isArray(window.allLoadedEntries) || window.allLoadedEntries.length === 0) {
+              if (Array.isArray(summaryData.currentMonthEntries) && summaryData.currentMonthEntries.length > 0) {
+                summaryData.currentMonthEntries.forEach(e => { if (e && !e.vehicleNo) e.vehicleNo = cleanNo; });
+                window.allLoadedEntries = summaryData.currentMonthEntries;
+              }
             }
             if (summaryData.vehicleType) vehicleToTypeMap[cleanNo] = summaryData.vehicleType;
-            const lastTripAmt = summaryData.lastAmount !== undefined ? summaryData.lastAmount : (summaryData.lastDieselAmount !== undefined ? summaryData.lastDieselAmount : (vehicleAutofillMap[cleanNo]?.lastAmount || 0));
+
+            // Re-check getVehicleLatestTrip to ensure fresh ledger/request entries take precedence over stale summaryData!
+            const freshTrip = typeof getVehicleLatestTrip === 'function' ? getVehicleLatestTrip(cleanNo) : null;
+            const finalKm = (freshTrip && freshTrip.km > 0) ? freshTrip.km : (summaryData.currentKm || vehicleAutofillMap[cleanNo]?.currentKm || '');
+            const finalAmt = (freshTrip && freshTrip.amt > 0) ? freshTrip.amt : (summaryData.lastAmount !== undefined ? summaryData.lastAmount : (summaryData.lastDieselAmount !== undefined ? summaryData.lastDieselAmount : (vehicleAutofillMap[cleanNo]?.lastAmount || 0)));
+
             vehicleAutofillMap[cleanNo] = Object.assign({}, vehicleAutofillMap[cleanNo] || {}, {
-              vehicleType: summaryData.vehicleType || (vehicleAutofillMap[cleanNo]?.vehicleType || ''),
-              vendorName: summaryData.vendorName || (vehicleAutofillMap[cleanNo]?.vendorName || ''),
-              currentKm: summaryData.currentKm || (vehicleAutofillMap[cleanNo]?.currentKm || ''),
+              vehicleType: (freshTrip && freshTrip.vehicleType) || summaryData.vehicleType || (vehicleAutofillMap[cleanNo]?.vehicleType || ''),
+              vendorName: (freshTrip && freshTrip.vendorName) || summaryData.vendorName || (vehicleAutofillMap[cleanNo]?.vendorName || ''),
+              currentKm: finalKm,
               firstKm: summaryData.firstKm,
               totalDieselAmount: summaryData.totalDieselAmount,
-              lastAmount: lastTripAmt
+              lastAmount: finalAmt
             });
             try {
               localStorage.setItem('rpm_veh_cache_v2', JSON.stringify(vehicleAutofillMap));
@@ -1395,14 +1470,14 @@
             }
           }
 
-          // Rocket speed: Hide overlay immediately as soon as summary arrives (~50ms)
+          // Hide overlay immediately
           hideVehicleLoadingOverlay();
 
           // Quiet background sync for any live entries recorded within the last minutes
-          db.ref('entries').orderByKey().limitToLast(10).once('value').then(entSnap => {
+          db.ref('entries').orderByKey().limitToLast(60).once('value').then(entSnap => {
             if (token !== vehicleFetchToken) return;
             const entriesData = entSnap.val() || {};
-            applyRealtimeVehicleEntries(cleanNo, entriesData, {}, summaryData);
+            applyRealtimeVehicleEntries(cleanNo, entriesData, driverRequestsCache || {}, summaryData);
           }).catch(() => {});
         })
         .catch(err => {
@@ -1468,13 +1543,18 @@
         }
       }
 
-      // Prefill Start KM if available
+      // Prefill Start KM from true latest trip
+      const trip = typeof getVehicleLatestTrip === 'function' ? getVehicleLatestTrip(cleanVal) : null;
+      const latestKm = (trip && trip.km > 0) ? trip.km : (match.currentKm || '');
       const startKmInput = document.getElementById('req-start-km');
-      if (startKmInput && match.currentKm) {
-        startKmInput.value = match.currentKm;
+      if (startKmInput && latestKm) {
+        startKmInput.value = latestKm;
       }
-
-
+      if (trip && trip.amt > 0) {
+        if (!vehicleAutofillMap[cleanVal]) vehicleAutofillMap[cleanVal] = {};
+        vehicleAutofillMap[cleanVal].lastAmount = trip.amt;
+        if (latestKm) vehicleAutofillMap[cleanVal].currentKm = latestKm;
+      }
 
       if (typeof updateMonthlyDueDisplay === 'function') updateMonthlyDueDisplay();
       if (typeof calculateVoucherDueAmount === 'function') calculateVoucherDueAmount();
