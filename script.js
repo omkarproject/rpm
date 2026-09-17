@@ -4416,8 +4416,8 @@ Response #${resp}
       if (!r || r.status !== 'pending') return false;
       const rVeh = String(r.vehicleNo || '').trim().toUpperCase().replace(/[^A-Z0-9]/gi, '');
       if (!rVeh || rVeh !== cleanV) return false;
-      if (cleanK && String(r.currentKm || '').replace(/[^0-9]/g, '') === cleanK) return true;
-      if (dispDate && r.date && String(r.date).trim() === String(dispDate).trim()) return true;
+      const rKm = String(r.currentKm || '').replace(/[^0-9]/g, '');
+      if (cleanK && rKm) return cleanK === rKm;
       return false;
     });
 
@@ -4989,8 +4989,8 @@ function processData(text, attachedPhotos = null) {
       if (!r) return false;
       const rVeh = String(r.vehicleNo || '').trim().toUpperCase().replace(/[^A-Z0-9]/gi, '');
       if (!rVeh || rVeh !== cleanV) return false;
-      if (cleanK && String(r.currentKm || '').replace(/[^0-9]/g, '') === cleanK) return true;
-      if (e.date && r.date && String(r.date).trim() === String(e.date).trim()) return true;
+      const rKm = String(r.currentKm || '').replace(/[^0-9]/g, '');
+      if (cleanK && rKm) return cleanK === rKm;
       return false;
     });
 
@@ -10566,6 +10566,238 @@ function runCalculation() {
   showAlert('success', 'Calculation Done!', `${vehicle} — Total ${totalKm.toLocaleString('en-IN')} KM, Excluded ${matchedEntries.length - calcEntries.length} non-diesel items.`);
 }
 
+// Recalculate Diesel Calculator DOM cards, totals, and table rows dynamically
+function recalculateCalculatorDom() {
+  const sorted = window.currentCalcSortedEntries;
+  if (!sorted || sorted.length === 0) {
+    if (typeof runCalculation === 'function') runCalculation();
+    return;
+  }
+
+  // Active mileage & diesel rate
+  const mileageInput = document.getElementById('calc-mileage');
+  let mileage = parseFloat(mileageInput ? mileageInput.value : '') || 4.0;
+  if (mileage <= 0) mileage = 4.0;
+
+  const activeRate = (typeof dieselRate !== 'undefined' && dieselRate > 0) ? dieselRate : 98.00;
+
+  // Current KM
+  let currentKm = 0;
+  const currKmInput = document.getElementById('calc-current-km');
+  const currKmDisp = document.getElementById('calc-current-km-disp');
+  if (currKmInput && currKmInput.value) {
+    currentKm = parseFloat(currKmInput.value.replace(/[^0-9.\-]/g, '')) || 0;
+  }
+  if (!currentKm && currKmDisp && currKmDisp.textContent) {
+    currentKm = parseFloat(currKmDisp.textContent.replace(/[^0-9.\-]/g, '')) || 0;
+  }
+  if (!currentKm) {
+    const kmList = sorted.map(e => parseFloat(String(e.currentKm || e.km || 0).replace(/[^0-9.\-]/g, '')) || 0);
+    currentKm = Math.max(...kmList, 0);
+  }
+
+  // Filter diesel entries vs excluded
+  const calcEntries = sorted.filter(e => !isEntryExcluded(e));
+
+  // Determine First KM: lowest KM on vehicle's earliest entry date among diesel entries
+  let firstKm = 0;
+  const pool = calcEntries.length > 0 ? calcEntries : sorted;
+  if (pool.length > 0) {
+    const firstDateObj = parseDateStr(pool[0].date);
+    const firstDateTime = firstDateObj ? firstDateObj.getTime() : 0;
+    const firstDayEntries = pool.filter(e => {
+      const d = parseDateStr(e.date);
+      return d && d.getTime() === firstDateTime;
+    });
+    const firstDayKmPool = firstDayEntries
+      .map(e => parseFloat(String(e.currentKm || e.km || 0).replace(/[^0-9.\-]/g, '')) || 0)
+      .filter(km => km > 1);
+    if (firstDayKmPool.length > 0) {
+      firstKm = Math.min(...firstDayKmPool);
+    } else {
+      const allKmPool = pool
+        .map(e => parseFloat(String(e.currentKm || e.km || 0).replace(/[^0-9.\-]/g, '')) || 0)
+        .filter(km => km > 1);
+      firstKm = allKmPool.length > 0 ? Math.min(...allKmPool) : 0;
+    }
+  }
+
+  // Calculations
+  const totalKm = (currentKm > firstKm) ? (currentKm - firstKm) : 0;
+  let totalDiesel = 0;
+  calcEntries.forEach(e => {
+    const amt = parseFloat(String(e.dieselAmount || e.amount || 0).replace(/[^0-9.\-]/g, '')) || 0;
+    totalDiesel += amt;
+  });
+
+  const actualFilledLitres = activeRate > 0 ? (totalDiesel / activeRate) : 0;
+  const expectedConsumed = (mileage > 0 && totalKm > 0) ? (totalKm / mileage) : 0;
+  const extraDieselLeft = actualFilledLitres - expectedConsumed;
+  const dueAmountVal = extraDieselLeft * activeRate;
+
+  // Render values to DOM cards
+  const firstKmDisp = document.getElementById('calc-first-km-disp');
+  if (firstKmDisp) firstKmDisp.textContent = firstKm.toLocaleString('en-IN');
+
+  const currentKmDisp = document.getElementById('calc-current-km-disp');
+  if (currentKmDisp) currentKmDisp.textContent = currentKm.toLocaleString('en-IN');
+
+  const totalLitresDisp = document.getElementById('calc-total-litres-disp');
+  if (totalLitresDisp) totalLitresDisp.textContent = actualFilledLitres.toFixed(2);
+
+  const mileageDisp = document.getElementById('calc-mileage-disp');
+  if (mileageDisp) mileageDisp.textContent = mileage;
+
+  const cardTotalKm = document.getElementById('card-total-km');
+  const valTotalKm = document.getElementById('calc-total-km');
+  if (valTotalKm) valTotalKm.textContent = totalKm.toLocaleString('en-IN');
+  if (cardTotalKm) cardTotalKm.className = 'result-card flag-neutral count-animate';
+
+  const totalDieselEl = document.getElementById('calc-total-diesel');
+  if (totalDieselEl) totalDieselEl.textContent = '₹' + Math.round(totalDiesel).toLocaleString('en-IN');
+
+  const consumedEl = document.getElementById('calc-diesel-consumed');
+  if (consumedEl) consumedEl.textContent = expectedConsumed.toFixed(2) + ' L';
+
+  const cardExtraDiesel = document.getElementById('card-extra-diesel');
+  const valExtraDiesel = document.getElementById('calc-extra-diesel');
+  const lblExtraDiesel = document.getElementById('calc-extra-diesel-label');
+
+  if (cardExtraDiesel) cardExtraDiesel.className = 'result-card flag-neutral count-animate';
+  if (valExtraDiesel) {
+    if (extraDieselLeft >= 0) {
+      valExtraDiesel.textContent = '+' + extraDieselLeft.toFixed(2) + ' L';
+      if (lblExtraDiesel) lblExtraDiesel.textContent = 'Surplus (tank safe)';
+      valExtraDiesel.className = 'result-value text-blue-600 dark:text-blue-400 hd-text-glow';
+    } else {
+      valExtraDiesel.textContent = extraDieselLeft.toFixed(2) + ' L';
+      if (lblExtraDiesel) lblExtraDiesel.textContent = 'Shortage / Deficit';
+      valExtraDiesel.className = 'result-value text-red-600 dark:text-red-400 hd-text-glow-error';
+    }
+  }
+
+  const cardDueAmount = document.getElementById('card-due-amount');
+  const valDueAmount = document.getElementById('calc-due-amount');
+  const lblDueAmount = document.getElementById('calc-due-amount-label');
+
+  if (valDueAmount) {
+    if (dueAmountVal >= 0) {
+      valDueAmount.textContent = '₹' + Math.round(dueAmountVal).toLocaleString('en-IN');
+      valDueAmount.className = 'result-value text-green-600 dark:text-green-400 hd-text-glow-success';
+      if (cardDueAmount) cardDueAmount.className = 'result-card flag-green count-animate';
+      if (lblDueAmount) lblDueAmount.textContent = 'Saved Fuel Value';
+    } else {
+      valDueAmount.textContent = '₹' + Math.round(dueAmountVal).toLocaleString('en-IN');
+      valDueAmount.className = 'result-value text-red-600 dark:text-red-400 hd-text-glow-error';
+      if (cardDueAmount) cardDueAmount.className = 'result-card flag-red count-animate';
+      if (lblDueAmount) lblDueAmount.textContent = 'Extra Due / Deficit Cost';
+    }
+  }
+
+  // Calculate per-trip leftovers
+  const leftovers = new Array(sorted.length).fill(null);
+  sorted.forEach((e, i) => {
+    const isExcluded = isEntryExcluded(e);
+    if (isExcluded) return;
+
+    const currKm = parseFloat(String(e.currentKm || e.km || 0).replace(/[^0-9.\-]/g, '')) || 0;
+    let nextKm;
+    let shouldCalculate = true;
+
+    if (i < sorted.length - 1) {
+      let nextDiesel = null;
+      for (let j = i + 1; j < sorted.length; j++) {
+        if (!isEntryExcluded(sorted[j])) {
+          nextDiesel = sorted[j];
+          break;
+        }
+      }
+      if (nextDiesel) {
+        nextKm = parseFloat(String(nextDiesel.currentKm || nextDiesel.km || 0).replace(/[^0-9.\-]/g, '')) || 0;
+      } else {
+        nextKm = currentKm;
+        if (nextKm === currKm) shouldCalculate = false;
+      }
+    } else {
+      nextKm = currentKm;
+      if (nextKm === currKm) shouldCalculate = false;
+    }
+
+    if (shouldCalculate) {
+      const distance = nextKm - currKm;
+      const consumedLitres = distance > 0 ? (distance / mileage) : 0;
+      const filledAmount = parseFloat(String(e.dieselAmount || e.amount || 0).replace(/[^0-9.\-]/g, '')) || 0;
+      const filledLitres = activeRate > 0 ? (filledAmount / activeRate) : 0;
+      leftovers[i] = filledLitres - consumedLitres;
+    }
+  });
+
+  // Re-render table rows in #calc-entries-body
+  const tbody = document.getElementById('calc-entries-body');
+  if (tbody) {
+    tbody.innerHTML = '';
+    const fragment = document.createDocumentFragment();
+
+    sorted.forEach((e, idx) => {
+      const tr = document.createElement('tr');
+      tr.dataset.note = e.note || '';
+
+      const isExcluded = isEntryExcluded(e);
+      if (isExcluded) {
+        tr.className = 'bg-red-50/40 dark:bg-red-950/10 hover:bg-red-100/30 dark:hover:bg-red-900/20 transition-all';
+      } else {
+        tr.className = 'hover:bg-gray-50 dark:hover:bg-gray-800 transition-all';
+      }
+
+      const dieselVal = parseFloat(String(e.dieselAmount || e.amount || 0).replace(/[^0-9.\-]/g, '')) || 0;
+      const statusBadge = isExcluded
+        ? `<span class="px-2 py-0.5 text-[10px] font-bold bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded border border-red-200 dark:border-red-800 whitespace-nowrap"><i class="fas fa-exclamation-triangle mr-1"></i> EXCLUDED</span>`
+        : `<span class="px-2 py-0.5 text-[10px] font-bold bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 rounded border border-green-200 dark:border-green-800 whitespace-nowrap"><i class="fas fa-gas-pump mr-1"></i> DIESEL</span>`;
+
+      const leftoverVal = leftovers[idx];
+      let leftoverHtml = '';
+      if (leftoverVal !== null && leftoverVal !== undefined) {
+        const cost = leftoverVal * activeRate;
+        const formattedL = (leftoverVal >= 0 ? '+' : '') + leftoverVal.toFixed(2) + ' L';
+        const formattedCost = (cost >= 0 ? '+' : '') + '₹' + cost.toLocaleString('en-IN', {maximumFractionDigits: 0});
+        const colorClass = leftoverVal >= 0 ? 'text-green-600 dark:text-green-400 font-bold' : 'text-red-600 dark:text-red-400 font-bold';
+        leftoverHtml = `<span class="${colorClass}">${formattedL} / ${formattedCost}</span>`;
+      } else {
+        leftoverHtml = `<span class="text-gray-400 dark:text-gray-600">-</span>`;
+      }
+
+      tr.innerHTML = `
+        <td class="px-3 py-2 font-medium whitespace-nowrap text-center">
+          <label class="inline-flex items-center justify-center gap-1.5 cursor-pointer select-none">
+            <input type="checkbox" class="calc-exclude-cb rounded border-slate-300 dark:border-slate-600 text-rose-600 focus:ring-rose-500 w-3.5 h-3.5 cursor-pointer" data-idx="${idx}" ${isExcluded ? 'checked' : ''} onchange="toggleCalcRowExclude(${idx}, this.checked)" title="Click to toggle Exclude">
+            <span>${idx + 1}</span>
+          </label>
+        </td>
+        <td class="px-3 py-2 text-sm whitespace-nowrap">${e.date || '-'}</td>
+        <td class="px-3 py-2 text-sm whitespace-nowrap font-bold text-slate-800 dark:text-slate-200">${e.vehicleNo}</td>
+        <td class="px-3 py-2 text-sm whitespace-nowrap max-w-[140px] truncate" title="${e.fromLocation || ''}">${e.fromLocation || ''}</td>
+        <td class="px-3 py-2 text-sm whitespace-nowrap max-w-[140px] truncate" title="${e.lastLocation || ''}">${e.lastLocation || ''}</td>
+        <td class="px-3 py-2 text-sm whitespace-nowrap"><div class="inline-flex items-center gap-1.5 whitespace-nowrap">${e.currentKm || e.km || 0} ${statusBadge}</div></td>
+        <td class="px-3 py-2 text-right font-semibold text-sm whitespace-nowrap ${isExcluded ? 'text-gray-400 line-through dark:text-gray-500' : ''}">₹${dieselVal.toLocaleString('en-IN')}</td>
+        <td class="px-3 py-2 text-right text-sm whitespace-nowrap">${leftoverHtml}</td>
+      `;
+      fragment.appendChild(tr);
+    });
+
+    tbody.appendChild(fragment);
+  }
+
+  // If due card context is active, update it too
+  if (window.currentDueCardContext && window.currentDueCardContext.data) {
+    const d = window.currentDueCardContext.data;
+    d.firstKm = firstKm;
+    d.totalKm = totalKm;
+    d.totalDieselAmount = totalDiesel;
+    d.expectedAmount = expectedConsumed * activeRate;
+    d.dueAmountVal = dueAmountVal;
+  }
+}
+
 // Toggle exclusion from Diesel Calculator rows
 function toggleCalcRowExclude(idx, isChecked) {
   const sorted = window.currentCalcSortedEntries;
@@ -10579,11 +10811,11 @@ function toggleCalcRowExclude(idx, isChecked) {
     window.manuallyExcludedEntries[key] = isChecked;
   }
 
-  if (typeof calculateDiesel === 'function') {
-    calculateDiesel();
-  }
+  recalculateCalculatorDom();
 }
 window.toggleCalcRowExclude = toggleCalcRowExclude;
+window.recalculateCalculatorDom = recalculateCalculatorDom;
+window.calculateDiesel = recalculateCalculatorDom;
 
 // Check if a string contains either UREA or URIYA (case-insensitive)
 function containsUreaOrUriya(str) {
@@ -19972,9 +20204,8 @@ function handleReceiptModalMultiUpload(event) {
             if (!r) return false;
             if (String(r.linkedResponseNumber || '') === String(currentReceiptRecordId)) return true;
             const rVeh = String(r.vehicleNo || '').trim().toUpperCase().replace(/[^A-Z0-9]/gi, '');
-            if (cleanV && rVeh === cleanV) {
-              if (cleanK && String(r.currentKm || '').replace(/[^0-9]/g, '') === cleanK) return true;
-              if (entry && entry.date && r.date && String(r.date).trim() === String(entry.date).trim()) return true;
+            if (cleanV && rVeh === cleanV && cleanK) {
+              if (String(r.currentKm || '').replace(/[^0-9]/g, '') === cleanK) return true;
             }
             return false;
           });
@@ -20017,9 +20248,8 @@ function handleReceiptModalMultiUpload(event) {
               const matchingEntry = historyEntries.find(e => {
                 if (!e) return false;
                 const eVeh = String(e.vehicleNo || '').trim().toUpperCase().replace(/[^A-Z0-9]/gi, '');
-                if (cleanV && eVeh === cleanV) {
-                  if (cleanK && String(e.currentKm || '').replace(/[^0-9]/g, '') === cleanK) return true;
-                  if (reqItem.date && e.date && String(e.date).trim() === String(reqItem.date).trim()) return true;
+                if (cleanV && eVeh === cleanV && cleanK) {
+                  if (String(e.currentKm || '').replace(/[^0-9]/g, '') === cleanK) return true;
                 }
                 return false;
               });
@@ -20115,9 +20345,8 @@ function removeReceiptModalPhoto(idx) {
         if (!r) return false;
         if (String(r.linkedResponseNumber || '') === String(currentReceiptRecordId)) return true;
         const rVeh = String(r.vehicleNo || '').trim().toUpperCase().replace(/[^A-Z0-9]/gi, '');
-        if (cleanV && rVeh === cleanV) {
-          if (cleanK && String(r.currentKm || '').replace(/[^0-9]/g, '') === cleanK) return true;
-          if (entry && entry.date && r.date && String(r.date).trim() === String(entry.date).trim()) return true;
+        if (cleanV && rVeh === cleanV && cleanK) {
+          if (String(r.currentKm || '').replace(/[^0-9]/g, '') === cleanK) return true;
         }
         return false;
       });
@@ -20158,9 +20387,8 @@ function removeReceiptModalPhoto(idx) {
           const matchingEntry = historyEntries.find(e => {
             if (!e) return false;
             const eVeh = String(e.vehicleNo || '').trim().toUpperCase().replace(/[^A-Z0-9]/gi, '');
-            if (cleanV && eVeh === cleanV) {
-              if (cleanK && String(e.currentKm || '').replace(/[^0-9]/g, '') === cleanK) return true;
-              if (reqItem.date && e.date && String(e.date).trim() === String(reqItem.date).trim()) return true;
+            if (cleanV && eVeh === cleanV && cleanK) {
+              if (String(e.currentKm || '').replace(/[^0-9]/g, '') === cleanK) return true;
             }
             return false;
           });
@@ -20357,17 +20585,19 @@ function viewReceiptPhotoOnDemand(type, recordId, vehicleNo, optKmVal = '', extr
         return;
       }
 
-      // Robust fallback: Check driverRequests & driverRequestPhotos
+      // Fallback: Check driverRequests & driverRequestPhotos ONLY if directly linked or exact KM match
       const reqList = (typeof driverRequestsList !== 'undefined' && Array.isArray(driverRequestsList)) ? driverRequestsList : [];
       let matchingReq = reqList.find(r => r && String(r.linkedResponseNumber || '') === String(recordId));
       if (!matchingReq && targetVehClean) {
-        matchingReq = reqList.find(r => {
-          if (!r) return false;
-          if (cleanVeh(r.vehicleNo) !== targetVehClean) return false;
-          if (isKm && targetKmClean && cleanKm(r.currentKm) === targetKmClean) return true;
-          if (entryData.date && r.date && String(r.date).trim() === String(entryData.date).trim()) return true;
-          return false;
-        });
+        const entryKm = cleanKm(entryData.currentKm || optKmVal);
+        if (entryKm) {
+          matchingReq = reqList.find(r => {
+            if (!r) return false;
+            if (cleanVeh(r.vehicleNo) !== targetVehClean) return false;
+            if (cleanKm(r.currentKm) === entryKm) return true;
+            return false;
+          });
+        }
       }
 
       const applyReqPhotos = (reqData) => {
@@ -20468,18 +20698,20 @@ function viewReceiptPhotoOnDemand(type, recordId, vehicleNo, optKmVal = '', extr
         return;
       }
 
-      // Robust fallback: Check linked ledger entry & entryPhotos
+      // Fallback: Check linked ledger entry & entryPhotos ONLY if directly linked or exact KM match
       let linkedNum = reqData.linkedResponseNumber;
-      if (!linkedNum) {
-        const entries = (typeof historyEntries !== 'undefined' && Array.isArray(historyEntries)) ? historyEntries : [];
-        const matchingEntry = entries.find(e => {
-          if (!e) return false;
-          if (cleanVeh(e.vehicleNo) !== targetVehClean) return false;
-          if (isKm && targetKmClean && cleanKm(e.currentKm) === targetKmClean) return true;
-          if (reqData.date && e.date && String(e.date).trim() === String(reqData.date).trim()) return true;
-          return false;
-        });
-        if (matchingEntry) linkedNum = matchingEntry.responseNumber;
+      if (!linkedNum && targetVehClean) {
+        const reqKm = cleanKm(reqData.currentKm || optKmVal);
+        if (reqKm) {
+          const entries = (typeof historyEntries !== 'undefined' && Array.isArray(historyEntries)) ? historyEntries : [];
+          const matchingEntry = entries.find(e => {
+            if (!e) return false;
+            if (cleanVeh(e.vehicleNo) !== targetVehClean) return false;
+            if (cleanKm(e.currentKm) === reqKm) return true;
+            return false;
+          });
+          if (matchingEntry) linkedNum = matchingEntry.responseNumber;
+        }
       }
 
       if (linkedNum) {
