@@ -20242,21 +20242,7 @@ function handleReceiptModalMultiUpload(event) {
             if (typeof renderDriverRequestsList === 'function') renderDriverRequestsList();
             if (typeof renderDriverRequestsLogList === 'function') renderDriverRequestsLogList();
 
-            let linkedNum = reqItem.linkedResponseNumber;
-            if (!linkedNum) {
-              const cleanV = String(reqItem.vehicleNo || '').trim().toUpperCase().replace(/[^A-Z0-9]/gi, '');
-              const cleanK = String(reqItem.currentKm || '').replace(/[^0-9]/g, '');
-              const matchingEntry = historyEntries.find(e => {
-                if (!e) return false;
-                const eVeh = String(e.vehicleNo || '').trim().toUpperCase().replace(/[^A-Z0-9]/gi, '');
-                if (cleanV && eVeh === cleanV) {
-                  if (cleanK && String(e.currentKm || '').replace(/[^0-9]/g, '') === cleanK) return true;
-                  if (reqItem.date && e.date && String(e.date).trim() === String(reqItem.date).trim()) return true;
-                }
-                return false;
-              });
-              if (matchingEntry) linkedNum = matchingEntry.responseNumber;
-            }
+            const linkedNum = reqItem.linkedResponseNumber;
 
             if (linkedNum) {
               db.ref('entryPhotos').child(linkedNum).update(photoUpdates);
@@ -20383,21 +20369,7 @@ function removeReceiptModalPhoto(idx) {
         if (typeof renderDriverRequestsList === 'function') renderDriverRequestsList();
         if (typeof renderDriverRequestsLogList === 'function') renderDriverRequestsLogList();
 
-        let linkedNum = reqItem.linkedResponseNumber;
-        if (!linkedNum) {
-          const cleanV = String(reqItem.vehicleNo || '').trim().toUpperCase().replace(/[^A-Z0-9]/gi, '');
-          const cleanK = String(reqItem.currentKm || '').replace(/[^0-9]/g, '');
-          const matchingEntry = historyEntries.find(e => {
-            if (!e) return false;
-            const eVeh = String(e.vehicleNo || '').trim().toUpperCase().replace(/[^A-Z0-9]/gi, '');
-            if (cleanV && eVeh === cleanV) {
-              if (cleanK && String(e.currentKm || '').replace(/[^0-9]/g, '') === cleanK) return true;
-              if (reqItem.date && e.date && String(e.date).trim() === String(reqItem.date).trim()) return true;
-            }
-            return false;
-          });
-          if (matchingEntry) linkedNum = matchingEntry.responseNumber;
-        }
+        const linkedNum = reqItem.linkedResponseNumber;
 
         if (linkedNum) {
           db.ref('entryPhotos').child(linkedNum).update(photoUpdates);
@@ -20700,31 +20672,27 @@ function viewReceiptPhotoOnDemand(type, recordId, vehicleNo, optKmVal = '', extr
         return;
       }
 
-      // Robust fallback: Check linked ledger entry & entryPhotos
-      let linkedNum = reqData.linkedResponseNumber;
-      if (!linkedNum) {
-        const entries = (typeof historyEntries !== 'undefined' && Array.isArray(historyEntries)) ? historyEntries : [];
-        const matchingEntry = entries.find(e => {
-          if (!e) return false;
-          if (cleanVeh(e.vehicleNo) !== targetVehClean) return false;
-          if (isKm && targetKmClean && cleanKm(e.currentKm) === targetKmClean) return true;
-          if (reqData.date && e.date && String(e.date).trim() === String(reqData.date).trim()) return true;
-          return false;
-        });
-        if (matchingEntry) linkedNum = matchingEntry.responseNumber;
+      // When a driver request has no photos of its own:
+      // 1. Odometer KM (request_km): Show ONLY if driver actually uploaded KM image!
+      //    Never borrow KM images from ledger or previous trips.
+      if (type === 'request_km') {
+        if (loader) loader.classList.add('hidden');
+        currentReceiptPhotos = [];
+        currentReceiptPhotoIndex = 0;
+        renderReceiptModalGallery();
+        return;
       }
 
+      // 2. Receipt Details (request_receipt):
+      //    If pending, or not explicitly linked to an approved/filled ledger voucher: NEVER show last trip's receipt!
+      //    Only check ledger if explicitly linked via linkedResponseNumber (filled/approved request).
+      const linkedNum = (reqData.status !== 'pending' && reqData.linkedResponseNumber) ? reqData.linkedResponseNumber : null;
       if (linkedNum) {
         fetchEntryWithPhotos(linkedNum).then(eVal => {
-          let foundPhotos = [];
-          if (type === 'request_receipt') {
-            foundPhotos = extractPhotosFromRecord(eVal, 'receiptPhotos', 'receiptPhoto');
-            const cap = eVal.capturedPhoto || eVal.stationPhoto;
-            if (isValidPhoto(cap) && !foundPhotos.includes(cap)) {
-              foundPhotos.push(cap);
-            }
-          } else {
-            foundPhotos = extractPhotosFromRecord(eVal, 'kmPhotos', 'kmPhoto', 'photo');
+          let foundPhotos = extractPhotosFromRecord(eVal, 'receiptPhotos', 'receiptPhoto');
+          const cap = eVal.capturedPhoto || eVal.stationPhoto;
+          if (isValidPhoto(cap) && !foundPhotos.includes(cap)) {
+            foundPhotos.push(cap);
           }
 
           if (foundPhotos.length > 0) {
@@ -20732,14 +20700,6 @@ function viewReceiptPhotoOnDemand(type, recordId, vehicleNo, optKmVal = '', extr
             currentReceiptPhotos = foundPhotos;
             currentReceiptPhotoIndex = 0;
             renderReceiptModalGallery();
-            // Auto-heal driver request photo node
-            if (type === 'request_receipt') {
-              db.ref('driverRequestPhotos').child(recordId).update({ receiptPhotos: foundPhotos, receiptPhoto: foundPhotos[0] });
-              driverRequestsRef.child(recordId).update({ hasReceiptPhoto: true });
-            } else {
-              db.ref('driverRequestPhotos').child(recordId).update({ kmPhotos: foundPhotos, kmPhoto: foundPhotos[0] });
-              driverRequestsRef.child(recordId).update({ hasKmPhoto: true });
-            }
             return;
           }
           if (loader) loader.classList.add('hidden');
