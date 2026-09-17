@@ -15582,6 +15582,15 @@ function calculateVehicleMonthlyDue(vehicleNo, currentKm, vehicleType, returnFul
     return (parseInt(a.responseNumber || a.key || 0) || 0) - (parseInt(b.responseNumber || b.key || 0) || 0);
   });
 
+  // Find 1st KM and Max KM in current month
+  const kmPool = [];
+  workingEntries.forEach(e => {
+    const start = parseFloat(String(e.startKm || e.start_km || e.previousKm || e.startReading || 0).replace(/[^0-9.\-]/g, '')) || 0;
+    const curr = parseFloat(String(e.currentKm || e.km || e.endKm || 0).replace(/[^0-9.\-]/g, '')) || 0;
+    if (start > 1) kmPool.push(start);
+    if (curr > 1) kmPool.push(curr);
+  });
+
   // Find 1st KM: lowest KM on the vehicle's earliest date in current month
   // "jo sabse kam km hai ohi 1st km hai agr koi vehicle 1 day me 2 ya jyda trip marti hai to uska kam km 1st thoda jyda 2nd essa rahega"
   let firstKm = 0;
@@ -15601,15 +15610,8 @@ function calculateVehicleMonthlyDue(vehicleNo, currentKm, vehicleType, returnFul
     });
     if (firstDayKmPool.length > 0) {
       firstKm = Math.min(...firstDayKmPool);
-    } else {
-      const allKmPool = [];
-      sortedEntries.forEach(e => {
-        const start = parseFloat(String(e.startKm || e.start_km || e.previousKm || e.startReading || 0).replace(/[^0-9.\-]/g, '')) || 0;
-        const curr = parseFloat(String(e.currentKm || e.km || e.endKm || 0).replace(/[^0-9.\-]/g, '')) || 0;
-        if (start > 1) allKmPool.push(start);
-        if (curr > 1) allKmPool.push(curr);
-      });
-      if (allKmPool.length > 0) firstKm = Math.min(...allKmPool);
+    } else if (kmPool.length > 0) {
+      firstKm = Math.min(...kmPool);
     }
   }
 
@@ -15658,7 +15660,7 @@ function calculateVehicleMonthlyDue(vehicleNo, currentKm, vehicleType, returnFul
 
   let currKm = parseFloat(String(currentKm || 0).replace(/[^0-9.\-]/g, '')) || 0;
   if (!currKm || currKm <= 0) {
-    currKm = kmPool.length > 0 ? Math.max(...kmPool) : 0;
+    currKm = (Array.isArray(kmPool) && kmPool.length > 0) ? Math.max(...kmPool) : 0;
   }
 
   const activeRate = (typeof dieselRate !== 'undefined' && dieselRate > 0) ? dieselRate : 98.00;
