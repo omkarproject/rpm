@@ -16496,12 +16496,17 @@ function getVehicleLastTripInfo(vehicleNo, currentReq) {
       const eVeh = String(e.vehicleNo || e.vehicle_no || e.vehicle || '').trim().toUpperCase().replace(/[^A-Z0-9]/gi, '');
       if (eVeh !== cleanVeh) return;
       const km = parseFloat(String(e.currentKm || e.km || e.endKm || 0).replace(/[^0-9.\-]/g, '')) || 0;
-      if (km <= 0) return;
-      if (reqKm !== Infinity && reqKm > 0 && km >= reqKm) return;
+      if (km <= 10) return;
+      if (reqKm !== Infinity && reqKm > 10 && km >= reqKm) return;
 
       const dateTs = parseSafeDate(e.date);
+      let timeMs = 0;
+      if (e.time) {
+        const [h, m] = String(e.time).split(':').map(Number);
+        if (!isNaN(h) && !isNaN(m)) timeMs = (h * 60 + m) * 60 * 1000;
+      }
       const respNum = parseInt(e.responseNumber) || 0;
-      const sortScore = dateTs + respNum;
+      const sortScore = dateTs + timeMs + (respNum ? respNum : 0);
 
       candidates.push({
         source: 'ledger',
@@ -16524,10 +16529,19 @@ function getVehicleLastTripInfo(vehicleNo, currentReq) {
       const drVeh = String(dr.vehicleNo || '').trim().toUpperCase().replace(/[^A-Z0-9]/gi, '');
       if (drVeh !== cleanVeh) return;
       const km = parseFloat(String(dr.currentKm || 0).replace(/[^0-9.\-]/g, '')) || 0;
-      if (km <= 0) return;
-      if (reqKm !== Infinity && reqKm > 0 && km >= reqKm) return;
+      if (km <= 10) return;
+      if (reqKm !== Infinity && reqKm > 10 && km >= reqKm) return;
 
-      const subTs = typeof dr.submittedAt === 'number' ? dr.submittedAt : (dr.submittedAt ? new Date(dr.submittedAt).getTime() : parseSafeDate(dr.date));
+      let subTs = typeof dr.submittedAt === 'number' ? dr.submittedAt : (dr.submittedAt ? new Date(dr.submittedAt).getTime() : 0);
+      if (!subTs || subTs <= 0) {
+        const d = parseSafeDate(dr.date);
+        let tMs = 0;
+        if (dr.time) {
+          const [h, m] = String(dr.time).split(':').map(Number);
+          if (!isNaN(h) && !isNaN(m)) tMs = (h * 60 + m) * 60 * 1000;
+        }
+        subTs = d + tMs;
+      }
 
       candidates.push({
         source: 'request',
@@ -16542,7 +16556,7 @@ function getVehicleLastTripInfo(vehicleNo, currentReq) {
   }
 
   if (candidates.length === 0) {
-    if (reqStartKm > 0) {
+    if (reqStartKm > 10) {
       return {
         km: reqStartKm,
         kmFormatted: Math.round(reqStartKm).toLocaleString('en-IN'),
@@ -16556,29 +16570,16 @@ function getVehicleLastTripInfo(vehicleNo, currentReq) {
     return null;
   }
 
-  // Prioritize candidate matching reqStartKm if provided
-  if (reqStartKm > 0) {
-    const matchingCandidates = candidates.filter(c => Math.abs(c.km - reqStartKm) < 0.5);
-    if (matchingCandidates.length > 0) {
-      matchingCandidates.sort((a, b) => {
-        if (b.hasKmPhoto !== a.hasKmPhoto) return b.hasKmPhoto ? 1 : -1;
-        if (a.source !== b.source) return a.source === 'request' ? -1 : 1;
-        return b.sortScore - a.sortScore;
-      });
-      const exactMatch = matchingCandidates[0];
-      return {
-        ...exactMatch,
-        kmFormatted: Math.round(exactMatch.km).toLocaleString('en-IN')
-      };
-    }
-  }
-
-  // Sort descending by KM first, then prioritize records that have actual KM photo & request source
+  // Sort descending by recency score (latest trip first), then by KM descending
   candidates.sort((a, b) => {
+    const timeDiff = b.sortScore - a.sortScore;
+    if (Math.abs(timeDiff) > 60000) {
+      return timeDiff;
+    }
     if (b.km !== a.km) return b.km - a.km;
     if (b.hasKmPhoto !== a.hasKmPhoto) return b.hasKmPhoto ? 1 : -1;
     if (a.source !== b.source) return a.source === 'request' ? -1 : 1;
-    return b.sortScore - a.sortScore;
+    return timeDiff;
   });
 
   const best = candidates[0];
@@ -16599,9 +16600,10 @@ function viewLastTripKmPhoto(source, id, vehicleNo, kmVal) {
     const rVeh = String(r.vehicleNo || '').trim().toUpperCase().replace(/[^A-Z0-9]/gi, '');
     if (rVeh !== cleanV) return false;
     const rKm = String(r.currentKm || '').replace(/[^0-9]/g, '');
+    const isKeyMatch = (source === 'request' && id && r.key === id);
     const isKmMatch = (rKm === cleanK);
     const isLinkMatch = (source === 'ledger' && id && String(r.linkedResponseNumber) === String(id));
-    return (isKmMatch || isLinkMatch) && (r.hasKmPhoto || r.kmPhoto);
+    return (isKeyMatch || isKmMatch || isLinkMatch) && (r.hasKmPhoto || r.kmPhoto);
   });
 
   if (matchingReq) {
