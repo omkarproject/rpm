@@ -16879,11 +16879,16 @@ function renderDriverRequestsList() {
       `;
     } else if (r.status === 'approved') {
       statusActionHtml = `
-        <div class="flex flex-col items-center gap-1.5">
-          <span class="inline-flex px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">Approved (Pending Fill)</span>
-          <button onclick="revertDriverRequestApproval('${r.key}')" class="px-2 py-0.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/30 rounded-md text-[8px] font-black uppercase transition-all shadow-sm flex items-center gap-1" title="Revert to Pending">
-            <i class="fas fa-undo text-[7px]"></i> Revert Approval
+        <div class="flex items-center justify-center gap-2">
+          <button onclick="openFillReceiptCamera('${r.key}')" class="w-8 h-8 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white flex items-center justify-center shadow-md hover:shadow-blue-500/30 text-sm transition-all flex-shrink-0" title="Capture Receipt Details & Mark Successfully Filled">
+            <i class="fas fa-gas-pump"></i>
           </button>
+          <div class="flex flex-col items-center gap-1">
+            <span class="inline-flex px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">Approved (Pending Fill)</span>
+            <button onclick="revertDriverRequestApproval('${r.key}')" class="px-2 py-0.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/30 rounded-md text-[8px] font-black uppercase transition-all shadow-sm flex items-center gap-1" title="Revert to Pending">
+              <i class="fas fa-undo text-[7px]"></i> Revert Approval
+            </button>
+          </div>
         </div>
       `;
     } else if (r.status === 'filled') {
@@ -18354,7 +18359,328 @@ function undoDriverRequestRejection(key) {
 window.undoDriverRequestRejection = undoDriverRequestRejection;
 window.revertDriverRequestApproval = revertDriverRequestApproval;
 
+// =========================================================================
+// Driver Request Receipt Camera & Diesel Fill Flow
+// =========================================================================
+let activeFillReceiptKey = null;
+let fillCameraStream = null;
+let capturedReceiptBase64 = '';
+let isSubmittingFillReceipt = false;
 
+function openFillReceiptCamera(key) {
+  if (!checkAuth()) return;
+  const req = driverRequestsList.find(r => r.key === key);
+  if (!req) return toast.err("Request details not found.");
+
+  activeFillReceiptKey = key;
+  capturedReceiptBase64 = '';
+
+  const modal = document.getElementById('fill-receipt-camera-modal');
+  if (!modal) return;
+
+  // Set Info
+  const vehEl = document.getElementById('fill-camera-veh');
+  const amtEl = document.getElementById('fill-camera-amt');
+  const kmEl = document.getElementById('fill-camera-km');
+  const routeEl = document.getElementById('fill-camera-route');
+
+  if (vehEl) vehEl.textContent = req.vehicleNo || '-';
+  if (amtEl) amtEl.textContent = `₹${parseFloat(req.dieselAmount || 0).toLocaleString('en-IN')}`;
+  if (kmEl) kmEl.textContent = req.currentKm ? `${req.currentKm} KM` : '-';
+  if (routeEl) routeEl.textContent = `${req.fromLocation || '-'} ➔ ${req.lastLocation || '-'}`;
+
+  modal.classList.remove('hidden');
+  startFillReceiptCamera();
+}
+
+function startFillReceiptCamera() {
+  if (fillCameraStream) {
+    fillCameraStream.getTracks().forEach(t => t.stop());
+    fillCameraStream = null;
+  }
+
+  const video = document.getElementById('fill-camera-video');
+  const fallbackMsg = document.getElementById('fill-camera-fallback-msg');
+  const previewBox = document.getElementById('fill-preview-container');
+  const videoBox = document.getElementById('fill-video-container');
+  const previewImg = document.getElementById('fill-camera-preview-img');
+
+  if (previewImg) previewImg.src = '';
+  if (previewBox) previewBox.classList.add('hidden');
+  if (videoBox) videoBox.classList.remove('hidden');
+
+  document.getElementById('fill-btn-capture')?.classList.remove('hidden');
+  document.getElementById('fill-btn-upload-file')?.classList.remove('hidden');
+  document.getElementById('fill-btn-confirm-submit')?.classList.add('hidden');
+  document.getElementById('fill-btn-retake')?.classList.add('hidden');
+  capturedReceiptBase64 = '';
+
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } }
+    })
+    .then(stream => {
+      fillCameraStream = stream;
+      if (video) {
+        video.srcObject = stream;
+        video.classList.remove('hidden');
+      }
+      if (fallbackMsg) fallbackMsg.classList.add('hidden');
+    })
+    .catch(err => {
+      console.warn("Camera stream unavailable:", err);
+      if (video) video.classList.add('hidden');
+      if (fallbackMsg) fallbackMsg.classList.remove('hidden');
+    });
+  } else {
+    if (video) video.classList.add('hidden');
+    if (fallbackMsg) fallbackMsg.classList.remove('hidden');
+  }
+}
+
+function closeFillReceiptCameraModal() {
+  if (fillCameraStream) {
+    fillCameraStream.getTracks().forEach(t => t.stop());
+    fillCameraStream = null;
+  }
+  const modal = document.getElementById('fill-receipt-camera-modal');
+  if (modal) modal.classList.add('hidden');
+  activeFillReceiptKey = null;
+  capturedReceiptBase64 = '';
+  isSubmittingFillReceipt = false;
+}
+
+function triggerFillReceiptFileInput() {
+  document.getElementById('fill-camera-file-input')?.click();
+}
+
+function handleFillReceiptFallbackFile(input) {
+  if (!input.files || !input.files[0]) return;
+  const file = input.files[0];
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      compressAndPreviewFillReceipt(img);
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+  input.value = '';
+}
+
+function captureFillReceiptPhoto() {
+  const video = document.getElementById('fill-camera-video');
+  if (!fillCameraStream || !video) {
+    triggerFillReceiptFileInput();
+    return;
+  }
+
+  const width = video.videoWidth || 640;
+  const height = video.videoHeight || 480;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, width, height);
+
+  const img = new Image();
+  img.onload = function() {
+    compressAndPreviewFillReceipt(img);
+  };
+  img.src = canvas.toDataURL('image/jpeg');
+}
+
+function compressAndPreviewFillReceipt(img) {
+  const canvas = document.getElementById('fill-camera-canvas') || document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+
+  let width = img.naturalWidth || img.width;
+  let height = img.naturalHeight || img.height;
+  const maxDim = 1280;
+  if (width > maxDim || height > maxDim) {
+    if (width > height) {
+      height = Math.round((height * maxDim) / width);
+      width = maxDim;
+    } else {
+      width = Math.round((width * maxDim) / height);
+      height = maxDim;
+    }
+  }
+  canvas.width = width;
+  canvas.height = height;
+  ctx.drawImage(img, 0, 0, width, height);
+
+  capturedReceiptBase64 = canvas.toDataURL('image/jpeg', 0.8);
+
+  if (fillCameraStream) {
+    fillCameraStream.getTracks().forEach(t => t.stop());
+    fillCameraStream = null;
+  }
+
+  const previewBox = document.getElementById('fill-preview-container');
+  const videoBox = document.getElementById('fill-video-container');
+  const previewImg = document.getElementById('fill-camera-preview-img');
+
+  if (previewImg) previewImg.src = capturedReceiptBase64;
+  if (videoBox) videoBox.classList.add('hidden');
+  if (previewBox) previewBox.classList.remove('hidden');
+
+  document.getElementById('fill-btn-capture')?.classList.add('hidden');
+  document.getElementById('fill-btn-upload-file')?.classList.add('hidden');
+  document.getElementById('fill-btn-confirm-submit')?.classList.remove('hidden');
+  document.getElementById('fill-btn-retake')?.classList.remove('hidden');
+}
+
+function submitFillReceiptAction() {
+  if (isSubmittingFillReceipt) return;
+  if (!activeFillReceiptKey) return;
+
+  const req = driverRequestsList.find(r => r.key === activeFillReceiptKey);
+  if (!req) return toast.err("Request details not found.");
+
+  if (!capturedReceiptBase64) {
+    return toast.warn("Kripya receipt photo capture karein ya upload karein.");
+  }
+
+  isSubmittingFillReceipt = true;
+  const submitBtn = document.getElementById('fill-btn-confirm-submit');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+  }
+
+  // Compute next sequential response number accurately from historyEntries & entries
+  const nums = historyEntries.map(x => parseInt(x.responseNumber)).filter(n => !isNaN(n));
+  const maxNum = nums.length > 0 ? Math.max(...nums) : 0;
+  const newRespNum = String(maxNum + 1);
+
+  const rawNote = String(req.note || '').trim().toUpperCase();
+  const cleanReqNote = rawNote === 'DRIVER REQUEST' ? '' : rawNote;
+
+  const e = {
+    responseNumber: newRespNum,
+    date: req.date || '',
+    time: req.time || '',
+    vehicleNo: String(req.vehicleNo || '').toUpperCase(),
+    vehicleType: String(req.vehicleType || '').toUpperCase(),
+    fromLocation: String(req.fromLocation || '').toUpperCase(),
+    lastLocation: String(req.lastLocation || '').toUpperCase(),
+    currentKm: String(req.currentKm || ''),
+    startKm: String(req.startKm || ''),
+    endKm: String(req.endKm || ''),
+    totalKm: String(req.totalKm || ''),
+    dieselAmount: String(req.dieselAmount || ''),
+    vendorName: String(req.vendorName || ''),
+    note: cleanReqNote,
+    litres: '',
+    mileage: '',
+    hasReceiptPhoto: true
+  };
+
+  if (req.location) e.location = req.location;
+
+  const vAvg = vehicleTypes[e.vehicleType.toUpperCase()];
+  if (vAvg) e.mileage = String(vAvg);
+
+  if (e.dieselAmount && dieselRate > 0) {
+    e.litres = String((parseFloat(e.dieselAmount) / dieselRate).toFixed(2));
+  }
+
+  Promise.all([
+    db.ref('driverRequestPhotos').child(activeFillReceiptKey).once('value'),
+    driverRequestsRef.child(activeFillReceiptKey).once('value')
+  ]).then(([photoSnap, reqSnap]) => {
+    const photoData = photoSnap.val() || {};
+    const fullReq = { ...(reqSnap.val() || {}), ...photoData };
+
+    const kPhotos = extractPhotosFromRecord(fullReq, 'kmPhotos', 'kmPhoto', 'photo');
+    if (kPhotos.length > 0) {
+      e.kmPhotos = kPhotos;
+      e.kmPhoto = kPhotos[0];
+      e.hasKmPhoto = true;
+    }
+
+    const receiptList = [capturedReceiptBase64];
+    const existingReceipts = extractPhotosFromRecord(fullReq, 'receiptPhotos', 'receiptPhoto');
+    existingReceipts.forEach(p => {
+      if (!receiptList.includes(p) && receiptList.length < 5) receiptList.push(p);
+    });
+
+    e.receiptPhotos = receiptList;
+    e.receiptPhoto = receiptList[0];
+
+    const photoPayload = {
+      receiptPhotos: receiptList,
+      receiptPhoto: receiptList[0]
+    };
+    if (kPhotos.length > 0) {
+      photoPayload.kmPhotos = kPhotos;
+      photoPayload.kmPhoto = kPhotos[0];
+    }
+
+    const cleanEntryPayload = JSON.parse(JSON.stringify(e));
+
+    return entriesRef.child(newRespNum).set(cleanEntryPayload).then(() => {
+      const writes = [
+        driverRequestsRef.child(activeFillReceiptKey).update({
+          status: 'filled',
+          processedAt: firebase.database.ServerValue.TIMESTAMP,
+          filledAt: firebase.database.ServerValue.TIMESTAMP,
+          linkedResponseNumber: newRespNum,
+          hasReceiptPhoto: true,
+          receiptPhoto: null,
+          receiptPhotos: null
+        }),
+        db.ref('driverRequestPhotos').child(activeFillReceiptKey).update(photoPayload),
+        db.ref('entryPhotos').child(newRespNum).set(photoPayload)
+      ];
+      return Promise.all(writes);
+    });
+  })
+  .then(() => {
+    const avg = vehicleTypes[e.vehicleType.toUpperCase()] || '';
+    const formattedTime = e.time ? (typeof convertTo24Hour === 'function' ? convertTo24Hour(e.time) : e.time) : '';
+    const copyText = `🔔Diesel Request📢
+Response #${newRespNum}
+📅 Date & Time. : ${e.date || ''}${formattedTime ? ', ' + formattedTime : ''}
+🚛 Vehicle No. : ${e.vehicleNo || ''}
+🚚 Vehicle Type. : ${e.vehicleType || ''}${avg ? ',' + avg : ''}
+📍 From Location. : ${e.fromLocation || ''}
+📍 Last Location. : ${e.lastLocation || ''}
+📊 Current KM. : ${e.currentKm || ''}
+💸 Diesel (₹ INR). : ${e.dieselAmount || ''}
+👮🏻 Vendor Name. : ${e.vendorName || ''}
+📝 Note. : ${e.note || ''}`;
+
+    closeFillReceiptCameraModal();
+    if (typeof playChimeSound === 'function') playChimeSound();
+
+    copyToClipboard(copyText)
+      .then(() => {
+        toast.ok(`✅ Entry #${newRespNum} Diesel Records me add ho chuki hai & WhatsApp Data Clipboard me COPY ho gaya!`);
+      })
+      .catch(() => {
+        toast.ok(`✅ Vehicle ${e.vehicleNo} Successfully Filled! Entry #${newRespNum}`);
+      });
+  })
+  .catch(err => {
+    isSubmittingFillReceipt = false;
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = '<i class="fas fa-check-circle"></i> Successfully Fill';
+    }
+    toast.err("Error saving diesel fill: " + err.message);
+  });
+}
+
+window.openFillReceiptCamera = openFillReceiptCamera;
+window.closeFillReceiptCameraModal = closeFillReceiptCameraModal;
+window.startFillReceiptCamera = startFillReceiptCamera;
+window.triggerFillReceiptFileInput = triggerFillReceiptFileInput;
+window.handleFillReceiptFallbackFile = handleFillReceiptFallbackFile;
+window.captureFillReceiptPhoto = captureFillReceiptPhoto;
+window.submitFillReceiptAction = submitFillReceiptAction;
 
 window.openAutoApproveTimerModal = function() {
   const masterToggle = document.getElementById('timer-master-toggle');
