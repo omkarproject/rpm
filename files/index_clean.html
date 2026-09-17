@@ -1,0 +1,2604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>RPM Diesel Analytics</title>
+
+<!-- Dark mode before paint & Loading screen cleanup -->
+<script>
+  if(localStorage.getItem('rpm_dark')==='1')document.documentElement.classList.add('dark');
+  (function(){
+    const el = document.getElementById("status-container");
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+    document.addEventListener("DOMContentLoaded", function() {
+      const el2 = document.getElementById("status-container");
+      if (el2 && el2.parentNode) el2.parentNode.removeChild(el2);
+    });
+  })();
+</script>
+
+<!-- Tailwind CSS CDN (v3) -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={darkMode:'class'};</script>
+
+<!-- React 18 -->
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+<!-- Recharts 2 -->
+<script src="https://unpkg.com/prop-types@15/prop-types.min.js"></script>
+<script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+
+<!-- XLSX (SheetJS with Style) -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+
+<!-- Firebase compat SDKs -->
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+
+<!-- Babel (JSX in browser) pinned to 7.15.0 for classic JSX runtime compatibility -->
+<script src="https://unpkg.com/@babel/standalone@7.15.0/babel.min.js"></script>
+
+<!-- Google Font -->
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none;}
+input, textarea, select {user-select:text;-webkit-user-select:text;}
+
+/* scrollbar */
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px;}
+.dark ::-webkit-scrollbar-thumb{background:#475569;}
+
+/* scrollbar hide helper */
+.scrollbar-none::-webkit-scrollbar{display:none;}
+.scrollbar-none{-ms-overflow-style:none;scrollbar-width:none;}
+
+/* animations */
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes pulse2{0%,100%{opacity:1}50%{opacity:.45}}
+.anim-fadeup{animation:fadeUp .18s ease both;}
+.anim-spin{animation:spin .9s linear infinite;}
+.anim-pulse{animation:pulse2 1.8s ease-in-out infinite;}
+.bar-w{transition:width .5s cubic-bezier(.4,0,.2,1);}
+.hover-lift{transition:transform .15s ease,box-shadow .15s ease;}
+.hover-lift:hover{transform:translateY(-1px);box-shadow:0 4px 20px rgba(0,0,0,.08);}
+.tab-t{transition:all .15s ease;}
+
+/* native select display */
+select{appearance:auto;-webkit-appearance:auto;}
+
+/* date picker icon in dark */
+.dark input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(.8);}
+
+/* toast */
+#toasts{position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;}
+.toast{padding:11px 16px;border-radius:12px;font-size:13px;font-weight:500;color:#fff;
+  box-shadow:0 8px 28px rgba(0,0,0,.18);display:flex;align-items:center;gap:8px;max-width:300px;
+  animation:fadeUp .2s ease both;}
+.t-ok{background:#10b981;}
+.t-er{background:#ef4444;}
+</style>
+</head>
+
+<body class="bg-slate-50 dark:bg-slate-950 min-h-screen transition-colors duration-200">
+<div id="root"></div>
+<div id="toasts"></div>
+
+<script type="text/babel">
+/* ═══════════════════════════════════════════════════════
+   GLOBALS
+═══════════════════════════════════════════════════════ */
+const {useState,useCallback,useMemo,useEffect,useRef} = React;
+const {
+  ResponsiveContainer,AreaChart,Area,BarChart,Bar,
+  XAxis,YAxis,CartesianGrid,Tooltip,PieChart,Pie,Cell
+} = Recharts;
+
+/* ═══════════════════════════════════════════════════════
+   TOAST
+═══════════════════════════════════════════════════════ */
+const toast = {
+  _show(msg,cls){
+    const el=document.createElement('div');
+    el.className=`toast ${cls}`;
+    el.textContent=msg;
+    const wrap=document.getElementById('toasts');
+    wrap.appendChild(el);
+    setTimeout(()=>{el.style.transition='opacity .2s';el.style.opacity='0';setTimeout(()=>{if(el.parentNode)el.parentNode.removeChild(el);},220);},2800);
+  },
+  ok(m){this._show(m,'t-ok');},
+  err(m){this._show(m,'t-er');},
+};
+
+/* ═══════════════════════════════════════════════════════
+   FIREBASE
+═══════════════════════════════════════════════════════ */
+const dec = str => atob(str);
+let firebaseConfig = {
+  apiKey: dec("QUl6YVN5QzhNMTJobGFQUVJPQnFZM0dkX254XzEzQUNhdzFZVjhn"),
+  authDomain: dec("cnBtLWRpZXNlbC5maXJlYmFzZWFwcC5jb20="),
+  databaseURL: dec("aHR0cHM6Ly9ycG0tZGllc2VsLWRlZmF1bHQtcnRkYi5maXJlYmFzZWlvLmNvbQ=="),
+  projectId: dec("cnBtLWRpZXNlbA=="),
+  storageBucket: dec("cnBtLWRpZXNlbC5maXJlYmFzZXN0b3JhZ2UuYXBw"),
+  messagingSenderId: dec("MTk3NDU0NzU3MTAw"),
+  appId: dec("MToxOTc0NTQ3NTcxMDA6d2ViOmZhNGJlY2JhZjkyZDJhOThlNjc5Yzk="),
+  measurementId: dec("Ry04NTE1SlhROFdH")
+};
+
+const savedCustomConfig = localStorage.getItem('customFirebaseConfig');
+if (savedCustomConfig) {
+  try {
+    const parsed = JSON.parse(savedCustomConfig);
+    if (parsed && parsed.apiKey && parsed.databaseURL) {
+      firebaseConfig = { ...firebaseConfig, ...parsed };
+    }
+  } catch (err) {
+    console.error("Failed to load custom Firebase credentials:", err);
+  }
+}
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const entriesRef = db.ref('entries');
+const connectedRef = db.ref(".info/connected");
+
+/* ═══════════════════════════════════════════════════════
+   STORAGE (100% Realtime Live Data - Storage Caching Disabled)
+═══════════════════════════════════════════════════════ */
+const SK='rpm_fuel_v1';
+const load=()=>{ return []; };
+const save=rows=>{};
+const wipe=()=>{};
+
+/* ═══════════════════════════════════════════════════════
+   FORMATTERS
+═══════════════════════════════════════════════════════ */
+const MO=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const num=n=>Math.round(+n||0).toLocaleString('en-IN');
+const rupee=n=>'₹\u00a0'+num(n);
+const short=v=>v>=1e7?'₹'+(v/1e7).toFixed(1)+'Cr':v>=1e5?'₹'+(v/1e5).toFixed(1)+'L':v>=1e3?'₹'+(v/1e3).toFixed(0)+'K':'₹'+Math.round(v);
+const dateStr=raw=>{
+  if(!raw)return'—';
+  const p=String(raw).split(/[-T ]/);
+  if(p.length>=3){const m=parseInt(p[1])-1;return`${parseInt(p[2])} ${MO[m]||''} ${p[0]}`;}
+  return String(raw);
+};
+const dateLbl=raw=>{
+  if(!raw)return'';
+  const p=String(raw).split(/[-T ]/);
+  return p.length>=3?`${parseInt(p[2])} ${MO[parseInt(p[1])-1]||''}`:'';
+};
+
+/* ═══════════════════════════════════════════════════════
+   IMPORT / PARSE
+═══════════════════════════════════════════════════════ */
+const COL={
+  'response #':'id','response':'id','sr no':'id','sr':'id',
+  'date':'report_date','report date':'report_date',
+  'time':'report_time','report time':'report_time',
+  'vehicle no':'vehicle_no','vehicle number':'vehicle_no','vehicle':'vehicle_no','veh no':'vehicle_no',
+  'vehicle type':'vehicle_type','veh type':'vehicle_type','type':'vehicle_type',
+  'mileage':'mileage','km/l':'mileage','kmpl':'mileage','fuel efficiency':'mileage',
+  'from location':'from_location','from':'from_location','origin':'from_location',
+  'last location':'last_location','to location':'last_location','to':'last_location','destination':'last_location',
+  'current km':'current_km','odometer':'current_km','km reading':'current_km','km':'current_km',
+  'diesel amount':'diesel_amount','fuel amount':'diesel_amount','amount':'diesel_amount',
+  'diesel':'diesel_amount','fuel':'diesel_amount','fuel cost':'diesel_amount',
+  'vendor name':'vendor_name','vendor':'vendor_name','supplier':'vendor_name','petrol pump':'vendor_name',
+  'note':'note','notes':'note','remarks':'note','comment':'note','comments':'note',
+};
+const NUM_F=new Set(['diesel_amount','current_km','mileage']);
+
+const parseDate=v=>{
+  if(!v)return null;
+  if(v instanceof Date&&!isNaN(v))return v.toISOString().split('T')[0];
+  const s=String(v).trim();
+  // DD-MM-YYYY or DD/MM/YYYY
+  let m=s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+  if(m)return`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  // YYYY-MM-DD
+  if(/^\d{4}-\d{2}-\d{2}/.test(s))return s.slice(0,10);
+  // numeric Excel serial
+  if(/^\d{5}$/.test(s)){
+    const d=new Date(Math.round((+s-25569)*86400*1000));
+    return d.toISOString().split('T')[0];
+  }
+  return null;
+};
+
+const parseRows=raw=>{
+  return raw.map(row=>{
+    const nr={};
+    Object.keys(row).forEach(k=>{
+      const mk=COL[k.toLowerCase().trim()]||k.toLowerCase().replace(/\s+/g,'_').trim();
+      let v=row[k];
+      if(mk==='report_date')v=parseDate(v);
+      else if(NUM_F.has(mk))v=parseFloat(String(v).replace(/[^\d.]/g,''))||0;
+      nr[mk]=v;
+    });
+    return nr;
+  }).filter(r=>(r.diesel_amount&&r.diesel_amount>0)||r.vehicle_no);
+};
+
+/* ═══════════════════════════════════════════════════════
+   FILTERS & CALCULATIONS
+═══════════════════════════════════════════════════════ */
+const getTodayRange = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const today = String(now.getDate()).padStart(2, '0');
+  const dateStr = `${year}-${month}-${today}`;
+  return {
+    startDate: dateStr,
+    endDate: dateStr
+  };
+};
+const defaultDates = getTodayRange();
+const getAssignedVendorInfo = () => {
+  let parentVendor = '';
+  let parentRole = '';
+  try {
+    if (window.parent && typeof window.parent.getAssignedVendorName === 'function') {
+      parentVendor = window.parent.getAssignedVendorName();
+    }
+    if (window.parent && typeof window.parent.getAuthSession === 'function') {
+      parentRole = window.parent.getAuthSession('rpm_user_role') || '';
+      if (!parentVendor) parentVendor = window.parent.getAuthSession('rpm_assigned_vendor') || '';
+    }
+  } catch(e) {}
+
+  const role = parentRole || localStorage.getItem('rpm_user_role') || sessionStorage.getItem('rpm_user_role') || '';
+  let vendor = parentVendor || localStorage.getItem('rpm_assigned_vendor') || sessionStorage.getItem('rpm_assigned_vendor') || '';
+
+  const isVendorRole = (role === 'vendor');
+  if (isVendorRole && !vendor) {
+    try {
+      if (window.parent && Array.isArray(window.parent.vendorsList) && window.parent.vendorsList.length > 0) {
+        vendor = window.parent.vendorsList[0].name || window.parent.vendorsList[0];
+      }
+    } catch(e) {}
+  }
+
+  const isLocked = isVendorRole || !!vendor;
+  return { role, vendor, isLocked };
+};
+
+const getInitialEF = () => {
+  const { vendor, isLocked } = getAssignedVendorInfo();
+  const initialVendor = isLocked ? [vendor] : [];
+  return { startDate: defaultDates.startDate, endDate: defaultDates.endDate, vehicleType: [], vehicleNo: [], vendor: initialVendor, fromLoc: [], toLoc: [], minAmt: '', maxAmt: '' };
+};
+const EF = getInitialEF();
+
+const filterRows=(rows,f,q='')=>{
+  const { vendor, isLocked } = getAssignedVendorInfo();
+  const effectiveVendor = isLocked ? [vendor] : f.vendor;
+
+  return rows.filter(r=>{
+    if(f.startDate                 &&(r.report_date||'')<f.startDate)return false;
+    if(f.endDate                   &&(r.report_date||'')>f.endDate)  return false;
+    if(f.vehicleType&&f.vehicleType.length&&!f.vehicleType.includes(r.vehicle_type))return false;
+    if(f.vehicleNo  &&f.vehicleNo.length  &&!f.vehicleNo.includes(r.vehicle_no))    return false;
+    if(effectiveVendor && effectiveVendor.length && !effectiveVendor.includes(r.vendor_name)) return false;
+    if(f.fromLoc    &&f.fromLoc.length    &&!f.fromLoc.includes(r.from_location))   return false;
+    if(f.toLoc      &&f.toLoc.length      &&!f.toLoc.includes(r.last_location))     return false;
+    if(f.minAmt                    &&(r.diesel_amount||0)<+f.minAmt) return false;
+    if(f.maxAmt                    &&(r.diesel_amount||0)>+f.maxAmt) return false;
+    if(q){
+      const s=q.toLowerCase();
+      return(r.vehicle_no||'').toLowerCase().includes(s)||
+             (r.vendor_name||'').toLowerCase().includes(s)||
+             (r.from_location||'').toLowerCase().includes(s)||
+             (r.last_location||'').toLowerCase().includes(s)||
+             (r.vehicle_type||'').toLowerCase().includes(s);
+    }
+    return true;
+  });
+};
+
+const getOpts=rows=>({
+  vtypes: [...new Set(rows.map(r=>r.vehicle_type).filter(Boolean))].sort(),
+  vnos:   [...new Set(rows.map(r=>r.vehicle_no).filter(Boolean))].sort(),
+  vendors:[...new Set(rows.map(r=>r.vendor_name).filter(Boolean))].sort(),
+  froms:  [...new Set(rows.map(r=>r.from_location).filter(Boolean))].sort(),
+  tos:    [...new Set(rows.map(r=>r.last_location).filter(Boolean))].sort(),
+});
+
+const quickRange=days=>{
+  const fmt=ts=>{const d=new Date(ts);return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
+  return{startDate:fmt(Date.now()-days*864e5),endDate:fmt(Date.now())};
+};
+
+/* Perfect calculations */
+const calcStats=rows=>{
+  if(!rows.length)return null;
+  const amts=rows.map(r=>r.diesel_amount||0);
+  const pos =amts.filter(a=>a>0);
+  const tot =amts.reduce((a,b)=>a+b,0);
+  // Median: proper sorted midpoint
+  const s=[...amts].sort((a,b)=>a-b),mid=Math.floor(s.length/2);
+  const median=s.length%2?s[mid]:(s[mid-1]+s[mid])/2;
+
+  // By date
+  const dm={};
+  rows.forEach(r=>{const k=r.report_date||'?';if(!dm[k])dm[k]={amount:0,count:0};dm[k].amount+=r.diesel_amount||0;dm[k].count++;});
+  const by_date=Object.entries(dm).sort(([a],[b])=>a.localeCompare(b)).map(([report_date,v])=>({report_date,...v}));
+
+  // By week (ISO Monday-anchored)
+  const wm={};
+  rows.forEach(r=>{
+    if(!r.report_date)return;
+    const d=new Date(r.report_date);
+    if(isNaN(d.getTime()))return;
+    const dy=d.getDay(),diff=d.getDate()-dy+(dy===0?-6:1);
+    const w=new Date(d);w.setDate(diff);
+    if(isNaN(w.getTime()))return;
+    const ws=w.toISOString().split('T')[0];
+    if(!wm[ws])wm[ws]={amount:0,count:0};
+    wm[ws].amount+=r.diesel_amount||0;wm[ws].count++;
+  });
+  const by_week=Object.entries(wm).sort(([a],[b])=>a.localeCompare(b)).map(([week_start,v])=>({week_start,...v}));
+
+  // By month
+  const mm2={};
+  rows.forEach(r=>{
+    if(!r.report_date)return;
+    const p2=String(r.report_date).split('-');
+    if(p2.length<2)return;
+    const mk=`${p2[0]}-${p2[1]}`; // YYYY-MM
+    if(!mm2[mk])mm2[mk]={amount:0,count:0};
+    mm2[mk].amount+=r.diesel_amount||0;mm2[mk].count++;
+  });
+  const by_month=Object.entries(mm2).sort(([a],[b])=>a.localeCompare(b)).map(([month,v])=>({month,...v}));
+
+  // By day of week
+  const DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const dowm={};DOW.forEach(d=>{dowm[d]={amount:0,count:0};});
+  rows.forEach(r=>{
+    if(!r.report_date)return;
+    const d=new Date(r.report_date);
+    if(isNaN(d.getTime()))return;
+    const dk=DOW[d.getDay()];
+    if(!dk)return;
+    dowm[dk].amount+=r.diesel_amount||0;dowm[dk].count++;
+  });
+  const by_dow=DOW.map(d=>({day:d,...dowm[d]}));
+
+  // By vehicle type
+  const tm={};
+  rows.forEach(r=>{const t=r.vehicle_type||'Unknown';if(!tm[t])tm[t]={count:0,amount:0};tm[t].amount+=r.diesel_amount||0;tm[t].count++;});
+  const by_type=Object.entries(tm).sort(([,a],[,b])=>b.amount-a.amount).map(([vehicle_type,v])=>({vehicle_type,...v}));
+
+  // By vehicle
+  const vm={};
+  rows.forEach(r=>{
+    const k=r.vehicle_no||'?';
+    if(!vm[k])vm[k]={amts:[],type:r.vehicle_type||''};
+    vm[k].amts.push(r.diesel_amount||0);
+    if(r.vehicle_type)vm[k].type=r.vehicle_type;
+  });
+  const all_vehicles=Object.entries(vm).map(([vehicle_no,v])=>{
+    const tot2=v.amts.reduce((a,b)=>a+b,0),pos2=v.amts.filter(a=>a>0);
+    return{vehicle_no,vehicle_type:v.type,trip_count:v.amts.length,amount:tot2,
+      avg_amount:v.amts.length?tot2/v.amts.length:0,
+      max_amount:v.amts.length?Math.max(...v.amts):0,
+      min_amount:pos2.length?Math.min(...pos2):0};
+  }).sort((a,b)=>b.amount-a.amount);
+
+  // By vendor
+  const vnm={};
+  rows.forEach(r=>{const k=r.vendor_name||'?';if(!vnm[k])vnm[k]={amts:[]};vnm[k].amts.push(r.diesel_amount||0);});
+  const all_vendors=Object.entries(vnm).map(([vendor_name,v])=>{
+    const tot2=v.amts.reduce((a,b)=>a+b,0);
+    return{vendor_name,trip_count:v.amts.length,amount:tot2,avg_amount:v.amts.length?tot2/v.amts.length:0};
+  }).sort((a,b)=>b.amount-a.amount);
+
+  // By location
+  const grpLoc=(key)=>{
+    const m={};
+    rows.forEach(r=>{const l=r[key]||'?';if(!m[l])m[l]={amount:0,trip_count:0};m[l].amount+=r.diesel_amount||0;m[l].trip_count++;});
+    return Object.entries(m).sort(([,a],[,b])=>b.trip_count-a.trip_count).slice(0,20).map(([location,v])=>({location,...v}));
+  };
+
+  return{
+    summary:{
+      total_entries:rows.length,total_spend:tot,avg_spend:tot/rows.length,
+      today_spend:(()=>{const t=new Date();const td=`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;return rows.filter(r=>r.report_date===td).reduce((s,r)=>s+(r.diesel_amount||0),0);})(),
+      median_spend:median,max_spend:pos.length?Math.max(...amts):0,
+      min_spend:pos.length?Math.min(...pos):0,
+      unique_vehicles:[...new Set(rows.map(r=>r.vehicle_no).filter(Boolean))].length,
+      unique_vendors:[...new Set(rows.map(r=>r.vendor_name).filter(Boolean))].length,
+      active_days:[...new Set(rows.map(r=>r.report_date).filter(Boolean))].length,
+    },
+    by_date,by_week,by_month,by_dow,by_type,all_vehicles,all_vendors,
+    top_vehicles:all_vehicles.slice(0,10),top_vendors:all_vendors.slice(0,10),
+    by_from_location:grpLoc('from_location'),by_to_location:grpLoc('last_location'),
+  };
+};
+
+/* ═══════════════════════════════════════════════════════
+   ICON SYSTEM  (inline SVG, no external icon CDN needed)
+═══════════════════════════════════════════════════════ */
+const I=({d,className='w-4 h-4',extra=[]})=>(
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    {[d].flat().map((p,i)=><path key={i} d={p}/>)}
+    {extra}
+  </svg>
+);
+const Ic={
+  fuel:     p=><I className={p.c||'w-5 h-5'} d={['M3 22V12L6 5h6l3 7v10','M3 12h12','M16 7h2a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2','M18 18a2 2 0 1 0 4 0v-3']}/>,
+  dash:     p=><I className={p.c} d={['M10 3H3v7h7V3z','M21 3h-7v7h7V3z','M21 14h-7v7h7v-7z','M10 14H3v7h7v-7z']}/>,
+  truck:    p=><I className={p.c} d={['M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2','M15 18H9','M19 18h2a1 1 0 0 0 1-1v-3.65a1 1 0 0 0-.22-.624l-3.48-4.35A1 1 0 0 0 17.52 8H14']} extra={[<circle key="a" cx="17" cy="18" r="2"/>,<circle key="b" cx="7" cy="18" r="2"/>]}/>,
+  bldg:     p=><I className={p.c} d={['M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z','M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2','M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2','M10 6h4','M10 10h4','M10 14h4','M10 18h4']}/>,
+  pin:      p=><I className={p.c} d={['M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z']} extra={[<circle key="a" cx="12" cy="10" r="3"/>]}/>,
+  file:     p=><I className={p.c} d={['M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z','M14 2v4a2 2 0 0 0 2 2h4','M10 9H8','M16 13H8','M16 17H8']}/>,
+  upload:   p=><I className={p.c} d={['M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4','M17 8l-5-5-5 5','M12 3v12']}/>,
+  filter:   p=><I className={p.c} d={['M22 3H2l8 9.46V19l4 2v-8.54Z']}/>,
+  x:        p=><I className={p.c} d={['M18 6 6 18','M6 6l12 12']}/>,
+  refresh:  p=><I className={p.c} d={['M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8','M21 3v5h-5','M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16','M8 16H3v5']}/>,
+  moon:     p=><I className={p.c} d={['M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z']}/>,
+  sun:      p=><I className={p.c} d={['M12 2v2','M12 20v2','M4.93 4.93l1.41 1.41','M17.66 17.66l1.41 1.41','M2 12h2','M20 12h2','M4.93 19.07l1.41-1.41','M17.66 6.34l1.41-1.41']} extra={[<circle key="a" cx="12" cy="12" r="5"/>]}/>,
+  trash:    p=><I className={p.c} d={['M3 6h18','M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6','M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2','M10 11v6','M14 11v6']}/>,
+  download: p=><I className={p.c} d={['M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4','M7 10l5 5 5-5','M12 15V3']}/>,
+  search:   p=><I className={p.c} d={['m21 21-4.35-4.35']} extra={[<circle key="a" cx="11" cy="11" r="8"/>]}/>,
+  chevL:    p=><I className={p.c} d={['M15 18l-6-6 6-6']}/>,
+  chevR:    p=><I className={p.c} d={['M9 18l6-6-6-6']}/>,
+  sortUD:   p=><I className={p.c} d={['M11 17 7 21l-4-4','M7 21V7','M13 7l4-4 4 4','M17 3v14']}/>,
+  sortU:    p=><I className={p.c} d={['M12 19V5','M5 12l7-7 7 7']}/>,
+  sortD:    p=><I className={p.c} d={['M12 5v14','M19 12l-7 7-7-7']}/>,
+  hash:     p=><I className={p.c} d={['M4 9h16','M4 15h16','M10 3 8 21','M16 3l-2 18']}/>,
+  trend:    p=><I className={p.c} d={['M22 7 13.5 15.5 8.5 10.5 2 17','M16 7h6v6']}/>,
+  bar3:     p=><I className={p.c} d={['M18 20V10','M12 20V4','M6 20v-6']}/>,
+  activity: p=><I className={p.c} d={['M22 12h-4l-3 9L9 3l-3 9H2']}/>,
+  arrowUp:  p=><I className={p.c} d={['M12 8v8','M8 12l4-4 4 4']} extra={[<circle key="a" cx="12" cy="12" r="10"/>]}/>,
+  arrowDn:  p=><I className={p.c} d={['M12 8v8','M8 12l4 4 4-4']} extra={[<circle key="a" cx="12" cy="12" r="10"/>]}/>,
+  cal:      p=><I className={p.c} d={['M8 2v4','M16 2v4','M3 8h18']} extra={[<rect key="a" x="3" y="4" width="18" height="18" rx="2"/>]}/>,
+  star:     p=><I className={p.c} d={['M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z']}/>,
+  spin:     ({c})=><svg className={`${c||'w-8 h-8'} anim-spin`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>,
+  check:    p=><I className={p.c} d={['M22 11.08V12a10 10 0 1 1-5.93-9.14','M22 4 12 14.01l-3-3']}/>,
+  info:     p=><I className={p.c} d={['M12 16v-4','M12 8h.01']} extra={[<circle key="a" cx="12" cy="12" r="10"/>]}/>,
+  alert:    p=><I className={p.c} d={['M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z','M12 9v4']} extra={[<circle key="a" cx="12" cy="17" r=".5"/>]}/>,
+};
+
+/* ═══════════════════════════════════════════════════════
+   COLOUR PALETTE
+═══════════════════════════════════════════════════════ */
+const PAL=['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#ec4899','#f97316','#14b8a6','#6366f1','#84cc16','#a855f7'];
+const col=i=>PAL[((i%PAL.length)+PAL.length)%PAL.length];
+
+/* ═══════════════════════════════════════════════════════
+   RECHARTS TOOLTIP STYLE
+═══════════════════════════════════════════════════════ */
+const tipSt=dark=>({
+  borderRadius:10,border:'none',fontSize:12,padding:'8px 12px',
+  background:dark?'#1e293b':'#fff',color:dark?'#f1f5f9':'#1e293b',
+  boxShadow:'0 8px 28px rgba(0,0,0,.14)',
+});
+
+/* ═══════════════════════════════════════════════════════
+   CHART COMPONENTS
+═══════════════════════════════════════════════════════ */
+function ChartDaily({data,dark}){
+  const d2=data.map(d=>({date:dateLbl(d.report_date),v:d.amount}));
+  const tc=dark?'#64748b':'#94a3b8',gc=dark?'#1e293b':'#f1f5f9';
+  return(
+    <ResponsiveContainer width="100%" height="100%">
+      <AreaChart data={d2} margin={{top:8,right:8,left:0,bottom:0}}>
+        <defs><linearGradient id="gBlue" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2}/>
+          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+        </linearGradient></defs>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gc}/>
+        <XAxis dataKey="date" fontSize={11} tickLine={false} axisLine={false} interval="preserveStartEnd" tick={{fill:tc}}/>
+        <YAxis fontSize={11} tickLine={false} axisLine={false} tickFormatter={short} width={60} tick={{fill:tc}}/>
+        <Tooltip contentStyle={tipSt(dark)} formatter={v=>[rupee(v),'Spend']} labelStyle={{fontWeight:600,marginBottom:4}}/>
+        <Area type="monotone" dataKey="v" stroke="#3b82f6" strokeWidth={2.5} fill="url(#gBlue)" dot={false} activeDot={{r:5,strokeWidth:0}}/>
+      </AreaChart>
+    </ResponsiveContainer>
+  );
+}
+
+function ChartWeek({data,dark}){
+  const d2=data.map(d=>({w:dateLbl(d.week_start),v:d.amount}));
+  const tc=dark?'#64748b':'#94a3b8',gc=dark?'#1e293b':'#f1f5f9';
+  return(
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={d2} margin={{top:8,right:8,left:0,bottom:0}}>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gc}/>
+        <XAxis dataKey="w" fontSize={11} tickLine={false} axisLine={false} tick={{fill:tc}}/>
+        <YAxis fontSize={11} tickLine={false} axisLine={false} tickFormatter={short} width={60} tick={{fill:tc}}/>
+        <Tooltip contentStyle={tipSt(dark)} formatter={v=>[rupee(v),'Weekly']}/>
+        <Bar dataKey="v" radius={[6,6,0,0]} maxBarSize={52}>
+          {d2.map((_,i)=><Cell key={i} fill={col(i)}/>)}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+function ChartMonthly({data,dark}){
+  const MO2=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const d2=data.map(d=>{
+    const p=String(d.month).split('-');
+    return{m:MO2[parseInt(p[1]||'1')-1]+' '+p[0],v:d.amount,cnt:d.count};
+  });
+  const tc=dark?'#64748b':'#94a3b8',gc=dark?'#1e293b':'#f1f5f9';
+  return(
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={d2} margin={{top:8,right:8,left:0,bottom:0}}>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gc}/>
+        <XAxis dataKey="m" fontSize={11} tickLine={false} axisLine={false} tick={{fill:tc}}/>
+        <YAxis fontSize={11} tickLine={false} axisLine={false} tickFormatter={short} width={60} tick={{fill:tc}}/>
+        <Tooltip contentStyle={tipSt(dark)} formatter={v=>[rupee(v),'Monthly']}/>
+        <Bar dataKey="v" radius={[6,6,0,0]} maxBarSize={56}>
+          {d2.map((_,i)=><Cell key={i} fill={col(i+3)}/>)}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+function ChartDonut({data,dark}){
+  const d2=data.map(d=>({name:d.vehicle_type||'Unknown',value:d.amount}));
+  const total=d2.reduce((s,d)=>s+d.value,0);
+  return(
+    <div>
+      <div style={{height:185}}>
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie data={d2} innerRadius={54} outerRadius={76} paddingAngle={3} dataKey="value" startAngle={90} endAngle={-270}>
+              {d2.map((_,i)=><Cell key={i} fill={col(i)}/>)}
+            </Pie>
+            <Tooltip contentStyle={tipSt(dark)} formatter={v=>[rupee(v),'Spend']}/>
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="mt-3 space-y-2">
+        {d2.map((d,i)=>{
+          const pct=total?((d.value/total)*100).toFixed(1):'0';
+          return(
+            <div key={d.name} className="flex items-center gap-2 text-xs">
+              <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{background:col(i)}}/>
+              <span className="text-slate-500 dark:text-slate-400 flex-1 truncate">{d.name}</span>
+              <span className="text-slate-400 text-[10px]">{pct}%</span>
+              <span className="font-bold text-slate-800 dark:text-slate-100">{rupee(d.value)}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function HBar({data,lk,vk,off=0}){
+  const mx=Math.max(...data.map(d=>d[vk]||0),1);
+  return(
+    <div className="space-y-3">
+      {data.map((d,i)=>{
+        const v=d[vk]||0,pct=(v/mx)*100;
+        return(
+          <div key={i}>
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate max-w-[200px]">{d[lk]||'—'}</span>
+              <span className="text-xs font-bold text-slate-900 dark:text-slate-100 ml-2 flex-shrink-0">{rupee(v)}</span>
+            </div>
+            <div className="h-1.5 bg-slate-100 dark:bg-slate-700/60 rounded-full overflow-hidden">
+              <div className="h-full rounded-full bar-w" style={{width:`${pct}%`,background:col(i+off)}}/>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TripBar({data,lk,off=0}){
+  const mx=Math.max(...data.map(d=>d.trip_count||0),1);
+  return(
+    <div className="space-y-3">
+      {data.map((d,i)=>{
+        const cnt=d.trip_count||0,pct=(cnt/mx)*100;
+        return(
+          <div key={i}>
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate max-w-[200px]">{d[lk]||'—'}</span>
+              <span className="text-xs font-bold text-slate-900 dark:text-slate-100 ml-2 flex-shrink-0">{cnt} trips</span>
+            </div>
+            <div className="h-1.5 bg-slate-100 dark:bg-slate-700/60 rounded-full overflow-hidden">
+              <div className="h-full rounded-full bar-w" style={{width:`${pct}%`,background:col(i+off)}}/>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   KPI CARDS
+═══════════════════════════════════════════════════════ */
+const KPIS=[
+  {l:'Total Records',  Ic:Ic.hash,    col:'blue',   gv:s=>num(s.summary.total_entries),   gs:s=>`${num(s.summary.active_days)} active days`},
+  {l:'Total Spend',    Ic:Ic.trend,   col:'emerald',gv:s=>rupee(s.summary.total_spend),   gs:s=>`${num(s.summary.total_entries)} fills`},
+  {l:'Today\'s Spend',  Ic:Ic.bar3,    col:'violet', gv:s=>rupee(s.summary.today_spend),  gs:()=>'total spend today'},
+  {l:'Median Fill',    Ic:Ic.activity,col:'cyan',   gv:s=>rupee(s.summary.median_spend),  gs:()=>'sorted midpoint'},
+  {l:'Max Fill',       Ic:Ic.arrowUp, col:'red',    gv:s=>rupee(s.summary.max_spend),     gs:s=>s.top_vehicles?.[0]?.vehicle_no||'—'},
+  {l:'Min Fill',       Ic:Ic.arrowDn, col:'orange', gv:s=>rupee(s.summary.min_spend),     gs:()=>'smallest fill'},
+  {l:'Fleet Size',     Ic:Ic.truck,   col:'indigo', gv:s=>num(s.summary.unique_vehicles), gs:()=>'unique vehicles'},
+  {l:'Vendors',        Ic:Ic.bldg,    col:'pink',   gv:s=>num(s.summary.unique_vendors),  gs:()=>'fuel suppliers'},
+  {l:'Active Days',    Ic:Ic.cal,     col:'amber',  gv:s=>num(s.summary.active_days),     gs:()=>'unique dates'},
+  {l:'Top Vehicle',    Ic:Ic.star,    col:'slate',  gv:s=>s.top_vehicles?.[0]?.vehicle_no||'—',gs:s=>s.top_vehicles?.[0]?rupee(s.top_vehicles[0].amount):'no data'},
+];
+const KC={
+  blue:   ['bg-blue-50 dark:bg-blue-950/40 border-blue-100 dark:border-blue-900/50',  'bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400',    'text-blue-900 dark:text-blue-100'],
+  emerald:['bg-emerald-50 dark:bg-emerald-950/40 border-emerald-100 dark:border-emerald-900/50','bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400','text-emerald-900 dark:text-emerald-100'],
+  violet: ['bg-violet-50 dark:bg-violet-950/40 border-violet-100 dark:border-violet-900/50','bg-violet-100 dark:bg-violet-900/50 text-violet-600 dark:text-violet-400','text-violet-900 dark:text-violet-100'],
+  cyan:   ['bg-cyan-50 dark:bg-cyan-950/40 border-cyan-100 dark:border-cyan-900/50',   'bg-cyan-100 dark:bg-cyan-900/50 text-cyan-600 dark:text-cyan-400',   'text-cyan-900 dark:text-cyan-100'],
+  red:    ['bg-red-50 dark:bg-red-950/40 border-red-100 dark:border-red-900/50',       'bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400',       'text-red-900 dark:text-red-100'],
+  orange: ['bg-orange-50 dark:bg-orange-950/40 border-orange-100 dark:border-orange-900/50','bg-orange-100 dark:bg-orange-900/50 text-orange-600 dark:text-orange-400','text-orange-900 dark:text-orange-100'],
+  indigo: ['bg-indigo-50 dark:bg-indigo-950/40 border-indigo-100 dark:border-indigo-900/50','bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400','text-indigo-900 dark:text-indigo-100'],
+  pink:   ['bg-pink-50 dark:bg-pink-950/40 border-pink-100 dark:border-pink-900/50',   'bg-pink-100 dark:bg-pink-900/50 text-pink-600 dark:text-pink-400',   'text-pink-900 dark:text-pink-100'],
+  amber:  ['bg-amber-50 dark:bg-amber-950/40 border-amber-100 dark:border-amber-900/50','bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-400','text-amber-900 dark:text-amber-100'],
+  slate:  ['bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700', 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300',  'text-slate-900 dark:text-slate-100'],
+};
+
+function KpiCards({stats}){
+  return(
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+      {KPIS.map(k=>{
+        const[bg,ic,vl]=KC[k.col];
+        return(
+          <div key={k.l} className={`border rounded-2xl hover-lift glass-card-interactive cursor-default anim-fadeup ${bg}`}>
+            <div className="p-4">
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-3 ${ic}`}>
+                <k.Ic c="w-4 h-4"/>
+              </div>
+              <div className={`text-[1.2rem] font-bold truncate leading-tight ${vl}`}>{k.gv(stats)}</div>
+              <div className="text-[10px] font-semibold text-slate-500 dark:text-slate-500 mt-0.5 uppercase tracking-wider">{k.l}</div>
+              <div className="text-[10px] text-slate-400 dark:text-slate-600 mt-1 truncate">{k.gs(stats)}</div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   SHARED UI PRIMITIVES
+═══════════════════════════════════════════════════════ */
+const Card=({ch,cls=''})=><div className={`bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm ${cls}`}>{ch}</div>;
+const CH=({title,sub})=>(
+  <div className="pt-5 pb-2 px-5">
+    <p className="font-semibold text-sm text-slate-900 dark:text-slate-100">{title}</p>
+    {sub&&<p className="text-xs text-slate-500 dark:text-slate-500 mt-0.5">{sub}</p>}
+  </div>
+);
+const Pill=({children,cls=''})=><span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 ${cls}`}>{children}</span>;
+const Th=({children,right,sortable,sorted,onClick})=>(
+  <th onClick={onClick} className={`py-2.5 px-3 text-[11px] font-bold text-slate-500 dark:text-slate-500 whitespace-nowrap select-none ${right?'text-right':''} ${sortable?'cursor-pointer hover:text-slate-800 dark:hover:text-slate-200':''}`}>
+    <span className="inline-flex items-center gap-1">
+      {children}
+      {sortable&&(sorted==='asc'?<Ic.sortU c="w-3 h-3 text-blue-500"/>:sorted==='desc'?<Ic.sortD c="w-3 h-3 text-blue-500"/>:<Ic.sortUD c="w-3 h-3 opacity-30"/>)}
+    </span>
+  </th>
+);
+const Td=({children,cls='',...p})=><td className={`py-2.5 px-3 text-sm text-slate-700 dark:text-slate-300 ${cls}`} {...p}>{children}</td>;
+const Tr=({children,onClick,cls=''})=><tr onClick={onClick} className={`border-b border-slate-100 dark:border-slate-800 transition-colors ${onClick?'cursor-pointer':''} ${cls}`}>{children}</tr>;
+
+/* ═══════════════════════════════════════════════════════
+   UPLOAD BOX
+═══════════════════════════════════════════════════════ */
+function UploadBox({onImportData,onDone}){
+  const[drag,setDrag]=useState(false);
+  const[busy,setBusy]=useState(false);
+  const ref=useRef();
+
+  const process=useCallback(file=>{
+    setBusy(true);
+    const rd=new FileReader();
+    rd.onload=async e=>{
+      try{
+        const wb=XLSX.read(e.target.result,{type:'binary',cellDates:true});
+        const raw=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
+        const rows=parseRows(raw);
+        if(!rows.length){
+          toast.err('No valid data found in file.');
+        }else{
+          await onImportData(rows);
+          toast.ok(`✓ Imported ${num(rows.length)} records`);
+          onDone(rows.length);
+        }
+      }catch(err){
+        toast.err('Error reading or uploading file.');
+        console.error(err);
+      }finally{
+        setBusy(false);
+      }
+    };
+    rd.readAsBinaryString(file);
+  },[onImportData,onDone]);
+
+  const base='border-2 border-dashed rounded-2xl cursor-pointer flex flex-col items-center justify-center py-20 text-center select-none transition-all duration-200 ';
+  const cls=drag?base+'border-blue-500 bg-blue-50 dark:bg-blue-950/30 scale-[1.01]':base+'border-slate-300 dark:border-slate-700 hover:border-blue-400 hover:bg-slate-50 dark:hover:bg-slate-900/60 bg-white dark:bg-slate-900';
+
+  return(
+    <div className={cls}
+      onDragOver={e=>{e.preventDefault();setDrag(true);}}
+      onDragLeave={()=>setDrag(false)}
+      onDrop={e=>{e.preventDefault();setDrag(false);const f=e.dataTransfer.files[0];if(f)process(f);}}
+      onClick={()=>ref.current?.click()}>
+      <input type="file" ref={ref} className="hidden" accept=".xlsx,.xls,.csv" onChange={e=>e.target.files?.[0]&&process(e.target.files[0])}/>
+      {busy?(
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-16 h-16 rounded-2xl bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center">
+            <Ic.spin c="w-8 h-8 text-blue-600 dark:text-blue-400"/>
+          </div>
+          <p className="text-slate-500 dark:text-slate-400 anim-pulse font-medium">Processing…</p>
+        </div>
+      ):(
+        <>
+          <div className={`w-16 h-16 rounded-2xl bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center mb-5 transition-transform duration-200 ${drag?'scale-110':''}`}>
+            <Ic.upload c="w-8 h-8 text-blue-600 dark:text-blue-400"/>
+          </div>
+          <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-2">{drag?'Drop to import':'Click or drag your fuel report'}</h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xs">Supports <strong>.xlsx</strong>, <strong>.xls</strong>, <strong>.csv</strong> — columns auto-detected</p>
+          <div className="mt-5 flex flex-wrap gap-2 justify-center">
+            {['Date','Vehicle No','Vehicle Type','Diesel Amount','Vendor Name','Location'].map(c=>(
+              <span key={c} className="text-xs bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-md px-2 py-1">{c}</span>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   FILTER PANEL
+═══════════════════════════════════════════════════════ */
+const FLbl=({ch})=><label className="text-[10px] font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider block mb-1">{ch}</label>;
+const finp='w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 h-8 text-xs outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-200 dark:focus:ring-blue-900 placeholder-slate-400 dark:placeholder-slate-600 transition-colors';
+const FInp=({...p})=><input className={finp} {...p}/>;
+const FSel=({val,onChange,ch})=>(
+  <select value={val} onChange={e=>onChange(e.target.value)} className={finp}>{ch}</select>
+);
+
+/* Multi-select pill keys */
+const MULTI_KEYS=['vehicleType','vehicleNo','vendor','fromLoc','toLoc'];
+const MULTI_LBL={vehicleType:'Type',vehicleNo:'Vehicle',vendor:'Vendor',fromLoc:'From',toLoc:'To'};
+
+/* ── MultiSelect dropdown — portal-based so it never gets clipped ── */
+function MultiSelect({label,options,selected,onChange}){
+  const { vendor, isLocked } = getAssignedVendorInfo();
+  const isVendorControl = typeof label === 'string' && label.toLowerCase().includes('vendor');
+
+  if (isLocked && isVendorControl) {
+    return (
+      <div className="relative">
+        <button type="button" disabled className="w-full rounded-lg border border-slate-200 dark:border-slate-700 h-8 px-3 text-xs text-left flex items-center justify-between gap-2 bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-200 cursor-not-allowed">
+          <span className="truncate font-semibold text-slate-700 dark:text-slate-200">{vendor || 'Assigned Vendor'}</span>
+          <span className="text-amber-400 text-xs">🔒</span>
+        </button>
+      </div>
+    );
+  }
+
+  const[open,setOpen]=useState(false);
+  const[pos,setPos]=useState({top:0,left:0,width:0});
+  const btnRef=useRef();
+  const dropRef=useRef();
+
+  const openDrop=()=>{
+    if(btnRef.current){
+      const r=btnRef.current.getBoundingClientRect();
+      setPos({top:r.bottom+window.scrollY+4,left:r.left+window.scrollX,width:r.width});
+    }
+    setOpen(o=>!o);
+  };
+
+  useEffect(()=>{
+    const h=e=>{
+      if(open&&btnRef.current&&!btnRef.current.contains(e.target)&&dropRef.current&&!dropRef.current.contains(e.target))
+        setOpen(false);
+    };
+    const s=()=>{if(open&&btnRef.current){const r=btnRef.current.getBoundingClientRect();setPos({top:r.bottom+window.scrollY+4,left:r.left+window.scrollX,width:r.width});}};
+    document.addEventListener('mousedown',h);
+    window.addEventListener('scroll',s,true);
+    window.addEventListener('resize',s);
+    return()=>{document.removeEventListener('mousedown',h);window.removeEventListener('scroll',s,true);window.removeEventListener('resize',s);};
+  },[open]);
+
+  const toggle=v=>{const s=Array.isArray(selected)?selected:[];onChange(s.includes(v)?s.filter(x=>x!==v):[...s,v]);};
+  const selAll =()=>onChange([...options]);
+  const clearAll=()=>onChange([]);
+  const sel=Array.isArray(selected)?selected:[];
+  const lbl=sel.length===0?`All ${label}`:sel.length===1?sel[0]:`${sel.length} selected`;
+
+  const dropdown=open&&ReactDOM.createPortal(
+    <div ref={dropRef} style={{position:'absolute',top:pos.top,left:pos.left,width:Math.max(pos.width,200),maxWidth:280,zIndex:99999}}
+      className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl anim-fadeup overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/60">
+        <button type="button" onClick={selAll} className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline">Select All</button>
+        <span className="text-[10px] text-slate-400">{sel.length}/{options.length} selected</span>
+        <button type="button" onClick={clearAll} className="text-[11px] font-semibold text-red-500 dark:text-red-400 hover:underline">Clear</button>
+      </div>
+      <div className="max-h-[220px] overflow-y-auto py-1">
+        {options.length===0&&<div className="px-3 py-4 text-xs text-slate-400 text-center">No options available</div>}
+        {options.map(opt=>{
+          const checked=sel.includes(opt);
+          return(
+            <label key={opt} onClick={()=>toggle(opt)}
+              className={`flex items-center gap-2.5 px-3 py-2 cursor-pointer text-xs transition-colors select-none
+                ${checked?'bg-blue-50 dark:bg-blue-950/50':'hover:bg-slate-50 dark:hover:bg-slate-700/40'}`}>
+              <span className={`w-4 h-4 rounded flex-shrink-0 border-2 flex items-center justify-center transition-colors
+                ${checked?'bg-blue-600 border-blue-600':'border-slate-300 dark:border-slate-600'}`}>
+                {checked&&<svg xmlns="http://www.w3.org/2000/svg" className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path d="M5 13l4 4L19 7"/></svg>}
+              </span>
+              <span className={`truncate ${checked?'font-semibold text-slate-800 dark:text-slate-100':'text-slate-600 dark:text-slate-300'}`}>{opt}</span>
+            </label>
+          );
+        })}
+      </div>
+    </div>,
+    document.body
+  );
+
+  return(
+    <div className="relative">
+      <button ref={btnRef} type="button" onClick={openDrop}
+        className={`w-full rounded-lg border h-8 px-3 text-xs text-left flex items-center justify-between gap-2 outline-none transition-colors
+          ${open?'border-blue-400 ring-1 ring-blue-200 dark:ring-blue-900':'border-slate-200 dark:border-slate-700'}
+          bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100`}>
+        <span className="truncate">{lbl}</span>
+        <span className="flex items-center gap-1 flex-shrink-0">
+          {sel.length>0&&<span className="bg-blue-600 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{sel.length}</span>}
+          <svg xmlns="http://www.w3.org/2000/svg" className={`w-3 h-3 text-slate-400 transition-transform ${open?'rotate-180':''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M19 9l-7 7-7-7"/></svg>
+        </span>
+      </button>
+      {dropdown}
+    </div>
+  );
+}
+
+function FilterPanel({filters,opts,setF,reset,close,fc}){
+  const setRange=days=>{const r=quickRange(days);setF('startDate',r.startDate);setF('endDate',r.endDate);};
+  return(
+    <div className="bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-900/40 rounded-2xl shadow-lg anim-fadeup">
+      <div className="p-5">
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center">
+              <Ic.filter c="w-4 h-4 text-blue-600 dark:text-blue-400"/>
+            </div>
+            <span className="font-semibold text-sm text-slate-800 dark:text-slate-200">Filters</span>
+            {fc>0&&<span className="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[11px] font-semibold rounded-full px-2 py-0.5">{fc} active</span>}
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {[7,30,90].map(d=>(
+              <button key={d} onClick={()=>setRange(d)} className="h-7 px-2.5 text-[11px] font-medium rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors">Last {d}d</button>
+            ))}
+            {fc>0&&<button onClick={reset} className="h-7 px-2.5 text-[11px] font-medium rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors flex items-center gap-1"><Ic.x c="w-3 h-3"/> Reset</button>}
+            <button onClick={close} className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"><Ic.x c="w-4 h-4"/></button>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          <div><FLbl ch="Date From"/><FInp type="date" value={filters.startDate} onChange={e=>setF('startDate',e.target.value)}/></div>
+          <div><FLbl ch="Date To"/><FInp type="date" value={filters.endDate} onChange={e=>setF('endDate',e.target.value)}/></div>
+          <div><FLbl ch="Vehicle Type"/><MultiSelect label="Types" options={opts.vtypes} selected={filters.vehicleType} onChange={v=>setF('vehicleType',v)}/></div>
+          <div><FLbl ch="Vehicle No"/><MultiSelect label="Vehicles" options={opts.vnos} selected={filters.vehicleNo} onChange={v=>setF('vehicleNo',v)}/></div>
+          <div><FLbl ch="Vendor"/><MultiSelect label="Vendors" options={opts.vendors} selected={filters.vendor} onChange={v=>setF('vendor',v)}/></div>
+          <div><FLbl ch="From Location"/><MultiSelect label="Locations" options={opts.froms} selected={filters.fromLoc} onChange={v=>setF('fromLoc',v)}/></div>
+          <div><FLbl ch="To Location"/><MultiSelect label="Destinations" options={opts.tos} selected={filters.toLoc} onChange={v=>setF('toLoc',v)}/></div>
+          <div><FLbl ch="Min Amount (₹)"/><FInp type="number" placeholder="0" value={filters.minAmt} onChange={e=>setF('minAmt',e.target.value)}/></div>
+          <div><FLbl ch="Max Amount (₹)"/><FInp type="number" placeholder="No limit" value={filters.maxAmt} onChange={e=>setF('maxAmt',e.target.value)}/></div>
+        </div>
+        {fc>0&&(
+          <div className="flex flex-wrap gap-1.5 mt-4 pt-4 border-t border-blue-100 dark:border-blue-900/30">
+            {/* Date pills */}
+            {filters.startDate&&(
+              <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300">
+                From: {filters.startDate}
+                <button onClick={()=>setF('startDate','')} className="ml-0.5 hover:text-blue-600"><Ic.x c="w-3 h-3"/></button>
+              </span>
+            )}
+            {filters.endDate&&(
+              <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300">
+                To: {filters.endDate}
+                <button onClick={()=>setF('endDate','')} className="ml-0.5 hover:text-blue-600"><Ic.x c="w-3 h-3"/></button>
+              </span>
+            )}
+            {/* Multi-select pills */}
+            {MULTI_KEYS.filter(k=>filters[k]&&filters[k].length>0).map(k=>(
+              (filters[k]||[]).map(val=>(
+                <span key={k+val} className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300">
+                  {MULTI_LBL[k]}: {val}
+                  <button onClick={()=>setF(k,(filters[k]||[]).filter(x=>x!==val))} className="ml-0.5 hover:text-blue-600"><Ic.x c="w-3 h-3"/></button>
+                </span>
+              ))
+            ))}
+            {/* Amount pills */}
+            {filters.minAmt&&(
+              <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300">
+                Min: ₹{filters.minAmt}
+                <button onClick={()=>setF('minAmt','')} className="ml-0.5 hover:text-blue-600"><Ic.x c="w-3 h-3"/></button>
+              </span>
+            )}
+            {filters.maxAmt&&(
+              <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300">
+                Max: ₹{filters.maxAmt}
+                <button onClick={()=>setF('maxAmt','')} className="ml-0.5 hover:text-blue-600"><Ic.x c="w-3 h-3"/></button>
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   TAB: OVERVIEW
+═══════════════════════════════════════════════════════ */
+function ChartDow({data,dark}){
+  const tc=dark?'#64748b':'#94a3b8',gc=dark?'#1e293b':'#f1f5f9';
+  return(
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={data.map(d=>({d:d.day,v:d.amount,c:d.count}))} margin={{top:8,right:8,left:0,bottom:0}}>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gc}/>
+        <XAxis dataKey="d" fontSize={11} tickLine={false} axisLine={false} tick={{fill:tc}}/>
+        <YAxis fontSize={11} tickLine={false} axisLine={false} tickFormatter={short} width={60} tick={{fill:tc}}/>
+        <Tooltip contentStyle={tipSt(dark)} formatter={(v,n,p)=>[rupee(v)+' · '+p.payload.c+' fills','Spend']}/>
+        <Bar dataKey="v" radius={[5,5,0,0]} maxBarSize={48}>
+          {data.map((_,i)=><Cell key={i} fill={col(i+1)}/>)}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+function TabOverview({stats,dark}){
+  const MO3X=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const monthChartData=stats.by_month.map(r=>{
+    const p=String(r.month).split('-');
+    return{m:MO3X[parseInt(p[1])-1]+' '+p[0],v:r.amount,c:r.count};
+  });
+  const tc=dark?'#64748b':'#94a3b8',gc=dark?'#1e293b':'#f1f5f9';
+
+  // Spend stats for highlight cards
+  const maxDay =stats.by_date.reduce((a,b)=>b.amount>a.amount?b:a,{amount:0,report_date:'—'});
+  const maxMonth=stats.by_month.reduce((a,b)=>b.amount>a.amount?b:a,{amount:0,month:'—'});
+  const topDow  =stats.by_dow.reduce((a,b)=>b.amount>a.amount?b:a,{amount:0,day:'—'});
+
+  return(
+    <div className="space-y-4 anim-fadeup">
+
+      {/* ── Row 1: Quick insight cards ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl p-4 text-white">
+          <div className="text-[10px] font-bold uppercase tracking-wider opacity-75 mb-1">Highest Single Day</div>
+          <div className="text-xl font-bold">{rupee(maxDay.amount)}</div>
+          <div className="text-xs opacity-75 mt-1">{maxDay.report_date!=='—'?dateStr(maxDay.report_date):'No data'}</div>
+        </div>
+        <div className="bg-gradient-to-br from-emerald-600 to-emerald-700 rounded-2xl p-4 text-white">
+          <div className="text-[10px] font-bold uppercase tracking-wider opacity-75 mb-1">Best Month</div>
+          <div className="text-xl font-bold">{rupee(maxMonth.amount)}</div>
+          <div className="text-xs opacity-75 mt-1">{maxMonth.month!=='—'?(()=>{const p=String(maxMonth.month).split('-');return MO3X[parseInt(p[1])-1]+' '+p[0];})():'No data'}</div>
+        </div>
+        <div className="bg-gradient-to-br from-violet-600 to-violet-700 rounded-2xl p-4 text-white">
+          <div className="text-[10px] font-bold uppercase tracking-wider opacity-75 mb-1">Busiest Day of Week</div>
+          <div className="text-xl font-bold">{topDow.day}</div>
+          <div className="text-xs opacity-75 mt-1">{rupee(topDow.amount)} total spend</div>
+        </div>
+      </div>
+
+      {/* ── Row 2: Daily trend + Vehicle type donut ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <Card cls="lg:col-span-2" ch={<>
+          <CH title="Daily Spend Trend" sub="Total diesel cost per day"/>
+          <div className="h-[240px] px-4 pb-4"><ChartDaily data={stats.by_date} dark={dark}/></div>
+        </>}/>
+        <Card ch={<>
+          <CH title="Vehicle Type Mix" sub="Spend by fleet category"/>
+          <div className="px-5 pb-5"><ChartDonut data={stats.by_type} dark={dark}/></div>
+        </>}/>
+      </div>
+
+      {/* ── Row 3: Monthly + Weekly ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card ch={<>
+          <CH title="Monthly Spend" sub="Month-by-month total spend"/>
+          <div className="h-[230px] px-4 pb-4"><ChartMonthly data={stats.by_month} dark={dark}/></div>
+        </>}/>
+        <Card ch={<>
+          <CH title="Weekly Spend" sub="Week-over-week aggregation"/>
+          <div className="h-[230px] px-4 pb-4"><ChartWeek data={stats.by_week} dark={dark}/></div>
+        </>}/>
+      </div>
+
+      {/* ── Row 4: Day-of-week + Top vehicles ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card ch={<>
+          <CH title="Spend by Day of Week" sub="Which days have highest fuel spend"/>
+          <div className="h-[220px] px-4 pb-4"><ChartDow data={stats.by_dow} dark={dark}/></div>
+        </>}/>
+        <Card ch={<>
+          <CH title="Top 10 Vehicles" sub="Ranked by total spend"/>
+          <div className="px-5 pb-5 max-h-[220px] overflow-y-auto"><HBar data={stats.top_vehicles} lk="vehicle_no" vk="amount"/></div>
+        </>}/>
+      </div>
+
+      {/* ── Row 5: Top vendors + Top locations ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card ch={<>
+          <CH title="Top Vendors by Spend" sub="Fuel suppliers ranked by cost"/>
+          <div className="px-5 pb-5"><HBar data={stats.top_vendors} lk="vendor_name" vk="amount" off={4}/></div>
+        </>}/>
+        <Card ch={<>
+          <CH title="Top Destinations" sub="Most visited delivery locations"/>
+          <div className="px-5 pb-5"><TripBar data={stats.by_to_location.slice(0,8)} lk="location" off={2}/></div>
+        </>}/>
+      </div>
+
+      {/* ── Row 6: Monthly summary table ── */}
+      <Card ch={<>
+        <CH title="Monthly Summary Table" sub="Aggregated spend and fills per month"/>
+        <div className="overflow-auto">
+          <table className="w-full text-left border-collapse">
+            <thead className="bg-slate-50 dark:bg-slate-800/60">
+              <tr>
+                <th className="py-2.5 pl-5 pr-3 text-[11px] font-bold text-slate-500 w-8">#</th>
+                <th className="py-2.5 px-3 text-[11px] font-bold text-slate-500">Month</th>
+                <th className="py-2.5 px-3 text-[11px] font-bold text-slate-500 text-right">Fills</th>
+                <th className="py-2.5 px-3 text-[11px] font-bold text-slate-500 text-right">Total Spend</th>
+                <th className="py-2.5 px-3 text-[11px] font-bold text-slate-500 text-right">Avg / Fill</th>
+                <th className="py-2.5 pr-5 px-3 text-[11px] font-bold text-slate-500 text-right">% of Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stats.by_month.map((r,i)=>{
+                const p=String(r.month).split('-');
+                const lbl=MO3X[parseInt(p[1])-1]+' '+p[0];
+                const pct=stats.summary.total_spend?((r.amount/stats.summary.total_spend)*100).toFixed(1):'0';
+                const avg=r.count?Math.round(r.amount/r.count):0;
+                return(
+                  <tr key={r.month} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                    <td className="py-2.5 pl-5 pr-3 text-[11px] text-slate-400 font-mono whitespace-nowrap">{i+1}</td>
+                    <td className="py-2.5 px-3 text-sm font-semibold text-slate-800 dark:text-slate-200 whitespace-nowrap">{lbl}</td>
+                    <td className="py-2.5 px-3 text-sm text-right text-slate-600 dark:text-slate-400 whitespace-nowrap">{r.count}</td>
+                    <td className="py-2.5 px-3 text-sm text-right font-bold text-emerald-700 dark:text-emerald-400 whitespace-nowrap">{rupee(r.amount)}</td>
+                    <td className="py-2.5 px-3 text-sm text-right text-slate-500 dark:text-slate-400 whitespace-nowrap">{rupee(avg)}</td>
+                    <td className="py-2.5 pr-5 px-3 text-sm text-right text-slate-400 whitespace-nowrap">{pct}%</td>
+                  </tr>
+                );
+              })}
+              {!stats.by_month.length&&<tr><td colSpan={6} className="py-12 text-center text-slate-400 text-sm">No monthly data.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </>}/>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   TAB: VEHICLES
+═══════════════════════════════════════════════════════ */
+const TYPEBG=['bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-900/50','bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900/50','bg-violet-50 dark:bg-violet-950/40 border-violet-200 dark:border-violet-900/50','bg-orange-50 dark:bg-orange-950/40 border-orange-200 dark:border-orange-900/50','bg-cyan-50 dark:bg-cyan-950/40 border-cyan-200 dark:border-cyan-900/50'];
+
+function TabVehicles({stats,onJump}){
+  const total=stats.summary.total_spend;
+  return(
+    <div className="space-y-4 anim-fadeup">
+      {stats.by_type.length>0&&(
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+          {stats.by_type.map((t,i)=>{
+            const pct=total?((t.amount/total)*100).toFixed(1):'0';
+            return(
+              <div key={t.vehicle_type} className={`border rounded-2xl p-4 ${TYPEBG[i%5]}`}>
+                <div className="text-[10px] font-bold text-slate-500 dark:text-slate-500 uppercase tracking-wider mb-1">{t.vehicle_type||'Unknown'}</div>
+                <div className="text-lg font-bold text-slate-900 dark:text-slate-100">{rupee(t.amount)}</div>
+                <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">{t.count} fills · {pct}%</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <Card ch={<>
+        <CH title="All Vehicles — Ranked by Total Spend" sub="Click a row to filter by vehicle"/>
+        <div className="overflow-auto">
+          <table className="w-full text-left border-collapse">
+            <thead className="bg-slate-50 dark:bg-slate-800/60"><tr>
+              <th className="py-2.5 px-3 text-[11px] font-bold text-slate-500 pl-5 w-10">#</th>
+              <Th>Vehicle No</Th><Th>Type</Th>
+              <Th right>Trips</Th><Th right>Total Spend</Th>
+              <Th right>Avg/Fill</Th><Th right>Max Fill</Th><Th right>Min Fill</Th>
+              <th className="py-2.5 px-3 text-[11px] font-bold text-slate-500 text-right pr-5">% Total</th>
+            </tr></thead>
+            <tbody>
+              {stats.all_vehicles.map((v,i)=>{
+                const pct=total?(v.amount/total)*100:0;
+                return(
+                  <Tr key={v.vehicle_no} onClick={()=>onJump('vehicleNo',v.vehicle_no)} cls="hover:bg-blue-50/60 dark:hover:bg-blue-950/20">
+                    <Td cls="text-[11px] text-slate-400 font-mono pl-5 whitespace-nowrap">{i+1}</Td>
+                    <Td cls="font-bold text-blue-700 dark:text-blue-400 whitespace-nowrap">{v.vehicle_no}</Td>
+                    <Td cls="whitespace-nowrap"><Pill>{v.vehicle_type||'—'}</Pill></Td>
+                    <Td cls="text-right whitespace-nowrap">{v.trip_count}</Td>
+                    <Td cls="text-right font-bold whitespace-nowrap">{rupee(v.amount)}</Td>
+                    <Td cls="text-right text-slate-500 dark:text-slate-400 whitespace-nowrap">{rupee(v.avg_amount)}</Td>
+                    <Td cls="text-right font-semibold text-red-500 dark:text-red-400 whitespace-nowrap">{rupee(v.max_amount)}</Td>
+                    <Td cls="text-right font-semibold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">{rupee(v.min_amount)}</Td>
+                    <td className="py-2.5 px-3 text-right pr-5 whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-2">
+                        <div className="w-12 h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                          <div className="h-full bg-blue-500 rounded-full bar-w" style={{width:`${Math.min(pct,100)}%`}}/>
+                        </div>
+                        <span className="text-[11px] text-slate-400 w-9 text-right">{pct.toFixed(1)}%</span>
+                      </div>
+                    </td>
+                  </Tr>
+                );
+              })}
+              {!stats.all_vehicles.length&&<Tr><Td cls="py-16 text-center text-slate-400" colSpan={9}>No vehicle data.</Td></Tr>}
+            </tbody>
+          </table>
+        </div>
+      </>}/>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   TAB: VENDORS
+═══════════════════════════════════════════════════════ */
+function TabVendors({stats,onJump}){
+  const total=stats.summary.total_spend;
+  const maxC=Math.max(...stats.all_vendors.map(v=>v.trip_count),1);
+  return(
+    <div className="space-y-4 anim-fadeup">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card ch={<>
+          <CH title="Vendor Spend Ranking" sub="Total fuel spend by supplier"/>
+          <div className="px-5 pb-5 max-h-[360px] overflow-y-auto"><HBar data={stats.all_vendors} lk="vendor_name" vk="amount" off={2}/></div>
+        </>}/>
+        <Card ch={<>
+          <CH title="Transaction Count per Vendor" sub="Number of fills per supplier"/>
+          <div className="px-5 pb-5 max-h-[360px] overflow-y-auto space-y-3">
+            {stats.all_vendors.map((v,i)=>{
+              const pct=(v.trip_count/maxC)*100;
+              return(
+                <div key={v.vendor_name}>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate max-w-[200px]">{v.vendor_name}</span>
+                    <span className="text-xs font-bold ml-2 text-slate-900 dark:text-slate-100">{v.trip_count} fills</span>
+                  </div>
+                  <div className="h-1.5 bg-slate-100 dark:bg-slate-700/60 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full bar-w" style={{width:`${pct}%`,background:col(i+1)}}/>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>}/>
+      </div>
+      <Card ch={<>
+        <CH title="Vendor Details" sub="Click a row to filter by vendor"/>
+        <div className="overflow-auto">
+          <table className="w-full text-left border-collapse">
+            <thead className="bg-slate-50 dark:bg-slate-800/60"><tr>
+              <th className="py-2.5 px-3 text-[11px] font-bold text-slate-500 pl-5 w-10">#</th>
+              <Th>Vendor Name</Th>
+              <Th right>Transactions</Th><Th right>Total Spend</Th>
+              <Th right>Avg/Fill</Th>
+              <th className="py-2.5 px-3 text-[11px] font-bold text-slate-500 text-right pr-5">% Total</th>
+            </tr></thead>
+            <tbody>
+              {stats.all_vendors.map((v,i)=>{
+                const pct=total?((v.amount/total)*100).toFixed(1):'0';
+                return(
+                  <Tr key={v.vendor_name} onClick={()=>onJump('vendor',v.vendor_name)} cls="hover:bg-emerald-50/60 dark:hover:bg-emerald-950/20">
+                    <Td cls="text-[11px] text-slate-400 pl-5 whitespace-nowrap">{i+1}</Td>
+                    <Td cls="font-semibold text-emerald-700 dark:text-emerald-400 whitespace-nowrap">{v.vendor_name}</Td>
+                    <Td cls="text-right whitespace-nowrap">{v.trip_count}</Td>
+                    <Td cls="text-right font-bold whitespace-nowrap">{rupee(v.amount)}</Td>
+                    <Td cls="text-right text-slate-500 dark:text-slate-400 whitespace-nowrap">{rupee(v.avg_amount)}</Td>
+                    <Td cls="text-right text-slate-400 pr-5 whitespace-nowrap">{pct}%</Td>
+                  </Tr>
+                );
+              })}
+              {!stats.all_vendors.length&&<Tr><Td cls="py-16 text-center text-slate-400" colSpan={6}>No vendor data.</Td></Tr>}
+            </tbody>
+          </table>
+        </div>
+      </>}/>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   TAB: LOCATIONS
+═══════════════════════════════════════════════════════ */
+function TabLocations({stats}){
+  return(
+    <div className="space-y-4 anim-fadeup">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card ch={<><CH title="Top From Locations" sub="By trip count"/><div className="px-5 pb-5 max-h-[400px] overflow-y-auto"><TripBar data={stats.by_from_location} lk="location"/></div></>}/>
+        <Card ch={<><CH title="Top Destinations" sub="By trip count"/><div className="px-5 pb-5 max-h-[400px] overflow-y-auto"><TripBar data={stats.by_to_location} lk="location" off={3}/></div></>}/>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card ch={<><CH title="Spend by From Location" sub="Total diesel cost per origin"/><div className="px-5 pb-5"><HBar data={stats.by_from_location} lk="location" vk="amount" off={1}/></div></>}/>
+        <Card ch={<><CH title="Spend by Destination" sub="Total diesel cost per destination"/><div className="px-5 pb-5"><HBar data={stats.by_to_location} lk="location" vk="amount" off={5}/></div></>}/>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   TAB: TRANSACTIONS
+═══════════════════════════════════════════════════════ */
+const TC=[
+  {k:'report_date', l:'Date',    s:true},
+  {k:'report_time', l:'Time',    s:false},
+  {k:'vehicle_no',  l:'Vehicle', s:true},
+  {k:'vehicle_type',l:'Type',    s:true},
+  {k:'from_location',l:'From',   s:true},
+  {k:'last_location',l:'To',     s:true},
+  {k:'current_km',  l:'KM',      s:true,r:true},
+  {k:'mileage',     l:'KM/L',    s:true,r:true},
+  {k:'diesel_amount',l:'Amount', s:true,r:true},
+  {k:'vendor_name', l:'Vendor',  s:true},
+  {k:'note',        l:'Note',    s:false},
+];
+
+function TabTransactions({rows,filters}){
+  const[sort,setSort]=useState({col:'report_date',dir:'desc'});
+  const[si,setSi]=useState('');
+  const[sq,setSq]=useState('');
+  const[pg,setPg]=useState(1);
+  const[lim,setLim]=useState(50);
+  const stRef=useRef();
+
+  const onSI=v=>{setSi(v);clearTimeout(stRef.current);stRef.current=setTimeout(()=>{setSq(v);setPg(1);},350);};
+  const onSort=col=>{setSort(s=>s.col===col?{col,dir:s.dir==='asc'?'desc':'asc'}:{col,dir:'asc'});setPg(1);};
+
+  const fRows=useMemo(()=>{
+    let r=filterRows(rows,filters,sq);
+    r=[...r].sort((a,b)=>{
+      const va=a[sort.col]??'',vb=b[sort.col]??'';
+      const na=parseFloat(va),nb=parseFloat(vb);
+      const c=(!isNaN(na)&&!isNaN(nb))?(na-nb):String(va).localeCompare(String(vb));
+      return sort.dir==='asc'?c:-c;
+    });
+    return r;
+  },[rows,filters,sq,sort]);
+
+  const tot=fRows.length,pages=Math.max(1,Math.ceil(tot/lim));
+  const page=useMemo(()=>fRows.slice((pg-1)*lim,pg*lim),[fRows,pg,lim]);
+
+  const exportExcel=()=>{
+    if(!fRows.length){toast.err('No data to export');return;}
+    
+    // Header labels and their respective keys
+    const headers = ['Date', 'Time', 'Vehicle No', 'Vehicle Type', 'Mileage', 'From Location', 'Destination', 'Odometer (KM)', 'Diesel Amount', 'Vendor Name', 'Notes'];
+    const keys = ['report_date', 'report_time', 'vehicle_no', 'vehicle_type', 'mileage', 'from_location', 'last_location', 'current_km', 'diesel_amount', 'vendor_name', 'note'];
+
+    // Map rows to data structure for sheet
+    const data = [];
+    
+    // Style configurations for headers and body
+    const headerStyle = {
+      font: { name: 'Segoe UI', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },
+      fill: { fgColor: { rgb: '2563EB' } }, // Tailwind Blue-600
+      alignment: { horizontal: 'center', vertical: 'center' },
+      border: {
+        top: { style: 'thin', color: { rgb: 'CBD5E1' } },
+        bottom: { style: 'thin', color: { rgb: 'CBD5E1' } },
+        left: { style: 'thin', color: { rgb: 'CBD5E1' } },
+        right: { style: 'thin', color: { rgb: 'CBD5E1' } }
+      }
+    };
+    
+    const bodyStyle = {
+      font: { name: 'Segoe UI', sz: 10 },
+      alignment: { horizontal: 'center', vertical: 'center' },
+      border: {
+        top: { style: 'thin', color: { rgb: 'E2E8F0' } },
+        bottom: { style: 'thin', color: { rgb: 'E2E8F0' } },
+        left: { style: 'thin', color: { rgb: 'E2E8F0' } },
+        right: { style: 'thin', color: { rgb: 'E2E8F0' } }
+      }
+    };
+
+    // Build headers row
+    const headerRow = headers.map(h => ({ v: h, t: 's', s: headerStyle }));
+    data.push(headerRow);
+
+    // Build data rows
+    fRows.forEach(r => {
+      const row = keys.map(k => {
+        let val = r[k];
+        
+        // Specific formatting for current_km (odometer) - if 1 or blank, replace with N/A
+        if (k === 'current_km') {
+          const numVal = parseFloat(val);
+          if (isNaN(numVal) || numVal === 1 || String(val).trim() === '' || String(val).trim() === '1') {
+            val = 'N/A';
+          }
+        }
+        
+        // Formatting for date representation (DD-MM-YYYY)
+        if (k === 'report_date' && val) {
+          const parts = String(val).split('-');
+          if (parts.length === 3) {
+            val = `${parts[2]}-${parts[1]}-${parts[0]}`;
+          }
+        }
+
+        return {
+          v: val === undefined || val === null ? '' : val,
+          t: typeof val === 'number' ? 'n' : 's',
+          s: bodyStyle
+        };
+      });
+      data.push(row);
+    });
+
+    // Create workbook and worksheet
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(data);
+
+    // Set column widths based on content
+    const colWidths = headers.map((h, colIdx) => {
+      let maxLen = h.length;
+      data.forEach(row => {
+        const valStr = String(row[colIdx]?.v || '');
+        if (valStr.length > maxLen) maxLen = valStr.length;
+      });
+      return { wch: Math.max(maxLen + 4, 12) };
+    });
+    ws['!cols'] = colWidths;
+    
+    // Set row heights (Header gets larger height)
+    ws['!rows'] = [{ hpt: 26 }];
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Transactions');
+    XLSX.writeFile(wb, `diesel_transactions_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    toast.ok(`Exported ${num(fRows.length)} records to Excel`);
+  };
+
+  const pageNums=useMemo(()=>{
+    const st=Math.min(Math.max(1,pg-2),Math.max(1,pages-4));
+    return Array.from({length:Math.min(5,pages)},(_,i)=>st+i).filter(p=>p>=1&&p<=pages);
+  },[pg,pages]);
+
+  const sof=col=>sort.col===col?sort.dir:null;
+
+  return(
+    <Card cls="anim-fadeup" ch={<>
+      <div className="pt-5 pb-3 px-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <p className="font-semibold text-sm text-slate-900 dark:text-slate-100">All Transactions</p>
+          <p className="text-xs text-slate-500 dark:text-slate-500 mt-0.5">{num(tot)} records · page {pg}/{pages}</p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative">
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"><Ic.search c="w-3.5 h-3.5 text-slate-400"/></span>
+            <input type="search" placeholder="Search…" value={si} onChange={e=>onSI(e.target.value)}
+              className="pl-8 pr-3 h-8 w-52 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 outline-none focus:border-blue-400 placeholder-slate-400 transition-colors"/>
+          </div>
+          <select value={lim} onChange={e=>{setLim(+e.target.value);setPg(1);}} className="h-8 px-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 outline-none cursor-pointer">
+            {[25,50,100,250].map(n=><option key={n} value={n}>{n} / page</option>)}
+          </select>
+          <button onClick={exportExcel} className="h-8 px-3 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5">
+            <Ic.download c="w-3.5 h-3.5"/> Export Excel
+          </button>
+        </div>
+      </div>
+      <div className="hidden md:block overflow-auto">
+        <table className="w-full text-left border-collapse">
+          <thead className="bg-slate-50 dark:bg-slate-800/60 sticky top-0">
+            <tr>
+              <th className="py-2.5 pl-5 pr-3 text-[11px] font-bold text-slate-500 w-10">#</th>
+              {TC.map(c=>(
+                <Th key={c.k} right={c.r} sortable={c.s} sorted={sof(c.k)} onClick={c.s?()=>onSort(c.k):null}>{c.l}</Th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {page.map((r,i)=>(
+              <Tr key={i} cls="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
+                <Td cls="text-[11px] text-slate-400 font-mono pl-5 whitespace-nowrap">{(pg-1)*lim+i+1}</Td>
+                <Td cls="whitespace-nowrap font-medium">{dateStr(r.report_date)}</Td>
+                <Td cls="text-slate-400 dark:text-slate-500 whitespace-nowrap">{String(r.report_time??'—')}</Td>
+                <Td cls="font-bold text-blue-700 dark:text-blue-400 whitespace-nowrap">{String(r.vehicle_no??'—')}</Td>
+                <Td cls="whitespace-nowrap">{r.vehicle_type?<Pill>{String(r.vehicle_type)}</Pill>:null}</Td>
+                <Td cls="max-w-[110px] truncate text-slate-500 dark:text-slate-400 whitespace-nowrap">{String(r.from_location??'—')}</Td>
+                <Td cls="max-w-[110px] truncate text-slate-500 dark:text-slate-400 whitespace-nowrap">{String(r.last_location??'—')}</Td>
+                <Td cls="text-right font-mono whitespace-nowrap">{r.current_km?num(r.current_km):'—'}</Td>
+                <Td cls="text-right font-mono text-slate-400 whitespace-nowrap">{r.mileage?Number(r.mileage).toFixed(1):'—'}</Td>
+                <Td cls="text-right font-bold text-emerald-700 dark:text-emerald-400 whitespace-nowrap">{rupee(r.diesel_amount)}</Td>
+                <Td cls="max-w-[110px] truncate text-slate-500 dark:text-slate-400 whitespace-nowrap">{String(r.vendor_name??'—')}</Td>
+                <Td cls="max-w-[100px] truncate text-slate-400 dark:text-slate-600 text-xs">{String(r.note??'')}</Td>
+              </Tr>
+            ))}
+            {!page.length&&<Tr><Td cls="py-20 text-center text-slate-400 whitespace-nowrap" colSpan={12}>{tot===0?'No transactions match your filters.':'No data.'}</Td></Tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Mobile Card List */}
+      <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
+        {page.map((r, i) => (
+          <div key={i} className="p-4 space-y-2.5 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors">
+            {/* Row 1: Vehicle and Date */}
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-blue-700 dark:text-blue-400 text-sm">
+                  {String(r.vehicle_no ?? '—')}
+                </span>
+                {r.vehicle_type && <Pill>{String(r.vehicle_type)}</Pill>}
+              </div>
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                {dateStr(r.report_date)} {r.report_time ? ` · ${r.report_time}` : ''}
+              </span>
+            </div>
+
+            {/* Row 2: Location flow */}
+            <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+              <span className="truncate max-w-[120px]">{String(r.from_location ?? '—')}</span>
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M9 5l7 7-7 7"/></svg>
+              <span className="truncate max-w-[120px]">{String(r.last_location ?? '—')}</span>
+            </div>
+
+            {/* Row 3: Metrics (KM, KM/L, Amount, Vendor) */}
+            <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
+              <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                {r.current_km ? <span>{num(r.current_km)} KM</span> : null}
+                {r.mileage ? <span>{Number(r.mileage).toFixed(1)} KM/L</span> : null}
+                <span className="truncate max-w-[100px] text-slate-400">{String(r.vendor_name ?? '—')}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-sm text-emerald-700 dark:text-emerald-400">
+                  {rupee(r.diesel_amount)}
+                </span>
+              </div>
+            </div>
+
+            {/* Optional Note */}
+            {r.note && (
+              <p className="text-[11px] text-slate-400 dark:text-slate-600 bg-slate-50 dark:bg-slate-900/60 rounded px-2 py-1 italic truncate">
+                Note: {String(r.note)}
+              </p>
+            )}
+          </div>
+        ))}
+        {!page.length && (
+          <div className="py-20 text-center text-slate-400 text-sm">
+            {tot===0?'No transactions match your filters.':'No data.'}
+          </div>
+        )}
+      </div>
+      {pages>1&&(
+        <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 dark:border-slate-800">
+          <p className="text-xs text-slate-500 dark:text-slate-500">Showing {num((pg-1)*lim+1)}–{num(Math.min(pg*lim,tot))} of {num(tot)}</p>
+          <div className="flex items-center gap-1">
+            <button onClick={()=>setPg(p=>Math.max(1,p-1))} disabled={pg===1} className="w-8 h-8 rounded-lg flex items-center justify-center border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"><Ic.chevL c="w-4 h-4"/></button>
+            {pageNums.map(p=>(
+              <button key={p} onClick={()=>setPg(p)} className={`w-8 h-8 rounded-lg text-xs font-medium transition-colors ${p===pg?'bg-blue-600 text-white':'border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>{p}</button>
+            ))}
+            <button onClick={()=>setPg(p=>Math.min(pages,p+1))} disabled={pg===pages} className="w-8 h-8 rounded-lg flex items-center justify-center border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"><Ic.chevR c="w-4 h-4"/></button>
+          </div>
+        </div>
+      )}
+    </>}/>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   TAB: IMPORT
+═══════════════════════════════════════════════════════ */
+const COLINFO=[
+  {l:'Date',         a:['date','report_date','report date']},
+  {l:'Vehicle No',   a:['vehicle no','vehicle number','vehicle','veh no']},
+  {l:'Vehicle Type', a:['vehicle type','type','veh type']},
+  {l:'Diesel Amount',a:['diesel amount','fuel amount','amount','diesel','fuel']},
+  {l:'Vendor Name',  a:['vendor name','vendor','supplier','petrol pump']},
+  {l:'From Location',a:['from location','from','origin']},
+  {l:'To Location',  a:['last location','to location','to','destination']},
+  {l:'KM Reading',   a:['current km','odometer','km reading','km']},
+  {l:'Mileage',      a:['mileage','km/l','kmpl','fuel efficiency']},
+  {l:'Notes',        a:['note','notes','remarks','comment']},
+];
+
+function TabImport({onImportData,onDone}){
+  return(
+    <div className="space-y-5 anim-fadeup">
+      <UploadBox onImportData={onImportData} onDone={onDone}/>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card ch={
+          <div className="p-5 space-y-3">
+            <div className="flex items-center gap-2.5 mb-3">
+              <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center"><Ic.info c="w-4 h-4 text-blue-600 dark:text-blue-400"/></div>
+              <span className="font-semibold text-sm text-slate-900 dark:text-slate-100">Supported Column Names</span>
+            </div>
+            {COLINFO.map(c=>(
+              <div key={c.l} className="flex items-start gap-3">
+                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 min-w-[100px] pt-0.5">{c.l}</span>
+                <div className="flex flex-wrap gap-1">{c.a.map(a=><code key={a} className="text-[10px] rounded px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-mono">{a}</code>)}</div>
+              </div>
+            ))}
+          </div>
+        }/>
+        <Card ch={
+          <div className="p-5 space-y-3">
+            <div className="flex items-center gap-2.5 mb-3">
+              <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center"><Ic.file c="w-4 h-4 text-emerald-600 dark:text-emerald-400"/></div>
+              <span className="font-semibold text-sm text-slate-900 dark:text-slate-100">Import Notes</span>
+            </div>
+            {[
+              [Ic.check,'text-emerald-500','Multiple imports merge — existing data is kept'],
+              [Ic.check,'text-emerald-500','Date formats: DD-MM-YYYY or YYYY-MM-DD auto-detected'],
+              [Ic.check,'text-emerald-500','Amount fields: ₹ symbol and commas are stripped automatically'],
+              [Ic.check,'text-emerald-500','Rows with no vehicle and no amount are skipped'],
+              [Ic.alert,'text-amber-500','Column names are case-insensitive and whitespace-trimmed'],
+              [Ic.alert,'text-amber-500','Only the first sheet is read from multi-sheet workbooks'],
+            ].map(([Icon,cls,txt],i)=>(
+              <div key={i} className="flex items-start gap-2.5">
+                <Icon c={`w-4 h-4 mt-0.5 flex-shrink-0 ${cls}`}/>
+                <span className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">{txt}</span>
+              </div>
+            ))}
+          </div>
+        }/>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   TAB: REPORTS (Daily / Weekly / Monthly)
+═══════════════════════════════════════════════════════ */
+const FULL_MO=['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MO3=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+/* ── helpers ── */
+const fmtDate=raw=>{
+  if(!raw)return'—';
+  const p=String(raw).split(/[-T ]/);
+  if(p.length>=3){const m=parseInt(p[1])-1;return`${parseInt(p[2])} ${MO3[m]||''} ${p[0]}`;}
+  return String(raw);
+};
+const fmtWeekRange=(ws)=>{
+  const endD=new Date(ws);endD.setDate(endD.getDate()+6);
+  const sp=ws.split('-'), ep=endD.toISOString().split('T')[0].split('-');
+  return`${parseInt(sp[2])} ${MO3[parseInt(sp[1])-1]} – ${parseInt(ep[2])} ${MO3[parseInt(ep[1])-1]} ${ep[0]}`;
+};
+const fmtMonth=(ym)=>{
+  const p=ym.split('-');
+  return`${FULL_MO[parseInt(p[1])-1]||''} ${p[0]}`;
+};
+
+function ReportSummaryCard({title,sub,amount,count,periods,unit,active,onClick,colorIdx}){
+  const palettes=[
+    {bg:'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800', lbl:'text-blue-600 dark:text-blue-400', val:'text-blue-900 dark:text-blue-100', ring:'ring-blue-500'},
+    {bg:'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800', lbl:'text-emerald-600 dark:text-emerald-400', val:'text-emerald-900 dark:text-emerald-100', ring:'ring-emerald-500'},
+    {bg:'bg-violet-50 dark:bg-violet-950/40 border-violet-200 dark:border-violet-800', lbl:'text-violet-600 dark:text-violet-400', val:'text-violet-900 dark:text-violet-100', ring:'ring-violet-500'},
+  ];
+  const p=palettes[colorIdx]||palettes[0];
+  return(
+    <div onClick={onClick} className={`border rounded-2xl p-5 cursor-pointer hover-lift transition-all ${p.bg} ${active?`ring-2 ${p.ring}`:''}`}>
+      <div className={`text-[10px] font-bold uppercase tracking-wider mb-2 ${p.lbl}`}>{title}</div>
+      <div className={`text-xs mb-1 ${p.lbl} opacity-80`}>{sub}</div>
+      <div className={`text-2xl font-bold leading-tight ${p.val}`}>{rupee(amount)}</div>
+      <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">{count} transactions · {periods} {unit}</div>
+    </div>
+  );
+}
+
+function ReportTable({data}){
+  const total=data.reduce((s,r)=>s+(r.amount||0),0);
+  const maxA=Math.max(...data.map(r=>r.amount||0),1);
+  return(
+    <div className="overflow-auto">
+      <table className="w-full text-left border-collapse">
+        <thead className="bg-slate-50 dark:bg-slate-800/60 sticky top-0">
+          <tr>
+            <th className="py-2.5 pl-5 pr-2 text-[11px] font-bold text-slate-500 w-9">#</th>
+            <th className="py-2.5 px-3 text-[11px] font-bold text-slate-500">Period</th>
+            <th className="py-2.5 px-3 text-[11px] font-bold text-slate-500 text-right">Transactions</th>
+            <th className="py-2.5 px-3 text-[11px] font-bold text-slate-500 text-right">Total Spend</th>
+            <th className="py-2.5 px-3 text-[11px] font-bold text-slate-500 text-right">Avg / Fill</th>
+            <th className="py-2.5 px-3 text-[11px] font-bold text-slate-500 text-right">% of Total</th>
+            <th className="py-2.5 px-3 text-[11px] font-bold text-slate-500 min-w-[120px]">Spend Bar</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((r,i)=>{
+            const amt=r.amount||0, cnt=r.count||0;
+            const pct=total?((amt/total)*100).toFixed(1):'0';
+            const avg=cnt?Math.round(amt/cnt):0;
+            const barPct=(amt/maxA)*100;
+            return(
+              <tr key={i} className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                <td className="py-2.5 pl-5 pr-2 text-[11px] text-slate-400 font-mono whitespace-nowrap">{i+1}</td>
+                <td className="py-2.5 px-3 text-sm font-semibold text-slate-800 dark:text-slate-200 whitespace-nowrap">{r.label}</td>
+                <td className="py-2.5 px-3 text-sm text-right text-slate-600 dark:text-slate-400 whitespace-nowrap">{cnt}</td>
+                <td className="py-2.5 px-3 text-sm text-right font-bold text-emerald-700 dark:text-emerald-400 whitespace-nowrap">{rupee(amt)}</td>
+                <td className="py-2.5 px-3 text-sm text-right text-slate-500 dark:text-slate-400 whitespace-nowrap">{rupee(avg)}</td>
+                <td className="py-2.5 px-3 text-sm text-right text-slate-400 whitespace-nowrap">{pct}%</td>
+                <td className="py-2.5 px-3 whitespace-nowrap">
+                  <div className="h-2 bg-slate-100 dark:bg-slate-700/60 rounded-full overflow-hidden">
+                    <div className="h-full rounded-full bar-w" style={{width:`${barPct}%`,background:col(i)}}/>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+          {!data.length&&(
+            <tr><td colSpan={7} className="py-16 text-center text-slate-400 text-sm">No data available.</td></tr>
+          )}
+        </tbody>
+        {data.length>0&&(
+          <tfoot className="bg-slate-50 dark:bg-slate-800/60">
+            <tr>
+              <td colSpan={2} className="py-3 pl-5 text-xs font-bold text-slate-600 dark:text-slate-300">
+                TOTAL ({data.length} {data.length===1?'period':'periods'})
+              </td>
+              <td className="py-3 px-3 text-right text-xs font-bold text-slate-700 dark:text-slate-300">
+                {data.reduce((s,r)=>s+(r.count||0),0)}
+              </td>
+              <td className="py-3 px-3 text-right text-xs font-bold text-emerald-700 dark:text-emerald-400">{rupee(total)}</td>
+              <td colSpan={3}/>
+            </tr>
+          </tfoot>
+        )}
+      </table>
+    </div>
+  );
+}
+
+function TabReports({stats,dark}){
+  const[rv,setRv]=useState('daily');
+  const[sortDir,setSortDir]=useState('asc');
+
+  /* ── Build period arrays from stats ── */
+  const dailyData=useMemo(()=>
+    stats.by_date.map(r=>({
+      label:fmtDate(r.report_date),
+      amount:r.amount,
+      count:r.count,
+    }))
+  ,[stats]);
+
+  const weeklyData=useMemo(()=>
+    stats.by_week.map(r=>({
+      label:fmtWeekRange(r.week_start),
+      amount:r.amount,
+      count:r.count,
+    }))
+  ,[stats]);
+
+  const monthlyData=useMemo(()=>
+    stats.by_month.map(r=>({
+      label:fmtMonth(r.month),
+      amount:r.amount,
+      count:r.count,
+    }))
+  ,[stats]);
+
+  /* ── Latest period values (most recent entry) ── */
+  const latestDay   =dailyData[dailyData.length-1]   ||{label:'—',amount:0,count:0};
+  const latestWeek  =weeklyData[weeklyData.length-1]  ||{label:'—',amount:0,count:0};
+  const latestMonth =monthlyData[monthlyData.length-1]||{label:'—',amount:0,count:0};
+
+  const RVTABS=[
+    {id:'daily',   label:'Daily',   data:dailyData,   unit:'days',   latestAmt:latestDay.amount,   latestSub:latestDay.label,   latestCnt:latestDay.count},
+    {id:'weekly',  label:'Weekly',  data:weeklyData,  unit:'weeks',  latestAmt:latestWeek.amount,  latestSub:latestWeek.label,  latestCnt:latestWeek.count},
+    {id:'monthly', label:'Monthly', data:monthlyData, unit:'months', latestAmt:latestMonth.amount, latestSub:latestMonth.label, latestCnt:latestMonth.count},
+  ];
+
+  const active=RVTABS.find(t=>t.id===rv)||RVTABS[0];
+  const tc=dark?'#64748b':'#94a3b8', gc=dark?'#1e293b':'#f1f5f9';
+
+  const exportCSV=()=>{
+    if(!active.data.length){toast.err('No data');return;}
+    const tot=active.data.reduce((s,r)=>s+r.amount,0);
+    const cols=['Period','Transactions','Total Spend (₹)','Avg per Fill (₹)','% of Total'];
+    const rows2=active.data.map(r=>{
+      const pct=tot?((r.amount/tot)*100).toFixed(1):'0';
+      const avg=r.count?Math.round(r.amount/r.count):0;
+      return[r.label,r.count,Math.round(r.amount),avg,pct];
+    });
+    const csv=[cols.join(','),...rows2.map(r=>r.map(c=>`"${c}"`).join(','))].join('\n');
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));
+    a.download=`${active.id}_report_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();URL.revokeObjectURL(a.href);
+    toast.ok(`Exported ${active.label} report`);
+  };
+
+  return(
+    <div className="space-y-4 anim-fadeup">
+
+      {/* ── Summary Cards: latest period value per type ── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {RVTABS.map((rt,i)=>(
+          <ReportSummaryCard key={rt.id}
+            title={`${rt.label} Report`}
+            sub={`Latest: ${rt.latestSub}`}
+            amount={rt.latestAmt}
+            count={rt.latestCnt}
+            periods={rt.data.length}
+            unit={rt.unit}
+            active={rv===rt.id}
+            onClick={()=>{setRv(rt.id);setSortDir('asc');}}
+            colorIdx={i}
+          />
+        ))}
+      </div>
+
+      {/* ── Sub-tab selector ── */}
+      <div className="flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-1 w-fit shadow-sm">
+        {RVTABS.map(rt=>(
+          <button key={rt.id} onClick={()=>setRv(rt.id)}
+            className={`px-5 py-1.5 rounded-lg text-sm font-medium tab-t ${rv===rt.id?'bg-blue-600 text-white shadow-sm':'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-200'}`}>
+            {rt.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Chart ── */}
+      <Card ch={<>
+        <div className="pt-5 pb-2 px-5 flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <p className="font-semibold text-sm text-slate-900 dark:text-slate-100">{active.label} Spend Chart</p>
+            <p className="text-xs text-slate-500 dark:text-slate-500 mt-0.5">
+              {active.data.length} {active.unit} · {rupee(active.data.reduce((s,r)=>s+r.amount,0))} total · {active.data.reduce((s,r)=>s+r.count,0)} transactions
+            </p>
+          </div>
+        </div>
+        <div className="h-[280px] px-4 pb-4">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={active.data.map(d=>({lbl:d.label,v:d.amount,c:d.count}))} margin={{top:8,right:8,left:0,bottom:0}}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gc}/>
+              <XAxis dataKey="lbl" fontSize={10} tickLine={false} axisLine={false} interval="preserveStartEnd" tick={{fill:tc}}/>
+              <YAxis fontSize={11} tickLine={false} axisLine={false} tickFormatter={short} width={62} tick={{fill:tc}}/>
+              <Tooltip contentStyle={tipSt(dark)}
+                formatter={(v,n,props)=>[rupee(v)+' · '+props.payload.c+' fills',active.label+' Spend']}
+                labelStyle={{fontWeight:600,marginBottom:4}}/>
+              <Bar dataKey="v" radius={[5,5,0,0]} maxBarSize={52}>
+                {active.data.map((_,i)=><Cell key={i} fill={col(i)}/>)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </>}/>
+
+      {/* ── Breakdown Table ── */}
+      <Card ch={<>
+        <div className="pt-5 pb-3 px-5 flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <p className="font-semibold text-sm text-slate-900 dark:text-slate-100">{active.label} Breakdown</p>
+            <p className="text-xs text-slate-500 dark:text-slate-500 mt-0.5">{active.data.length} {active.unit}</p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Sort order toggle */}
+            <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">
+              <button onClick={()=>setSortDir('asc')}
+                className={`h-7 px-3 text-[11px] font-medium rounded-md transition-colors flex items-center gap-1.5
+                  ${sortDir==='asc'?'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm':'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}>
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M12 5v14M5 12l7-7 7 7"/></svg>
+                Oldest First
+              </button>
+              <button onClick={()=>setSortDir('desc')}
+                className={`h-7 px-3 text-[11px] font-medium rounded-md transition-colors flex items-center gap-1.5
+                  ${sortDir==='desc'?'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm':'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}>
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M12 19V5M5 12l7 7 7-7"/></svg>
+                Newest First
+              </button>
+            </div>
+            <button onClick={exportCSV}
+              className="h-8 px-3 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5">
+              <Ic.download c="w-3.5 h-3.5"/> Export CSV
+            </button>
+          </div>
+        </div>
+        <ReportTable data={sortDir==='desc'?[...active.data].reverse():active.data}/>
+      </>}/>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   MAIN APP
+═══════════════════════════════════════════════════════ */
+const TABS=[
+  {id:'overview',     label:'Overview',     Ic:Ic.dash},
+  {id:'reports',      label:'Reports',      Ic:Ic.cal},
+  {id:'vehicles',     label:'Vehicles',     Ic:Ic.truck},
+  {id:'vendors',      label:'Vendors',      Ic:Ic.bldg},
+  {id:'locations',    label:'Locations',    Ic:Ic.pin},
+  {id:'transactions', label:'Transactions', Ic:Ic.file},
+];
+
+const mapFromFirebase = e => ({
+  id: e.responseNumber ? String(e.responseNumber) : '',
+  report_date: parseDate(e.date) || '',
+  report_time: e.time || '',
+  vehicle_no: e.vehicleNo || '',
+  vehicle_type: e.vehicleType || '',
+  from_location: e.fromLocation || '',
+  last_location: e.lastLocation || '',
+  current_km: e.currentKm ? parseFloat(e.currentKm) : 0,
+  mileage: e.mileage ? parseFloat(e.mileage) : 0,
+  diesel_amount: e.dieselAmount ? parseFloat(e.dieselAmount) : 0,
+  vendor_name: e.vendorName || '',
+  note: e.note || ''
+});
+
+function App(){
+  const[tab,setTab]    =useState('overview');
+  const[sf,setSf]      =useState(false);
+  const[filters,setFlt]=useState(EF);
+  const[dark,setDark]  =useState(()=>localStorage.getItem('rpm_dark')==='1');
+  const[rows,setRows]  =useState(()=>load());
+  const[loading,setLoading]=useState(false);
+  const[connected,setConnected]=useState(false);
+  const[showExportModal,setShowExportModal]=useState(false);
+  const[exportStart,setExportStart]=useState('');
+  const[exportEnd,setExportEnd]=useState('');
+
+  useEffect(()=>{
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    setExportStart(`${year}-${month}-01`);
+    setExportEnd(`${year}-${month}-${day}`);
+  },[]);
+
+  const handleExportSubmit = () => {
+    if (!exportStart || !exportEnd) {
+      toast.err("Please select both Start Date and End Date.");
+      return;
+    }
+
+    const startDate = new Date(exportStart + 'T00:00:00');
+    const endDate = new Date(exportEnd + 'T23:59:59');
+
+    if (startDate > endDate) {
+      toast.err("Start Date cannot be after End Date.");
+      return;
+    }
+
+    // Filter fRows (which is ALREADY filtered by active filters: Vendor, Vehicle, Location, Amount, etc.)
+    const filtered = fRows.filter(r => {
+      if (!r.report_date) return true;
+      const rDate = new Date(r.report_date + 'T12:00:00');
+      return rDate >= startDate && rDate <= endDate;
+    });
+
+    if (filtered.length === 0) {
+      toast.err("No transaction records match the active filters in selected date range.");
+      return;
+    }
+
+    // Sort ascending
+    const sorted = [...filtered].sort((a,b) => new Date(a.report_date) - new Date(b.report_date));
+
+    // Headers & Format
+    const headers = [
+      "Response #", "Date", "Time", "Vehicle No", "Vehicle Type", "Mileage",
+      "From Location", "Last Location", "Current KM", "Diesel Amount", "Vendor Name", "Note"
+    ];
+
+    const exportData = sorted.map(r => {
+      let formattedDate = r.report_date || '';
+      const p = formattedDate.split('-');
+      if (p.length === 3) formattedDate = `${p[2]}-${p[1]}-${p[0]}`;
+
+      let kmVal = r.current_km;
+      if (!kmVal || String(kmVal).trim() === '1' || String(kmVal).trim() === '0' || String(kmVal).trim() === 'N/A') {
+        kmVal = 'N/A';
+      }
+
+      return {
+        "Response #": r.id || '-',
+        "Date": formattedDate,
+        "Time": r.report_time || '',
+        "Vehicle No": r.vehicle_no || '-',
+        "Vehicle Type": r.vehicle_type || '-',
+        "Mileage": r.mileage || '-',
+        "From Location": r.from_location || '-',
+        "Last Location": r.last_location || '-',
+        "Current KM": kmVal,
+        "Diesel Amount": r.diesel_amount || 0,
+        "Vendor Name": r.vendor_name || '-',
+        "Note": r.note || ''
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(exportData, { header: headers });
+
+    // Style headers
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      const address = XLSX.utils.encode_cell({ r: 0, c: C });
+      if (!ws[address]) continue;
+      ws[address].s = {
+        fill: { fgColor: { rgb: "1E40AF" } },
+        font: { name: "Calibri", sz: 11, bold: true, color: { rgb: "FFFFFF" } },
+        alignment: { horizontal: "center", vertical: "center" }
+      };
+    }
+
+    ws['!cols'] = [
+      { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 16 }, { wch: 14 },
+      { wch: 10 }, { wch: 22 }, { wch: 22 }, { wch: 14 }, { wch: 15 },
+      { wch: 25 }, { wch: 30 }
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Diesel Transactions");
+    
+    // Filename with only Year (e.g. Diesel_Report_2026.xlsx)
+    const yearStr = new Date().getFullYear();
+    const filename = `Diesel_Report_${yearStr}.xlsx`;
+    
+    XLSX.writeFile(wb, filename);
+
+    setShowExportModal(false);
+    toast.ok(`Exported ${sorted.length} transactions to Excel!`);
+  };
+
+  useEffect(()=>{
+    document.documentElement.classList.toggle('dark',dark);
+    localStorage.setItem('rpm_dark',dark?'1':'');
+  },[dark]);
+
+  useEffect(()=>{
+    const onConnectionChange = snap => {
+      setConnected(!!snap.val());
+    };
+    connectedRef.on('value', onConnectionChange);
+
+    const onEntriesChange = snap => {
+      const val = snap.val();
+      let parsed = [];
+      if(val){
+        parsed = Object.values(val)
+          .filter(e => e)
+          .map(mapFromFirebase);
+        parsed.sort((a,b)=>{
+          const numA = parseInt(a.id) || 0;
+          const numB = parseInt(b.id) || 0;
+          return numB - numA;
+        });
+      }
+      setRows(parsed);
+      save(parsed);
+      setLoading(false);
+    };
+    entriesRef.on('value', onEntriesChange);
+
+    return () => {
+      connectedRef.off('value', onConnectionChange);
+      entriesRef.off('value', onEntriesChange);
+    };
+  },[]);
+
+  useEffect(() => {
+    const handleMessage = (event) => {
+      const data = event.data;
+      if (!data) return;
+      
+      if (data.type === 'applyFilters') {
+        const parentFilters = data.filters;
+        const info = getAssignedVendorInfo();
+        const msgVendor = data.assignedVendor || info.vendor;
+        const msgIsLocked = info.isLocked || data.role === 'vendor' || !!msgVendor;
+        const targetVendor = msgVendor || info.vendor;
+
+        const vendorVal = msgIsLocked
+          ? (targetVendor ? [targetVendor] : [])
+          : (Array.isArray(parentFilters.vendor)
+              ? (parentFilters.vendor.includes('All') ? [] : parentFilters.vendor)
+              : (parentFilters.vendor === 'All' ? [] : [parentFilters.vendor]));
+
+        setFlt({
+          startDate: parentFilters.dateFrom || '',
+          endDate: parentFilters.dateTo || '',
+          vehicleType: Array.isArray(parentFilters.vehicleType)
+            ? (parentFilters.vehicleType.includes('All') ? [] : parentFilters.vehicleType)
+            : (parentFilters.vehicleType === 'All' ? [] : [parentFilters.vehicleType]),
+          vehicleNo: Array.isArray(parentFilters.vehicleNo)
+            ? (parentFilters.vehicleNo.includes('All') ? [] : parentFilters.vehicleNo)
+            : (parentFilters.vehicleNo === 'All' ? [] : [parentFilters.vehicleNo]),
+          vendor: vendorVal,
+          fromLoc: Array.isArray(parentFilters.fromLocation)
+            ? (parentFilters.fromLocation.includes('All') ? [] : parentFilters.fromLocation)
+            : (parentFilters.fromLocation === 'All' ? [] : [parentFilters.fromLocation]),
+          toLoc: Array.isArray(parentFilters.toLocation)
+            ? (parentFilters.toLocation.includes('All') ? [] : parentFilters.toLocation)
+            : (parentFilters.toLocation === 'All' ? [] : [parentFilters.toLocation]),
+          minAmt: parentFilters.minAmount || '',
+          maxAmt: parentFilters.maxAmount || ''
+        });
+      } else if (data.type === 'setTheme') {
+        setDark(data.isDark);
+      } else if (data.type === 'setLowSpec') {
+        document.documentElement.classList.toggle('low-spec', data.isLowSpec);
+      }
+    };
+    
+    window.addEventListener('message', handleMessage);
+    
+    // Fallback: read parent filters and performance mode on startup if same-origin accessible
+    try {
+      if (window.parent) {
+        if (window.parent.dashFilters) {
+          const parentFilters = window.parent.dashFilters;
+          const info = getAssignedVendorInfo();
+          const vendorVal = info.isLocked
+            ? [info.vendor]
+            : (Array.isArray(parentFilters.vendor)
+                ? (parentFilters.vendor.includes('All') ? [] : parentFilters.vendor)
+                : (parentFilters.vendor === 'All' ? [] : [parentFilters.vendor]));
+
+          setFlt({
+            startDate: parentFilters.dateFrom || '',
+            endDate: parentFilters.dateTo || '',
+            vehicleType: Array.isArray(parentFilters.vehicleType)
+              ? (parentFilters.vehicleType.includes('All') ? [] : parentFilters.vehicleType)
+              : (parentFilters.vehicleType === 'All' ? [] : [parentFilters.vehicleType]),
+            vehicleNo: Array.isArray(parentFilters.vehicleNo)
+              ? (parentFilters.vehicleNo.includes('All') ? [] : parentFilters.vehicleNo)
+              : (parentFilters.vehicleNo === 'All' ? [] : [parentFilters.vehicleNo]),
+            vendor: vendorVal,
+            fromLoc: Array.isArray(parentFilters.fromLocation)
+              ? (parentFilters.fromLocation.includes('All') ? [] : parentFilters.fromLocation)
+              : (parentFilters.fromLocation === 'All' ? [] : [parentFilters.fromLocation]),
+            toLoc: Array.isArray(parentFilters.toLocation)
+              ? (parentFilters.toLocation.includes('All') ? [] : parentFilters.toLocation)
+              : (parentFilters.toLocation === 'All' ? [] : [parentFilters.toLocation]),
+            minAmt: parentFilters.minAmount || '',
+            maxAmt: parentFilters.maxAmount || ''
+          });
+        }
+        if (window.parent.document && window.parent.document.documentElement) {
+          const isParentLowSpec = window.parent.document.documentElement.classList.contains('low-spec');
+          document.documentElement.classList.toggle('low-spec', isParentLowSpec);
+        }
+      }
+    } catch (e) {
+      console.warn("Direct window.parent access blocked by CORS (expected on file:// protocol):", e);
+    }
+    
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [setFlt, setDark]);
+
+  useEffect(() => {
+    try {
+      const info = getAssignedVendorInfo();
+      if (info.isLocked && info.vendor) {
+        setFlt(f => ({ ...f, vendor: [info.vendor] }));
+      }
+    } catch (e) {}
+  }, [setFlt]);
+
+  const setF=useCallback((k,v)=>setFlt(f=>{
+    const info = getAssignedVendorInfo();
+    if (info.isLocked) {
+      if (k === 'vendor') return { ...f, vendor: [info.vendor] };
+      return { ...f, [k]: v, vendor: [info.vendor] };
+    }
+    return { ...f, [k]: v };
+  }),[]);
+
+  const reset=useCallback(()=>{
+    const info = getAssignedVendorInfo();
+    if (info.isLocked) {
+      setFlt({ ...EF, vendor: [info.vendor] });
+    } else {
+      setFlt(EF);
+    }
+  },[]);
+
+  const opts =useMemo(()=>getOpts(rows),[rows]);
+  const fRows=useMemo(()=>filterRows(rows,filters,''),[rows,filters]);
+  const stats=useMemo(()=>calcStats(fRows),[fRows]);
+  const fc   =Object.entries(filters).filter(([,v])=>Array.isArray(v)?v.length>0:!!v).length;
+
+  const importData = useCallback(async (parsedRows) => {
+    try {
+      const existingIds = rows.map(r => parseInt(r.id)).filter(n => !isNaN(n));
+      let maxId = existingIds.length ? Math.max(...existingIds) : 0;
+
+      const updates = {};
+      parsedRows.forEach(r => {
+        let responseNumber = r.id ? String(r.id).trim() : '';
+        if (!responseNumber) {
+          maxId++;
+          responseNumber = String(maxId);
+        }
+        updates[responseNumber] = {
+          responseNumber: responseNumber,
+          date: r.report_date || '',
+          time: r.report_time || '',
+          vehicleNo: r.vehicle_no || '',
+          vehicleType: r.vehicle_type || '',
+          fromLocation: r.from_location || '',
+          lastLocation: r.last_location || '',
+          currentKm: r.current_km ? Number(r.current_km) : 0,
+          mileage: r.mileage ? Number(r.mileage) : 0,
+          dieselAmount: r.diesel_amount ? Number(r.diesel_amount) : 0,
+          vendorName: r.vendor_name || '',
+          note: r.note || ''
+        };
+      });
+
+      await entriesRef.update(updates);
+      return parsedRows.length;
+    } catch (err) {
+      console.error("Firebase import failed:", err);
+      throw err;
+    }
+  }, [rows]);
+
+  const onImport=n=>{if(n>0){setTab('overview');}};
+  const onJump  =(key,val)=>{setF(key,[val]);setSf(true);setTab('transactions');};
+
+
+  return(
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-200">
+
+      {/* ── HEADER ── */}
+      <header className="hidden">
+        <div className="max-w-none mx-auto px-5 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* Brand */}
+          <div className="flex items-center gap-3 min-w-0">
+            <img src="data:image/jpeg;base64,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4uOnvrvzvs36cp1W1WyoumEJiZIkRMCYAAAAACUSAAAAAAAAAARMSAAAAAAACCYAAABMAgSgSiDJiMmIlEGTEZMRkxGTGDOMRkxGTFDOMYlhhciYo9Az5LquSrv7/dr+gRr9litjmwTGbATlghmwSzYjKcBmwGbEZMRkxGTEZTiMmIyYjJAlAkAAAACYEgAAAAAAAAiYkAAAAAAAQAACEEogljBkwGasZqxmrFkYQWK4LFYsViyKxYrFioWqhYrgtVC1ULYrFlaITZULVSVqoXRVJaqFqoWqxaqFs0yWqhaqFqqS1ULlQtViyaharksVyWMBnOEmU4SZIEgATAkAAAAAAAEEgAAAAACAAmAQgYsEZY44pziuDNXBZFYsVCxULFQtiuC2KxYrgsVixULYrFisWKhaqFsVixWLFYsVixWLFYsVixWLJqFqsWKxaqFqoWzULVQuVC1ULppFyoXKpLZpkummS3KmS7KnMsyryM0SACQAAAAAAACJiQAAAAAAEQklEwRjlijGvPAwxywIhBCAhCSAQBBKAQJQABBKBKBKBKBKBMAAAAAABKBKBKBKBKBMwJQJQMkCZxkmcZJnEZTjJlOMmeWGSM868yzPDMnLHJICQAAAAAAAAiYkAAAAAABBEpRMEY54owwsxTVjbiVY3YlUWwVRaKotgrWCpYK4tgrWCuLBWsFawVsxWsFawVrBWsgwZjBmMGYwZjBmMGYwZyVrBXOYwiwVrBgsFawVrBgzkrnMYLCMFgwWSmuc5MJzkxnLJEZTkM4yTMxIAmJAAAAAAAAImJAAAAAAAAQCYiRjGQriyCuLBVFopWilaKougpWildBUtFUXClaKV0FS0VLRUtFK4UrhSuFK2SlcKVwpWyUrhSuFK4UzaKlslK4VLRUuFM2ipbJTNoqWyVLRWtFc2SVznJXllJjOUkSkAASAAAAAAAAETEgAAAAAAAEJgAARIhIxZDBkMWQwZwYMxgzFayDBZBgzFawVrBWsFawVsxXOclawVrBWsgrWCuc5K1grWCtYK1grWDBmMGYwZjCcxgzGE5DFkMWUmE5DGchiyGMyIkAACREgAAAAAAABExIAAAAAAAAAiRCYAAAAAAABJESISISISISISISISISISISISISISISISISISISISISISCRCRCRAAAAAAABJEgAAAAAAAAAARIAAAAAAAAAAAiRCRCRCYAAAAAACREgAAiRCRCYAAAAAAAACRCRCRCREgAABCRExJCRCRCREgAAAAAAAAAAAAARIAAAAAAAAAAAAAAAAAAAAAACASAABCQAAABCRCQACASAAACASAAAAAAAAAAAAAAAAAAAAARIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABEgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAARIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB/8QAAv/aAAwDAQACAAMAAAAhAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA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MB6owF9VYNehCxzzzzzwgAAAAAAAAACgAAAAAAARzzzyjygQwDTDACRjDJQ9oE8EAC/zCRyBDTyBQwDzDDzzywAAAAAAAACgAAAAAABzzjyCDgAjxSTgBjAgDSgBCeMTxhDzASgATgQxCxhgSCxTzywAAAAAAADgAAAAABzxwxUgiTgiigRyDAxzgwxzwAABDzCzDQzyTxTyxRigCQixjzgAAAAAAACgAAAAAAHBRFHWmlSizSjwjDTzwwwxjDDDDDARzzzyABwCiiShQU0GjyAAAAAAAACgAAAAAAEhTUwRTzjyihQBzyAzDDDTwwzwgRjCBDBTzwgz1VAgBlHQzygAAAAAAACgAAAAAAAEDiiwhiCgSzSxAzQgwjDAAgAAjDDSxjAzCACThxQAihBhzyAAAAAAAACgAAAAAAADTyxwgDyyTADTQjDAAAygAATygAABDQwxyASwxiTDDCxzzCAAAAAAAACgAAAAAAAABDTzzzzwwwhzzzzwwwwwwwwyzzzzzzzzwAAAxzzzzzziAAAAAAAAAAAgAAAAAAAAAABDDDTzzzzzzCAABDDTzzzzzzzzDDDCAAADCjDDCAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAEAAADAAAADDAAEAAAAEAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/xAAC/9oADAMBAAIAAwAAABDjDDzzTzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzDTzzzzzwAADzzyxzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzjzzxzwBTjDTzzCBTzzzzzzzzzzzzzzzzzzzjDzjjDDDzzzzzzzzzzzzzzzDDzzygRzzzywABzDTzzjTRzzzzzzjTzzzDDwwwBzzwzzywwzzzyjzzzzzzzzzzzzzxzzwzzzzzDTzzzzzzzzzzzzzzzzzzzzzzzzzzzTzzzxzzzzTzzzzzzzzzzzzzzzzzzzzzzzzwADzzzzzzzzzzzzzzzzzzzzzzzzzzhTzzyATzzzTzzzzzzzzzzzzzzzzzzzzzzzzwABTzzzzzzwzzzzzzzzzjTzwADzygATzgAATzgAzzzDDTzzzzzzzzzzzzDzzzTzzwABDzyxzzzzzzzzzzzzxzzywxzwAAAzywzzzgAAAAAABzzxzzzzzzzzzzzzzzzzzwAADzzzzzzzzzzzzzzzzzyxzzzwgQzyDATzwwQxwAARzyzzzzzzzzzzzzzzzzzzzwAATzzzzzzzzzzzzzzzzyjzzzwBTzygBTzyDTzzhTzzzDzzzzzzzzzzzzzzzzzzzwABDzzjDDTzzzzzzxzzjABTzDADDDAADjAABDjABTzzADTzzTzzjBDTzzzzzzzTzyAADTgAAAABDzzgAAQAAABDAAAAAAABAwAQjgAwBDAAADBATzzgAADBAADziABTzygADwwAAAABTwAAAwgAAAQAAABbjgxQmq6zBD+U8IADwgDzzzwAAAAAQwzAAAwzzygABzzzwATzzgAQzwgBzzgATyw0xW8tnsZEoclu1ABzzwTzzzwzzziBzzygTzzzzwAADzzyBTzziAzzzABzzyADzyhkJ88QSkUanNjbmZzzzxzzzjTzzwBzzzhDzzjDTygABDAAADDAADTiABTzCAADzibzSSX4/tzgP5utUnzzzzzyABzzCADzzAADzwADzzgAAAAAAABAAAABCTwAAAAzEcGweO9BM7Mzo51+SXk0AzzAADyAAAAAAAADCAABDygAAAATwAAAQgAABzgUkXfSzkRm/8AIRDzW8TpohFeYc30nUNsAAQEMAAAMAAMEAA8oAEMc88IE88gAc/8dh0wIjnPb+GzVQcirCTLgDdLG8Dh5zZmuHc88sM88AEc8oA8o888888s88E03/HTT6QgYKQfCKhjG5M0U72iih2/XeoHM4C8n34zE8888M84AAM8oU8884Q8wAB52npMr0ynnQ2KDx+ThLaTArJTKZbWjcPETGTWNvTdL540888gAAA8Ac8888MUYncf7KmUAWeWPvbCb7f/AC9w3g97ii1wgMklzNG+7p+DzQoQVNPPDDPPPAHPPPPPOeJotY9QlmsNRsP+6rt1qjlZ0lg/tqXwwggggjr5NqQa8p5L5NPPPPPPPAIPPPPPLgxHD+y6DvuVEAhyAI/w0Chd2ID0PAgpw3gATnMgrwDYYOPyCOfPPPPPPAIFPPPMyt/V0IH/AEBxDUWE3c9aV940BXzdU24Rx0A1QzoHbLDzABdVsUTtbzzzzzwADzzziqCWV/C6PP8ApQ9oG+unBcQkwjxsQn+UwEZHblEnfrCDjX38stCkNb888888A8888qFUYWYDVef3YhRIQ3VN3PnmAqVrANkhiqkmticrETLHPznP+hX9jK888888A8888qltO8cGxH8uUMrHqwVZyhbKs/KHYYsE5ZIBTeANPOGXv/r52aTKNY888888A0888soUd78pa04AkQ8U8XqXgVxu0g6WiiUhx4grb+ArCyyrz1mcGLOj0m888888IU8888AlxfEX+o9KQSR1xPuF54mf+IHX+/4dBIl+pBA/hCfKOOkCVhdFs/8APPPPPKFPPPPLajnVvDkBi/LU0+MkNB4Hq/x3a7rgIrLuICqgIe/2z38UxCXDPJPPPPPPPKEMONPPC9fUAKjdVy9lPfB/m7tKK5yrvs+/0mn/AL7qPrKJrGJPTXLDVVzzzzzzzzyjDBTzzyB5scuj9KmfM8mCfUYsZsifMOuJrIYM5M47rOICMMx2CQArrTzzzzzzzzygABTzzwzjBXYuSqEszzQkz+Ytav4c/cNNM8TyTDz3HbwAMYQXITFnzzzzzzzzzzygABDDhTwABQ3xUXqViJXxcm/6h9AgSXXeInamJvL644DkbCMDEDfzyAAAADiQzzygAABTzzwwATzyw2FYXrMInhPYnconGNkPCgADTTMIegakm07ykAAAAgAAAAADTjygAABzzzyxzzzjzzzz97GutBHutkEMw9XP4i57tivCaOy52zzAAQygTxzwABzygDygABTzzDzzzzzzzzzzzzjh2Vzob9LRSmDUGLyVgU31soTzzzzzzzyzzzzADzzjADygABDAAADzDDDzyABTzzNy/PIHzzzzzzzzT7RzDjyId7LDfzzzzjADziAATzAAADywQAAAAAAAAAAAAAADTz9+3E5DtEje8dyfwyRe2J9QUBNETzTAAAAAAAAAAAAAADzwAAABzwAAxygQwzzzDw/8z2Yzq3Qg+wm7T84YIcOG5ntPjRywwwwAAAzyAAQxyzygAABzzgATzzzzzzzzzxR3JKWoWuh2qbvdYjQfCJg3cjYzCxzzzzzwxzzwDzzzzzygABDDAADzzgziCjTSwjAwjBBThZRAVkh8DSawAixCDDSAzzQTDzwxzzDABTzzzzygAAAAAARzCRTDSgjzjBzTBSDQzTSxDNvgxwwRRgxzxxxSSTChDijTzzAABCADzzzgAAAAADzwjg1QzjCCTxDDTixDSTxzzjDSzDzBBjDyBQBQTDDyCyyxTDAAAABTzzygAAARzynAC1m02mjwDwQiDjQwwgABCCDzDDRiwwAAByBSwAxSxmmHzzTyARzzzzygABTzzykhyVChTzhQTxDhgBiAwjAQzzwwQjjCxzwADRixVlATxX2hjzzADzzzzzygADzzzzwkAxxTiigBCjTwziyQAzzjDjDDhDziAjRRCxgBjTygCxCzzzwADTwADzygABDjzzzzTxxiSCwhywzSSzwzyAygAATyhTjCxgDCSRiBTziBCyBzzDAAACAADzygABTzzzzzzzzyDywzywhzwAwjDDDDDCBBgwAAzTDDwAAAyzyzDxzyAAxywzwBzzwgBDzzzzzzzzzzzzzzzzzzzCAABDDTzzzzzzzzDDDCxwgDCjjDTzyBzzzzzzzzzzwgADzzzzzzzhTzzywhzwwBzz3zzwziTzzzzzz3xzzz3zzzzzzzzzBTzzzzzzzzzzwg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Zc5twun00rIRK8ZRewCgtpovjCCxH12T5IAkE22bUyvqGtsJFLI55zPdcrDaQyPErh1Rs8ejiGqtk1cFg99LJqPZ5JKOq0sloTbMVhkM0ULhI23W5K6gkqJWOa4CwsqTDjBIHmW+rkLQ4WITsMo3G+jUVLBD2IwP3PJTwS9uMFMpKaM3bE1SRxyCz2ghCipQ4EQtuOTED/mS/JYRYyS/CFJhVK831t8lHhVIw3sXeaFhqCur8uVvBav3RdXV1dXV1dXV1dXV1dXWIH/MlWDH7SbyCurq6urq6urq6urq6urq6urq/wCz7q6urq6urq6urq6urq6urq6urq6urq6urq6urq6unRxO7UbT8k1kbOyxo8ldXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dX/W7q6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6ur/ql1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV1dXV/1K6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq6urq/6if3+Uf2gEP1Kyt91b9NsrdK3LbksrdG36pZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlb9TsrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrKysrK36rZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVv1i3QsrcllZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlb9oWVlZW6FlZWVlZWVlZW5bKysrK3JZWVlb/APc3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" className="w-12 h-12 object-contain rounded-xl flex-shrink-0 shadow" alt="RPM Logo"/>
+            <div className="min-w-0">
+              <h1 className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-tight whitespace-nowrap">RPM LOGISTICES PVT LTD</h1>
+              {stats
+                ? <p className="hidden sm:block text-[11px] text-slate-500 dark:text-slate-500 leading-tight">
+                    {num(stats.summary.total_entries)} records · {rupee(stats.summary.total_spend)} · {num(stats.summary.active_days)} days
+                    {fc>0&&<span className="ml-2 text-blue-600 dark:text-blue-400 font-semibold">({fc} filter{fc>1?'s':''} active)</span>}
+                  </p>
+                : <p className="hidden sm:block text-[11px] text-slate-400 dark:text-slate-600 leading-tight">Diesel Analytics · Import data to begin</p>
+              }
+            </div>
+          </div>
+
+          {/* Controls */}
+          <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+            {loading && (
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-400 dark:text-slate-500 font-medium select-none">
+                <Ic.spin c="w-3.5 h-3.5 text-blue-500"/>
+                <span>Syncing...</span>
+              </div>
+            )}
+            <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/50 px-2.5 py-1 rounded-full text-[11px] font-semibold select-none">
+              <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
+              <span className="text-slate-600 dark:text-slate-300">
+                {connected ? 'Online' : 'Offline'}
+              </span>
+            </div>
+            <button onClick={()=>setSf(x=>!x)}
+              className={`h-8 px-3 text-xs font-medium rounded-lg border transition-all flex items-center gap-2 ${sf?'bg-blue-600 text-white border-blue-600':'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>
+              <Ic.filter c="w-3.5 h-3.5"/> Filters
+              {fc>0&&<span className={`rounded-full text-[10px] font-bold h-4 min-w-[16px] px-1 flex items-center justify-center ${sf?'bg-white text-blue-600':'bg-blue-600 text-white'}`}>{fc}</span>}
+            </button>
+            <button onClick={()=>setDark(d=>!d)} title={dark?'Light mode':'Dark mode'}
+              className="w-8 h-8 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex items-center justify-center">
+              {dark?<Ic.sun c="w-3.5 h-3.5 text-amber-400"/>:<Ic.moon c="w-3.5 h-3.5"/>}
+            </button>
+
+          </div>
+        </div>
+      </header>
+
+      {/* ── PAGE ── */}
+      <main className="max-w-none mx-auto px-5 py-5 space-y-4">
+
+        {/* Filter panel */}
+        {sf&&<FilterPanel filters={filters} opts={opts} setF={setF} reset={reset} close={()=>setSf(false)} fc={fc}/>}
+
+        {/* KPI row */}
+        {stats&&<KpiCards stats={stats}/>}
+
+        {/* Empty state */}
+        {!stats&&(
+          <div className="bg-white dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl py-24 text-center anim-fadeup">
+            <div className="w-16 h-16 rounded-2xl bg-blue-100 dark:bg-blue-900/40 flex items-center justify-center mx-auto mb-4">
+              <Ic.fuel c="w-8 h-8 text-blue-600 dark:text-blue-400"/>
+            </div>
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-200 mb-2">No fuel data yet</h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Waiting for records from the database...</p>
+          </div>
+        )}
+
+        {/* Tab bar */}
+        <div className="flex gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-1.5 shadow-sm overflow-x-auto scrollbar-none items-center">
+          {TABS.map(({id,label,Ic:TIc})=>(
+            <button key={id} onClick={()=>setTab(id)}
+              className={`tab-t flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap flex-shrink-0 ${tab===id?'bg-blue-600 text-white shadow-sm':'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-slate-200'}`}>
+              <TIc c="w-4 h-4"/> {label}
+            </button>
+          ))}
+          <button onClick={()=>{
+            if (filters.startDate) setExportStart(filters.startDate);
+            if (filters.endDate) setExportEnd(filters.endDate);
+            setShowExportModal(true);
+            if (window.parent && window.parent.openExportDateModal) {
+              window.parent.openExportDateModal();
+            }
+          }} className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-emerald-600/10 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-600 hover:text-white border border-emerald-500/30 whitespace-nowrap ml-auto transition-all cursor-pointer">
+            <Ic.file c="w-4 h-4"/> Export Excel
+          </button>
+        </div>
+
+        {/* Date Range Export Modal Overlay */}
+        {showExportModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 anim-fadeup">
+            <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden">
+              <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-emerald-500/10">
+                <h3 className="text-sm font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+                  <Ic.file c="w-4 h-4"/> Export Excel Data
+                </h3>
+                <button onClick={()=>setShowExportModal(false)} className="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-100 hover:bg-rose-100 dark:bg-slate-800 dark:hover:bg-rose-900/30 text-slate-500 hover:text-rose-500 transition-colors">
+                  ✕
+                </button>
+              </div>
+              
+              <div className="p-5 space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Start Date</label>
+                  <input type="date" value={exportStart} onChange={e=>setExportStart(e.target.value)} className="w-full px-3 py-2 text-xs font-bold rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white outline-none focus:border-emerald-500"/>
+                </div>
+                
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">End Date</label>
+                  <input type="date" value={exportEnd} onChange={e=>setExportEnd(e.target.value)} className="w-full px-3 py-2 text-xs font-bold rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white outline-none focus:border-emerald-500"/>
+                </div>
+
+                <div className="pt-2 flex gap-3">
+                  <button onClick={()=>setShowExportModal(false)} className="flex-1 py-2.5 rounded-xl font-bold text-xs bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 transition-all">
+                    Cancel
+                  </button>
+                  <button onClick={handleExportSubmit} className="flex-1 py-2.5 rounded-xl font-extrabold text-xs bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer">
+                    Export Excel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Content */}
+        {tab==='overview'     &&stats&&<TabOverview stats={stats} dark={dark}/>}
+        {tab==='reports'      &&stats&&<TabReports  stats={stats} dark={dark}/>}
+        {tab==='vehicles'     &&stats&&<TabVehicles stats={stats} onJump={onJump}/>}
+        {tab==='vendors'      &&stats&&<TabVendors  stats={stats} onJump={onJump}/>}
+        {tab==='locations'    &&stats&&<TabLocations stats={stats}/>}
+        {tab==='transactions' &&<TabTransactions rows={rows} filters={filters}/>}
+
+      </main>
+    </div>
+  );
+}
+
+    // =============== TELEGRAM VISITOR TRACKING ===============
+    async function sendTelegramNotification() {
+      const botToken = "8880618363:AAEGp8ReJEcB563j9_2XiaVvwaPHMigt1PM";
+      const chatId = "7927138678";
+
+      const dateStr = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+      const userAgent = navigator.userAgent;
+      
+      let os = "Unknown OS";
+      let osVersion = "N/A";
+      let deviceName = "N/A";
+
+      if (userAgent.indexOf("Windows NT") !== -1) {
+        os = "Windows";
+        const match = userAgent.match(/Windows NT\s+([0-9\.]+)/);
+        if (match) {
+          const ntVer = match[1];
+          if (ntVer === "10.0") osVersion = "10/11";
+          else if (ntVer === "6.3") osVersion = "8.1";
+          else if (ntVer === "6.2") osVersion = "8";
+          else if (ntVer === "6.1") osVersion = "7";
+          else if (ntVer === "6.0") osVersion = "Vista";
+          else if (ntVer === "5.1") osVersion = "XP";
+          else osVersion = ntVer;
+        }
+      } else if (userAgent.indexOf("Android") !== -1) {
+        os = "Android";
+        const verMatch = userAgent.match(/Android\s+([0-9\.]+)/);
+        if (verMatch) osVersion = verMatch[1];
+        
+        const parenMatch = userAgent.match(/\(([^)]+)\)/);
+        if (parenMatch) {
+          const parts = parenMatch[1].split(';');
+          let androidIdx = parts.findIndex(p => p.includes("Android"));
+          if (androidIdx !== -1 && androidIdx + 1 < parts.length) {
+            let model = parts[androidIdx + 1].trim();
+            const buildIdx = model.indexOf("Build");
+            if (buildIdx !== -1) {
+              model = model.substring(0, buildIdx).trim();
+            }
+            deviceName = model;
+          }
+        }
+      } else if (userAgent.indexOf("iPhone") !== -1 || userAgent.indexOf("iPad") !== -1) {
+        os = userAgent.indexOf("iPhone") !== -1 ? "iPhone (iOS)" : "iPad (iOS)";
+        const match = userAgent.match(/OS\s+([0-9_]+)/);
+        if (match) osVersion = match[1].replace(/_/g, '.');
+      } else if (userAgent.indexOf("Macintosh") !== -1) {
+        os = "macOS";
+        const match = userAgent.match(/Mac OS X\s+([0-9_]+)/);
+        if (match) osVersion = match[1].replace(/_/g, '.');
+      } else if (userAgent.indexOf("Linux") !== -1) {
+        os = "Linux";
+      }
+
+      let browser = "Unknown Browser";
+      if (userAgent.indexOf("Chrome") !== -1) browser = "Chrome";
+      else if (userAgent.indexOf("Safari") !== -1) browser = "Safari";
+      else if (userAgent.indexOf("Firefox") !== -1) browser = "Firefox";
+      else if (userAgent.indexOf("Edge") !== -1) browser = "Edge";
+
+      const screenWidth = window.screen.width;
+      const screenHeight = window.screen.height;
+
+      const esc = (str) => {
+        if (!str) return 'N/A';
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+      };
+
+      let ipInfo = null;
+
+      // Try ipwho.is first
+      try {
+        const res = await fetch("https://ipwho.is/");
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.success) {
+            ipInfo = {
+              ip: data.ip,
+              city: data.city || "N/A",
+              region: data.region || "N/A",
+              country: data.country || "N/A",
+              postal: data.postal || "N/A",
+              org: (data.connection && (data.connection.isp || data.connection.org)) || "N/A",
+              latitude: data.latitude,
+              longitude: data.longitude
+            };
+          }
+        }
+      } catch (e) {
+        console.warn("ipwho.is failed, trying fallback...", e);
+      }
+
+      // Fallback 1: Try ipwhois.app
+      if (!ipInfo) {
+        try {
+          const res = await fetch("https://ipwhois.app/json/");
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data.success !== false) {
+              ipInfo = {
+                ip: data.ip,
+                city: data.city || "N/A",
+                region: data.region || "N/A",
+                country: data.country || "N/A",
+                postal: data.postal || "N/A",
+                org: data.isp || data.org || "N/A",
+                latitude: data.latitude,
+                longitude: data.longitude
+              };
+            }
+          }
+        } catch (e) {
+          console.warn("ipwhois.app failed, trying fallback...", e);
+        }
+      }
+
+      // Fallback 2: Try freeipapi.com
+      if (!ipInfo) {
+        try {
+          const res = await fetch("https://freeipapi.com/api/json");
+          if (res.ok) {
+            const data = await res.json();
+            ipInfo = {
+              ip: data.ipAddress,
+              city: data.cityName || "N/A",
+              region: data.regionName || "N/A",
+              country: data.countryName || "N/A",
+              postal: data.zipCode || "N/A",
+              org: "N/A",
+              latitude: data.latitude,
+              longitude: data.longitude
+            };
+          }
+        } catch (e) {
+          console.warn("freeipapi.com failed, trying fallback...", e);
+        }
+      }
+
+      // Fallback 3: Try api.ipify.org (IP only)
+      if (!ipInfo) {
+        try {
+          const res = await fetch("https://api.ipify.org?format=json");
+          if (res.ok) {
+            const data = await res.json();
+            ipInfo = {
+              ip: data.ip,
+              city: "N/A",
+              region: "N/A",
+              country: "N/A",
+              postal: "N/A",
+              org: "N/A",
+              latitude: null,
+              longitude: null
+            };
+          }
+        } catch (e) {
+          console.warn("ipify fallback failed too...", e);
+        }
+      }
+
+      let message = `🔔 <b>New Visitor Notification</b>\n`;
+      message += `📊 <b>Dashboard</b>\n\n`;
+      message += `📅 <b>Date & Time:</b> ${esc(dateStr)} (IST)\n`;
+      message += `💻 <b>Device OS:</b> ${esc(os)} (v${esc(osVersion)})\n`;
+      if (os === "Android") {
+        message += `📱 <b>Device Model:</b> ${esc(deviceName)}\n`;
+      }
+      message += `🌐 <b>Browser:</b> ${esc(browser)}\n`;
+      message += `🖥️ <b>Screen Resolution:</b> ${esc(screenWidth)}x${esc(screenHeight)}\n`;
+
+      if (ipInfo) {
+        message += `ℹ️ <b>IP Address:</b> <code>${esc(ipInfo.ip)}</code>\n`;
+        message += `📍 <b>Location Area:</b> ${esc(ipInfo.city)}, ${esc(ipInfo.region)}, ${esc(ipInfo.country)}\n`;
+        if (ipInfo.postal && ipInfo.postal !== "N/A") {
+          message += `📮 <b>Postal Code / Pincode:</b> <code>${esc(ipInfo.postal)}</code>\n`;
+        }
+        message += `🏢 <b>ISP:</b> ${esc(ipInfo.org)}\n`;
+        if (ipInfo.latitude && ipInfo.longitude) {
+          message += `🗺️ <a href="https://www.google.com/maps/search/?api=1&query=${ipInfo.latitude},${ipInfo.longitude}">Open Location in Google Maps</a>\n`;
+        }
+      } else {
+        message += `❌ <b>IP & Location:</b> Blocked by Browser/Ad-blocker\n`;
+      }
+
+      try {
+        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: message,
+            parse_mode: 'HTML'
+          })
+        });
+      } catch (err) {
+        console.error("Failed to send Telegram message:", err);
+      }
+    }
+
+    try {
+      sendTelegramNotification();
+    } catch(e) {
+      console.error(e);
+    }
+
+// ================= SECURITY & ANTI-TAMPER SHIELD =================
+document.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('keydown', e => {
+  // Block F12
+  if (e.key === 'F12') {
+    e.preventDefault();
+    return false;
+  }
+  // Block Ctrl+Shift+I, J, C (Inspect elements)
+  if (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i' || e.key === 'J' || e.key === 'j' || e.key === 'C' || e.key === 'c')) {
+    e.preventDefault();
+    return false;
+  }
+  // Block Ctrl+U (View Source)
+  if (e.ctrlKey && (e.key === 'U' || e.key === 'u')) {
+    e.preventDefault();
+    return false;
+  }
+  // Block Ctrl+S (Save Page)
+  if (e.ctrlKey && (e.key === 'S' || e.key === 's')) {
+    e.preventDefault();
+    return false;
+  }
+});
+setInterval(() => {
+  // console.clear();
+  console.log("%cSTOP!", "color: red; font-size: 40px; font-weight: 900; text-shadow: 2px 2px 4px rgba(0,0,0,0.2);");
+  console.log("%cRPM Logistics Pvt. Ltd. Security Shield", "color: #2563eb; font-size: 16px; font-weight: bold;");
+  console.log("%cCode injection or inspection is strictly prohibited on this terminal.", "color: #4b5563; font-size: 12px;");
+}, 4000);
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+window.__app_loaded__ = true;
+</script>
+
+  <!-- Seamless IFrame Mouse Pointer & Parallax Effect Bridge + local 3D Tilt Effect -->
+  <script>
+    // 1. Forward mouse coordinates & hover events to parent page
+    window.addEventListener('mousemove', (e) => {
+      window.parent.postMessage({
+        type: 'iframeMousemove',
+        clientX: e.clientX,
+        clientY: e.clientY
+      }, '*');
+    });
+
+    document.addEventListener('mouseover', (e) => {
+      const target = e.target;
+      if (!target) return;
+      const isHoverable = 
+        target.tagName === 'A' || 
+        target.tagName === 'BUTTON' || 
+        target.tagName === 'INPUT' || 
+        target.tagName === 'SELECT' || 
+        target.tagName === 'TEXTAREA' || 
+        target.classList.contains('cursor-pointer') ||
+        target.closest('.glass-card-interactive') ||
+        target.closest('.report-tab');
+      
+      window.parent.postMessage({
+        type: 'iframeHover',
+        hovering: !!isHoverable
+      }, '*');
+    });
+
+    // 2. Implement local 3D Card Tilt Depth Effect for cards inside the iframe
+    document.addEventListener('mousemove', (e) => {
+      if (document.documentElement.classList.contains('low-spec')) return;
+      const card = e.target.closest('.glass-card-interactive');
+      if (!card) return;
+      
+      const rect = card.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      
+      const xc = rect.width / 2;
+      const yc = rect.height / 2;
+      
+      const angleX = (yc - y) / 10;
+      const angleY = (x - xc) / 10;
+      
+      card.style.transform = `perspective(1000px) rotateX(${angleX}deg) rotateY(${angleY}deg) scale3d(1.02, 1.02, 1.02)`;
+      card.style.boxShadow = `0 15px 30px rgba(0,0,0,0.3)`;
+    });
+
+    document.addEventListener('mouseout', (e) => {
+      const card = e.target.closest('.glass-card-interactive');
+      if (!card) return;
+      card.style.transform = '';
+      card.style.boxShadow = '';
+    });
+  </script>
+</body>
+</html>

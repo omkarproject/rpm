@@ -1,0 +1,1805 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="google" content="notranslate">
+  <title>RPM Diesel - Filling Station Panel</title>
+<link id="favicon-link" rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E⛽%3C/text%3E%3C/svg%3E">
+  
+  <!-- Font & Icons -->
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Outfit', 'sans-serif'] }
+        }
+      }
+    }
+  </script>
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+  <style>
+    body {
+      background-color: #0b0f19;
+      font-family: 'Outfit', sans-serif;
+    }
+    .glass-panel {
+      background: rgba(17, 24, 39, 0.7);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .calc-input {
+      width: 100%;
+      height: 2.75rem;
+      padding: 0 0.875rem;
+      border-radius: 0.75rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      background-color: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #f8fafc;
+      transition: all 0.2s ease-in-out;
+    }
+    .calc-input:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+      background-color: rgba(15, 23, 42, 0.8);
+    }
+    /* Perf: cards ko tabhi paint karo jab screen ke paas ho */
+    .perf-card {
+      content-visibility: auto;
+      contain-intrinsic-size: 240px;
+    }
+    @media (max-width: 768px) {
+      .glass-panel { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(17,24,39,0.92); }
+    }
+    /* Hide scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(156, 163, 175, 0.2);
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="min-h-screen text-slate-100 p-4 md:p-6 flex flex-col items-center">
+  <!-- Maintenance Overlay -->
+  <div id="maintenance-overlay" class="fixed inset-0 z-[99999] bg-slate-900 flex flex-col items-center justify-center p-6 text-center hidden">
+    <div class="text-fuchsia-500 text-6xl mb-6 animate-pulse"><i class="fas fa-tools"></i></div>
+    <h1 class="text-white text-3xl md:text-4xl font-black mb-3">System Under Maintenance</h1>
+    <p class="text-slate-400 text-sm md:text-base max-w-md">We are currently performing scheduled maintenance. Please try again later.</p>
+  </div>
+
+  <!-- Main Container -->
+  <div class="w-full max-w-4xl space-y-6">
+    
+    <!-- Top Header (Compact & Mobile Optimized) -->
+    <div class="glass-panel rounded-2xl md:rounded-3xl shadow-xl p-4 md:p-6 flex flex-row items-center justify-between gap-3 w-full">
+      <div class="flex items-center gap-2.5 md:gap-4 overflow-hidden">
+        <div onclick="window.location.reload()" class="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center justify-center text-xl md:text-2xl shadow-inner shrink-0 animate-pulse cursor-pointer" title="Click to Reload">
+          <i class="fas fa-gas-pump"></i>
+        </div>
+        <div class="overflow-hidden">
+          <h1 class="text-sm md:text-xl font-extrabold text-white tracking-tight leading-tight truncate">RPM DIESEL FILLING STATION</h1>
+          <p class="text-[9px] md:text-xs text-slate-400 font-medium mt-0.5 md:mt-1 truncate">Manage dispatches and fills</p>
+        </div>
+      </div>
+      
+      <!-- Right Toggle Button (Emoji Only) -->
+      <div class="flex items-center gap-2 shrink-0">
+        <button onclick="openTimeRangeModal()" id="btn-time-range" class="w-9 h-9 md:w-10 md:h-10 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-lg md:rounded-xl flex items-center justify-center text-base md:text-lg shadow-md transition-all active:scale-95 shrink-0" title="Total Filled by Time Range">
+          <i class="fas fa-clock"></i>
+        </button>
+        <button onclick="toggleView()" id="btn-toggle-view" class="w-9 h-9 md:w-10 md:h-10 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg md:rounded-xl flex items-center justify-center text-base md:text-lg shadow-md transition-all active:scale-95 shrink-0" title="Toggle View">
+          <span id="view-toggle-emoji">📋</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Active Cards Section -->
+    <div id="section-active" class="space-y-4">
+      <div class="flex items-center justify-between px-2">
+        <h2 class="text-md font-bold tracking-wide text-slate-400 uppercase">Approved Requests Pending Fill (<span id="active-count">0</span>)</h2>
+      </div>
+      
+      <!-- Grid Container for Cards -->
+      <div id="active-cards-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Populated via Javascript -->
+        <div class="col-span-full text-center py-12 text-slate-500 font-medium">
+          <i class="fas fa-circle-notch animate-spin text-2xl text-blue-500 mb-3"></i>
+          <div>Loading approved requests...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- History Log Section (Hidden by default) -->
+    <div id="section-history" class="space-y-4 hidden">
+      <div class="glass-panel rounded-2xl md:rounded-3xl p-4 md:p-6 space-y-3 md:space-y-4">
+        
+        <!-- History Header & Search -->
+        <div class="flex flex-col md:flex-row items-center justify-between gap-4">
+          <h2 class="text-md font-bold tracking-wide text-white uppercase">HISTORY</h2>
+          
+          <!-- Search Box -->
+          <div class="relative w-full md:w-72">
+            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-400 pointer-events-none">
+              <i class="fas fa-search text-xs"></i>
+            </span>
+            <input type="text" id="history-search" list="history-vehicle-list" class="calc-input pl-10 text-xs font-medium" placeholder="Search by Vehicle No (4 digits suggestion)..." autocomplete="off">
+            <datalist id="history-vehicle-list"></datalist>
+          </div>
+        </div>
+
+        <!-- History Cards Grid -->
+        <div id="history-cards-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Populated via Javascript -->
+          <div class="col-span-full text-center py-12 text-slate-550 font-bold">
+            <i class="fas fa-history text-2xl text-emerald-500 mb-3"></i>
+            <div>No historical.</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+
+  <!-- MODAL: TIME RANGE TOTAL -->
+  <div id="time-range-modal" class="fixed inset-0 bg-slate-900/60 dark:bg-black/85 flex items-center justify-center z-50 hidden backdrop-blur-sm">
+    <div class="glass-panel rounded-3xl shadow-2xl w-full max-w-md mx-4 overflow-hidden border border-white/10 flex flex-col max-h-[90vh]">
+      <div class="p-4 border-b border-white/10 flex items-center justify-between bg-slate-900/50">
+        <h3 class="font-extrabold text-sm text-emerald-400 flex items-center gap-2">
+          <i class="fas fa-clock"></i> Total Diesel Filled (Time Range)
+        </h3>
+        <button onclick="closeTimeRangeModal()" class="text-slate-400 hover:text-red-500 text-xl font-bold focus:outline-none">&times;</button>
+      </div>
+
+      <div class="p-5 space-y-4 overflow-y-auto">
+        <div class="grid grid-cols-1 gap-3">
+          <div>
+            <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400">From (Date &amp; Time)</label>
+            <input type="datetime-local" id="range-from" class="calc-input mt-1.5" onchange="calculateTimeRangeTotal()">
+          </div>
+          <div>
+            <label class="text-[10px] font-bold uppercase tracking-wider text-slate-400">To (Date &amp; Time)</label>
+            <input type="datetime-local" id="range-to" class="calc-input mt-1.5" onchange="calculateTimeRangeTotal()">
+          </div>
+        </div>
+
+        <div class="flex flex-wrap gap-2">
+          <button onclick="setQuickRange(1)" class="px-3 py-1.5 text-[10px] font-bold uppercase rounded-lg bg-slate-800/70 hover:bg-slate-700 text-slate-300 border border-white/10">Last 1 Hr</button>
+          <button onclick="setQuickRange(6)" class="px-3 py-1.5 text-[10px] font-bold uppercase rounded-lg bg-slate-800/70 hover:bg-slate-700 text-slate-300 border border-white/10">Last 6 Hrs</button>
+          <button onclick="setQuickRange(12)" class="px-3 py-1.5 text-[10px] font-bold uppercase rounded-lg bg-slate-800/70 hover:bg-slate-700 text-slate-300 border border-white/10">Last 12 Hrs</button>
+          <button onclick="setQuickRange(24)" class="px-3 py-1.5 text-[10px] font-bold uppercase rounded-lg bg-slate-800/70 hover:bg-slate-700 text-slate-300 border border-white/10">Last 24 Hrs</button>
+        </div>
+
+        <div class="bg-emerald-500/10 border border-emerald-500/20 rounded-2xl p-4 text-center">
+          <div class="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Total Amount Filled</div>
+          <div id="range-total-amount" class="text-3xl font-black text-emerald-400 mt-1">₹0</div>
+          <div id="range-total-count" class="text-[10px] text-slate-400 font-semibold mt-1">Select a time range</div>
+        </div>
+
+        <div id="range-breakdown" class="space-y-2 max-h-52 overflow-y-auto"></div>
+      </div>
+
+      <div class="p-4 border-t border-white/10 bg-slate-900/30">
+        <button onclick="closeTimeRangeModal()" class="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl font-bold shadow-md transition-all">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: CAPTURE RECEIPT PHOTO -->
+  <div id="camera-modal" class="fixed inset-0 bg-slate-900/60 dark:bg-black/85 flex items-center justify-center z-50 hidden backdrop-blur-sm">
+    <div class="glass-panel rounded-3xl shadow-2xl w-full max-w-md mx-4 overflow-hidden border border-white/20 dark:border-white/5 flex flex-col max-h-[90vh]">
+      <!-- Header -->
+      <div class="p-4 border-b border-white/10 flex items-center justify-between bg-slate-900/50">
+        <h3 id="camera-modal-title" class="font-extrabold text-sm text-blue-400 flex items-center gap-2">
+          <i class="fas fa-camera"></i> Capture Receipt Photo
+        </h3>
+        <button onclick="closeCameraModal()" class="text-slate-400 hover:text-red-500 text-xl font-bold focus:outline-none">&times;</button>
+      </div>
+      <!-- Body -->
+      <div class="p-5 flex flex-col items-center justify-center space-y-4 overflow-y-auto">
+        <!-- Live Video View -->
+        <div id="video-container" class="relative w-full aspect-[4/3] rounded-2xl bg-black overflow-hidden border border-white/10 flex items-center justify-center">
+          <video id="camera-video" class="w-full h-full object-cover" autoplay playsinline muted></video>
+          <!-- Fallback overlay loader -->
+          <div id="camera-fallback-msg" class="absolute inset-0 flex flex-col items-center justify-center p-4 bg-slate-900 text-center hidden">
+            <i class="fas fa-exclamation-triangle text-amber-500 text-3xl mb-2 animate-bounce"></i>
+            <div class="text-xs font-bold text-slate-300">Live Camera Stream Unavailable</div>
+            <div class="text-[10px] text-slate-400 mt-1 max-w-[250px]">Please use the fallback camera upload button below to take or choose a photo.</div>
+          </div>
+        </div>
+
+        <!-- Static Image Preview (After click or select) -->
+        <div id="preview-container" class="relative w-full aspect-[4/3] rounded-2xl bg-black overflow-hidden border border-emerald-500/30 flex items-center justify-center hidden">
+          <img id="camera-preview-img" class="w-full h-full object-contain" src="">
+        </div>
+
+        <!-- Hidden Canvas for capture & compression -->
+        <canvas id="camera-canvas" class="hidden"></canvas>
+        <!-- Hidden file input for native capture fallback -->
+        <input type="file" id="camera-file-input" accept="image/*" capture="environment" class="hidden" onchange="handleFallbackFile(this)">
+
+        <!-- Info / Target details -->
+        <div class="w-full bg-slate-800/30 dark:bg-black/20 p-3.5 rounded-xl border border-white/5 text-xs text-center space-y-1">
+          <div class="font-bold text-slate-300">Vehicle: <span id="camera-target-veh" class="text-blue-400 font-extrabold">-</span></div>
+          <div id="camera-modal-info" class="text-[10px] text-slate-400">Please align receipt clearly in the frame before clicking</div>
+        </div>
+      </div>
+      <!-- Footer Actions -->
+      <div class="p-4 border-t border-white/10 flex gap-2 bg-slate-900/30">
+        <button id="btn-capture" onclick="capturePhoto()" class="flex-1 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-bold shadow-md flex items-center justify-center gap-2 transition-all">
+          <i class="fas fa-camera"></i> Capture Photo
+        </button>
+        <button id="btn-fallback-trigger" onclick="triggerFallbackFile()" class="flex-1 py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-750 text-white rounded-xl font-bold shadow-md flex items-center justify-center gap-2 transition-all hidden">
+          <i class="fas fa-upload"></i> Upload Proof
+        </button>
+        <button id="btn-confirm-submit" onclick="submitDieselFilledWithPhoto()" class="flex-1 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl font-bold shadow-md flex items-center justify-center gap-2 transition-all hidden">
+          <i class="fas fa-check-circle"></i> Confirm
+        </button>
+        <button id="btn-retake" onclick="startCamera()" class="py-3 px-4 bg-slate-700 hover:bg-slate-650 text-slate-200 rounded-xl font-bold shadow-md transition-all hidden" title="Retake Photo">
+          <i class="fas fa-redo"></i> Retake
+        </button>
+        <button id="btn-cancel-cam" onclick="closeCameraModal()" class="py-3 px-4 bg-slate-800 hover:bg-slate-750 text-slate-300 rounded-xl font-bold shadow-md transition-all">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: VIEW RECEIPT PHOTO -->
+  <div id="view-receipt-modal" class="fixed inset-0 bg-slate-900/60 dark:bg-black/85 flex items-center justify-center z-50 hidden backdrop-blur-sm">
+    <div class="glass-panel rounded-3xl shadow-2xl w-full max-w-md mx-4 overflow-hidden border border-white/20 dark:border-white/5 flex flex-col max-h-[90vh]">
+      <!-- Header -->
+      <div class="p-4 border-b border-white/10 flex items-center justify-between bg-slate-900/50">
+        <h3 class="font-extrabold text-sm text-blue-400 flex items-center gap-2">
+          <i class="fas fa-file-invoice"></i> Receipt Details
+        </h3>
+        <button onclick="closeViewReceiptModal()" class="text-slate-400 hover:text-red-500 text-xl font-bold focus:outline-none">&times;</button>
+      </div>
+      <!-- Body -->
+      <div class="p-5 flex flex-col items-center justify-center space-y-4 overflow-y-auto">
+        <div class="relative w-full aspect-[4/3] rounded-2xl bg-black overflow-hidden border border-white/10 flex items-center justify-center">
+          <img id="receipt-modal-img" class="w-full h-full object-contain" src="">
+          <div id="receipt-modal-empty" class="absolute inset-0 flex flex-col items-center justify-center p-4 bg-slate-900 text-center hidden">
+            <i class="fas fa-image text-slate-500 text-3xl mb-2"></i>
+            <div class="text-xs font-bold text-slate-400">No Receipt Captured</div>
+            <div class="text-[10px] text-slate-500 mt-1 max-w-[250px]">No image proof was saved for this transaction.</div>
+          </div>
+        </div>
+        <div class="w-full bg-slate-800/30 dark:bg-black/20 p-3.5 rounded-xl border border-white/5 text-xs text-center">
+          <div class="font-bold text-slate-300">Vehicle: <span id="receipt-modal-veh" class="text-blue-400 font-extrabold">-</span></div>
+        </div>
+      </div>
+      <!-- Footer -->
+      <div class="p-4 border-t border-white/10 flex bg-slate-900/30">
+        <button onclick="closeViewReceiptModal()" class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-md transition-all">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Decryption Helper matching other pages
+    function dec(str) {
+      return atob(str);
+    }
+
+    // Default configuration (Decrypted dynamically)
+    let firebaseConfig = {
+      apiKey: dec("QUl6YVN5QzhNMTJobGFQUVJPQnFZM0dkX254XzEzQUNhdzFZVjhn"),
+      authDomain: dec("cnBtLWRpZXNlbC5maXJlYmFzZWFwcC5jb20="),
+      databaseURL: dec("aHR0cHM6Ly9ycG0tZGllc2VsLWRlZmF1bHQtcnRkYi5maXJlYmFzZWlvLmNvbQ=="),
+      projectId: dec("cnBtLWRpZXNlbA=="),
+      storageBucket: dec("cnBtLWRpZXNlbC5maXJlYmFzZXN0b3JhZ2UuYXBw"),
+      messagingSenderId: dec("MTk3NDU0NzU3MTAw"),
+      appId: dec("MToxOTc0NTQ3NTcxMDA6d2ViOmZhNGJlY2JhZjkyZDJhOThlNjc5Yzk=")
+    };
+
+    // Override with custom credentials if present in localStorage
+    if (localStorage.getItem('customFirebaseConfig')) {
+      try {
+        const parsed = JSON.parse(localStorage.getItem('customFirebaseConfig'));
+        if (parsed && parsed.databaseURL) {
+          firebaseConfig = { ...firebaseConfig, ...parsed };
+          console.log("[Filling Panel] Loaded custom Firebase config.");
+        }
+      } catch (err) {
+        console.error("Failed to load custom Firebase configuration:", err);
+      }
+    }
+
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+    console.log("[Filling Panel] Connected to Firebase RTDB:", firebaseConfig.databaseURL);
+
+    // References
+    const driverRequestsRef = db.ref('driverRequests');
+    const entriesRef = db.ref('entries');
+
+    // Global variables
+    let driverRequestsList = [];
+    let dieselRate = 0;
+    let vehicleTypes = {};
+    let entriesList = [];
+    let currentView = 'active'; // 'active' or 'history'
+    let uniqueHistoryVehicles = new Set();
+    let isInitialLoadComplete = false;
+
+    // ===== Fast cache helpers (rocket speed on slow network) =====
+    const ACTIVE_CACHE_KEY = 'rpm_active_cache_v1';
+    const HISTORY_CACHE_KEY = 'rpm_history_cache_v1';
+    let historyList = [];
+    let historyLoaded = false;
+    let historyLiveSyncAttached = false;
+
+    // Bade base64 photos ko memory/cache se hata do — sirf flag rakho, photo on-demand aayegi
+    const PHOTO_FIELDS = ['receiptPhoto', 'requestedReceiptPhoto', 'kmPhoto', 'capturedPhoto'];
+    function slim(item, key) {
+      const c = { ...item, key: key };
+      PHOTO_FIELDS.forEach(f => {
+        if (typeof c[f] === 'string' && c[f].length > 512) { c[f] = ''; c[f + 'Exists'] = true; }
+      });
+      if (Array.isArray(c.receiptPhotos)) {
+        if (c.receiptPhotos.length > 0) c.hasReceiptPhoto = true;
+        delete c.receiptPhotos;
+      } else if (c.receiptPhotos && typeof c.receiptPhotos === 'object') {
+        c.hasReceiptPhoto = true;
+        delete c.receiptPhotos;
+      }
+      if (Array.isArray(c.kmPhotos)) {
+        if (c.kmPhotos.length > 0) c.hasKmPhoto = true;
+        delete c.kmPhotos;
+      } else if (c.kmPhotos && typeof c.kmPhotos === 'object') {
+        c.hasKmPhoto = true;
+        delete c.kmPhotos;
+      }
+      if (c.capturedPhoto) {
+        c.hasCapturedPhoto = true;
+        delete c.capturedPhoto;
+      }
+      return c;
+    }
+
+    const idle = window.requestIdleCallback || function (fn) { return setTimeout(fn, 200); };
+
+    function saveToCache(key, list) {
+      idle(() => saveToCacheNow(key, list));
+    }
+
+    function saveToCacheNow(key, list) {
+      try { localStorage.setItem(key, JSON.stringify(list)); }
+      catch (e) {
+        try {
+          const light = list.map(r => {
+            const c = { ...r };
+            ['receiptPhoto', 'requestedReceiptPhoto', 'kmPhoto'].forEach(f => {
+              if (typeof c[f] === 'string' && c[f].length > 5000) c[f] = '';
+            });
+            return c;
+          });
+          localStorage.setItem(key, JSON.stringify(light));
+        } catch (e2) { console.warn('Cache save failed:', e2); }
+      }
+    }
+
+    function readCache(key) {
+      try { return JSON.parse(localStorage.getItem(key) || '[]'); }
+      catch (e) { return []; }
+    }
+
+    // Merged view: active (approved) + history, deduped by key
+    function getAllRequests() {
+      const map = new Map();
+      historyList.forEach(r => map.set(r.key, r));
+      driverRequestsList.forEach(r => map.set(r.key, r));
+      return [...map.values()];
+    }
+
+    // Renders ko rAF pe batch karo — ek frame me ek hi paint
+    var __pendingActive = false, __pendingHistory = false;
+    function renderActiveCards() {
+      if (__pendingActive) return;
+      __pendingActive = true;
+      requestAnimationFrame(() => { __pendingActive = false; renderActiveCardsNow(); });
+    }
+    function renderHistory() {
+      if (__pendingHistory) return;
+      __pendingHistory = true;
+      requestAnimationFrame(() => { __pendingHistory = false; renderHistoryNow(); });
+    }
+
+    // Instant paint from cache — network ka wait nahi
+    (function renderFromCacheInstantly() {
+      const cachedActive = readCache(ACTIVE_CACHE_KEY);
+      if (cachedActive.length) {
+        driverRequestsList = cachedActive;
+        renderActiveCards();
+      }
+    })();
+
+    // Request notification permission if not yet decided
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+
+    // Register service worker if supported
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js')
+        .then(reg => console.log("[ServiceWorker] Registered:", reg.scope))
+        .catch(err => console.error("[ServiceWorker] Registration failed:", err));
+    }
+
+    // Auto-reconnect Firebase when page/tab becomes active/visible
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') {
+        console.log("[Visibility] Tab became active. Force reconnecting Firebase database...");
+        try {
+          db.goOnline();
+        } catch (e) {
+          console.warn("db.goOnline() failed:", e);
+        }
+      }
+    });
+
+    // Native Notification helper
+    function triggerNativeNotification(title, body) {
+      if (!('Notification' in window) || Notification.permission !== 'granted') return;
+      
+      if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+        navigator.serviceWorker.ready.then(reg => {
+          reg.showNotification(title, {
+            body: body,
+            icon: '../assets/logo.png',
+            badge: '../assets/logo.png',
+            vibrate: [200, 100, 200]
+          });
+        }).catch(err => {
+          console.warn("ServiceWorker notification failed, falling back to window.Notification:", err);
+          try {
+            new Notification(title, { body: body, icon: '../assets/logo.png' });
+          } catch (e) {
+            console.error("Window Notification failed:", e);
+          }
+        });
+      } else {
+        try {
+          new Notification(title, { body: body, icon: '../assets/logo.png' });
+        } catch (e) {
+          console.error("Window Notification failed:", e);
+        }
+      }
+    }
+
+    // Load Configurations
+    db.ref('config/diesel_rate').on('value', snap => {
+      dieselRate = snap.val() || 0;
+      console.log("[Filling Panel] Diesel rate loaded:", dieselRate);
+    });
+
+    db.ref('config/vehicle_types').on('value', snap => {
+      vehicleTypes = snap.val() || {};
+      console.log("[Filling Panel] Vehicle types loaded.");
+    });
+
+    // Sync entries lightly to compute next sequential number accurately without loading heavy base64
+    entriesRef.orderByKey().limitToLast(5).on('value', snap => {
+      const val = snap.val();
+      entriesList = [];
+      if (val) {
+        Object.entries(val).forEach(([key, item]) => {
+          entriesList.push({ ...item, key });
+        });
+      }
+      console.log("[Filling Panel] Entries loaded. count:", entriesList.length);
+    });
+
+    // Sync ONLY approved requests — poora history data download nahi hota
+    const approvedQuery = driverRequestsRef.orderByChild('status').equalTo('approved');
+    approvedQuery.on('value', snapshot => {
+      const val = snapshot.val();
+      driverRequestsList = [];
+      
+      if (val) {
+        Object.entries(val).forEach(([key, item]) => {
+          driverRequestsList.push(slim(item, key));
+        });
+        driverRequestsList.sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0));
+      }
+      
+      saveToCache(ACTIVE_CACHE_KEY, driverRequestsList);
+      updateViews();
+      isInitialLoadComplete = true;
+    });
+
+    // Listen for status changes or additions to play notification chime
+    approvedQuery.on('child_added', snapshot => {
+      const item = snapshot.val();
+      if (item && isInitialLoadComplete && item.status === 'approved') {
+        playChimeSound();
+        showNotification(`New approved request for Vehicle: ${item.vehicleNo}`);
+        triggerNativeNotification("RPM DIESEL - New Approved Request", `Vehicle: ${item.vehicleNo}\nAmount: ₹${item.dieselAmount}\nVendor: ${item.vendorName || 'N/A'}`);
+      }
+    });
+
+    approvedQuery.on('child_changed', snapshot => {
+      const item = snapshot.val();
+      if (!item || !isInitialLoadComplete) return;
+
+      if (item.status === 'approved') {
+        playChimeSound();
+        showNotification(`Request approved for Vehicle: ${item.vehicleNo}`);
+        triggerNativeNotification("RPM DIESEL - Request Approved", `Vehicle: ${item.vehicleNo}\nAmount: ₹${item.dieselAmount}`);
+      }
+    });
+
+    // Show a beautiful toast notification
+    function showNotification(message) {
+      const toast = document.createElement('div');
+      toast.className = "fixed bottom-5 right-5 glass-panel border border-blue-500/30 rounded-2xl p-4 shadow-2xl flex items-center gap-3 z-50 transition-all duration-300";
+      
+      toast.innerHTML = `
+        <div class="w-8 h-8 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center justify-center text-sm">
+          <i class="fas fa-bell"></i>
+        </div>
+        <div class="text-xs font-bold text-white pr-4">${message}</div>
+        <button onclick="this.parentElement.remove()" class="text-slate-400 hover:text-white transition-all text-xs">
+          <i class="fas fa-times"></i>
+        </button>
+      `;
+      
+      document.body.appendChild(toast);
+      
+      setTimeout(() => {
+        toast.remove();
+      }, 6000);
+    }
+
+
+    // ===== TIME RANGE TOTAL FILLED AMOUNT =====
+    function toLocalInputValue(d) {
+      const pad = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    function openTimeRangeModal() {
+      const modal = document.getElementById('time-range-modal');
+      modal.classList.remove('hidden');
+      const fromEl = document.getElementById('range-from');
+      const toEl = document.getElementById('range-to');
+      if (!fromEl.value || !toEl.value) {
+        const now = new Date();
+        toEl.value = toLocalInputValue(now);
+        fromEl.value = toLocalInputValue(new Date(now.getTime() - 24 * 60 * 60 * 1000));
+      }
+      calculateTimeRangeTotal();
+    }
+
+    function closeTimeRangeModal() {
+      document.getElementById('time-range-modal').classList.add('hidden');
+    }
+
+    function setQuickRange(hours) {
+      const now = new Date();
+      document.getElementById('range-to').value = toLocalInputValue(now);
+      document.getElementById('range-from').value = toLocalInputValue(new Date(now.getTime() - hours * 60 * 60 * 1000));
+      calculateTimeRangeTotal();
+    }
+
+    function calculateTimeRangeTotal() {
+      const fromVal = document.getElementById('range-from').value;
+      const toVal = document.getElementById('range-to').value;
+      const totalEl = document.getElementById('range-total-amount');
+      const countEl = document.getElementById('range-total-count');
+      const listEl = document.getElementById('range-breakdown');
+
+      listEl.innerHTML = '';
+
+      if (!fromVal || !toVal) {
+        totalEl.textContent = '₹0';
+        countEl.textContent = 'Please select both From and To time';
+        return;
+      }
+
+      const fromTs = new Date(fromVal).getTime();
+      const toTs = new Date(toVal).getTime();
+
+      if (isNaN(fromTs) || isNaN(toTs) || fromTs > toTs) {
+        totalEl.textContent = '₹0';
+        countEl.textContent = 'Invalid range — "From" must be before "To"';
+        return;
+      }
+
+      const filled = getAllRequests().filter(r => {
+        const isFilled = r.status === 'filled' || r.status === 'update_pending' || r.status === 'update_rejected';
+        const ts = r.filledAt || 0;
+        return isFilled && ts >= fromTs && ts <= toTs;
+      }).sort((a, b) => (b.filledAt || 0) - (a.filledAt || 0));
+
+      const total = filled.reduce((sum, r) => sum + (parseFloat(r.dieselAmount) || 0), 0);
+
+      totalEl.textContent = '₹' + total.toLocaleString('en-IN');
+      countEl.textContent = `${filled.length} fill${filled.length === 1 ? '' : 's'} between ${new Date(fromTs).toLocaleString('en-IN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} and ${new Date(toTs).toLocaleString('en-IN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}`;
+
+      if (filled.length === 0) {
+        listEl.innerHTML = `<div class="text-center text-[11px] text-slate-500 font-bold py-3">No diesel filled in this time range.</div>`;
+        return;
+      }
+
+      filled.forEach(r => {
+        const t = r.filledAt ? new Date(r.filledAt).toLocaleString('en-IN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-';
+        const row = document.createElement('div');
+        row.className = 'flex items-center justify-between bg-slate-800/40 border border-white/5 rounded-xl px-3 py-2';
+        row.innerHTML = `
+          <div class="min-w-0">
+            <div class="text-xs font-black text-blue-400 truncate">${r.vehicleNo || '-'}</div>
+            <div class="text-[9px] text-slate-400 font-semibold">${t}</div>
+          </div>
+          <div class="text-xs font-black text-emerald-400 shrink-0 ml-2">₹${(parseFloat(r.dieselAmount) || 0).toLocaleString('en-IN')}</div>
+        `;
+        listEl.appendChild(row);
+      });
+    }
+
+    // Toggle View function
+    function toggleView() {
+      const activeSec = document.getElementById('section-active');
+      const histSec = document.getElementById('section-history');
+      const emojiEl = document.getElementById('view-toggle-emoji');
+
+      if (currentView === 'active') {
+        currentView = 'history';
+        activeSec.classList.add('hidden');
+        histSec.classList.remove('hidden');
+        if (emojiEl) emojiEl.textContent = "⛽";
+        loadHistory();
+      } else {
+        currentView = 'active';
+        activeSec.classList.remove('hidden');
+        histSec.classList.add('hidden');
+        if (emojiEl) emojiEl.textContent = "📋";
+        renderActiveCards();
+      }
+    }
+
+    // Render Active Approved Cards
+    function renderActiveCardsNow() {
+      const grid = document.getElementById('active-cards-grid');
+      const approvedCountEl = document.getElementById('active-count');
+      
+      const cutoffTime = Date.now() - (24 * 60 * 60 * 1000); // 24 hours ago
+      const approvedList = driverRequestsList.filter(r => r.status === 'approved' && (r.submittedAt || 0) >= cutoffTime);
+      approvedCountEl.textContent = approvedList.length;
+
+      grid.innerHTML = '';
+
+      if (approvedList.length === 0) {
+        grid.innerHTML = `
+          <div class="col-span-full glass-panel rounded-3xl p-12 text-center text-slate-400 font-bold">
+            <div class="text-4xl text-slate-600 mb-3"><i class="fas fa-check-circle"></i></div>
+            <div>No approved requests pending fuel fill. All clear!</div>
+          </div>
+        `;
+        return;
+      }
+
+      const frag = document.createDocumentFragment();
+      approvedList.forEach(r => {
+        const card = document.createElement('div');
+        card.className = "perf-card glass-panel rounded-2xl md:rounded-3xl p-4 md:p-6 flex flex-col justify-between space-y-3 md:space-y-4 hover:border-blue-500/30 transition-all border border-white/5 relative overflow-hidden shadow-lg animate-fadeup";
+        
+        card.innerHTML = `
+          <!-- Glowing Left Accent -->
+          <div class="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-blue-500 to-indigo-600"></div>
+
+          <!-- Top row -->
+          <div class="flex items-start justify-between">
+            <div>
+              <div class="text-[9px] md:text-[10px] text-slate-400 font-bold uppercase tracking-wider">${r.date} — ${r.time}</div>
+              <div class="text-base md:text-lg font-black text-white tracking-wide mt-0.5 md:mt-1">${r.vehicleNo}</div>
+              <div class="text-[9px] md:text-[10px] text-slate-400 font-semibold uppercase mt-0.5">${r.vehicleType || 'Unknown'}</div>
+            </div>
+            <div class="text-right">
+              <div class="text-[9px] md:text-[10px] text-blue-400 font-bold uppercase tracking-wider">Amount Approved</div>
+              <div class="text-base md:text-lg font-black text-emerald-400 mt-0.5 md:mt-1">₹${parseFloat(r.dieselAmount).toLocaleString('en-IN')}</div>
+            </div>
+          </div>
+
+          <!-- Details Rows -->
+          <div class="grid grid-cols-2 gap-2 border-t border-b border-white/5 py-2 md:py-3 text-[10px] md:text-xs">
+            <div>
+              <span class="text-slate-500 font-bold uppercase text-[8px] md:text-[9px]">Route:</span>
+              <div class="font-extrabold text-slate-200 mt-0.5 truncate">${r.fromLocation} ➔ ${r.lastLocation}</div>
+            </div>
+            <div>
+              <span class="text-slate-500 font-bold uppercase text-[8px] md:text-[9px]">Odometer:</span>
+              <div class="font-extrabold text-slate-200 mt-0.5">${parseFloat(r.currentKm) ? parseFloat(r.currentKm).toLocaleString('en-IN') + ' KM' : r.currentKm}</div>
+            </div>
+            <div class="col-span-2 mt-0.5 md:mt-1">
+              <span class="text-slate-500 font-bold uppercase text-[8px] md:text-[9px]">Vendor:</span>
+              <div class="font-extrabold text-slate-200 mt-0.5 truncate">${r.vendorName}</div>
+            </div>
+            ${(r.note && String(r.note).trim().toUpperCase() !== 'DRIVER REQUEST') ? `
+            <div class="col-span-2">
+              <span class="text-slate-500 font-bold uppercase text-[8px] md:text-[9px]">Note:</span>
+              <div class="font-medium text-slate-400 mt-0.5 italic truncate">${r.note}</div>
+            </div>` : ''}
+          </div>
+
+          <!-- Fill Action Button -->
+          <button onclick="confirmDieselFilled('${r.key}')" class="w-full py-2.5 md:py-3 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-xl md:rounded-2xl font-extrabold text-xs shadow-md transition-all active:scale-[0.98] uppercase flex items-center justify-center gap-1.5 tracking-wider">
+            <i class="fas fa-gas-pump"></i> Diesel Filled
+          </button>
+        `;
+        
+        frag.appendChild(card);
+      });
+      grid.appendChild(frag);
+    }
+
+    // Render Filled History Log Cards
+    function renderHistoryNow() {
+      const grid = document.getElementById('history-cards-grid');
+      const searchQuery = (document.getElementById('history-search').value || '').trim().toUpperCase();
+
+      const cutoffTime = Date.now() - (48 * 60 * 60 * 1000); // 48 hours ago
+      const filledList = getAllRequests().filter(r => {
+        const matchesStatus = r.status === 'filled' || r.status === 'update_pending' || r.status === 'update_rejected';
+        const matchesTime = (r.filledAt || 0) >= cutoffTime;
+        const matchesSearch = !searchQuery || String(r.vehicleNo || '').toUpperCase().includes(searchQuery);
+        return matchesStatus && matchesTime && matchesSearch;
+      });
+
+      grid.innerHTML = '';
+
+      if (filledList.length === 0) {
+        grid.innerHTML = `
+          <div class="col-span-full glass-panel rounded-3xl p-12 text-center text-slate-500 font-bold">
+            <div class="text-4xl text-slate-700 mb-3"><i class="fas fa-history text-slate-600"></i></div>
+            <div>No matching filled entries found (Last 48 Hours).</div>
+          </div>
+        `;
+        return;
+      }
+
+      // Collect unique vehicles for search suggestions
+      uniqueHistoryVehicles.clear();
+      getAllRequests().filter(r => (r.status === 'filled' || r.status === 'update_pending' || r.status === 'update_rejected') && (r.filledAt || 0) >= cutoffTime).forEach(r => {
+        if (r.vehicleNo) uniqueHistoryVehicles.add(r.vehicleNo.toUpperCase());
+      });
+
+      const frag = document.createDocumentFragment();
+      filledList.forEach(r => {
+        const card = document.createElement('div');
+        let hoverBorderColor = 'hover:border-emerald-500/30';
+        if (r.status === 'update_pending') {
+          hoverBorderColor = 'hover:border-purple-500/30';
+        } else if (r.status === 'update_rejected') {
+          hoverBorderColor = 'hover:border-rose-500/30';
+        }
+        card.className = `glass-panel rounded-2xl md:rounded-3xl p-4 md:p-6 flex flex-col justify-between space-y-3 md:space-y-4 ${hoverBorderColor} transition-all border border-white/5 relative overflow-hidden shadow-lg animate-fadeup`;
+        
+        const fillTimeStr = r.filledAt ? new Date(r.filledAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
+        const fillDateStr = r.filledAt ? new Date(r.filledAt).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '';
+
+        let accentColor = 'from-emerald-500 to-teal-600';
+        if (r.status === 'update_pending') {
+          accentColor = 'from-purple-500 to-indigo-600';
+        } else if (r.status === 'update_rejected') {
+          accentColor = 'from-rose-500 to-red-600';
+        }
+
+        let bottomHtml = '';
+        if (r.status === 'update_pending') {
+          bottomHtml = `
+            <div class="flex items-center justify-between pt-1">
+              <div class="flex flex-col gap-1">
+                <div class="text-[9px] md:text-[10px] text-purple-400 font-bold flex items-center gap-1.5">
+                  <i class="fas fa-clock animate-pulse"></i> Update Pending Approval
+                </div>
+                <span class="text-[8px] md:text-[9px] text-slate-500 italic">Awaiting Admin Action</span>
+              </div>
+              <div class="flex flex-col items-end">
+                <span class="text-[10px] text-slate-400 line-through">₹${parseFloat(r.dieselAmount || 0).toLocaleString('en-IN')}</span>
+                <span class="text-xs font-black text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20 mt-0.5">₹${parseFloat(r.requestedAmount || 0).toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+          `;
+        } else if (r.status === 'update_rejected') {
+          bottomHtml = `
+            <div class="flex items-center justify-between pt-1">
+              <div class="flex flex-col gap-1.5">
+                <div class="text-[9px] md:text-[10px] text-rose-400 font-bold flex items-center gap-1.5">
+                  <i class="fas fa-times-circle text-rose-500"></i> Update Request Rejected
+                </div>
+                <button onclick="updateFilledAmount('${r.key}')" class="text-[9px] md:text-[10px] text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1 transition-all bg-blue-500/10 px-2 py-1 rounded-md border border-blue-500/20 w-fit">
+                  <i class="fas fa-edit"></i> Update Amount
+                </button>
+              </div>
+              <div class="text-xs font-black text-white/90 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+                ₹${parseFloat(r.dieselAmount || 0).toLocaleString('en-IN')}
+              </div>
+            </div>
+          `;
+        } else {
+          bottomHtml = `
+            <div class="flex items-center justify-between pt-1">
+              <div class="flex flex-col gap-1.5">
+                <div class="text-[9px] md:text-[10px] text-emerald-400 font-bold flex items-center gap-1.5">
+                  <i class="fas fa-check-circle"></i> Filled Successfully
+                </div>
+                <button onclick="updateFilledAmount('${r.key}')" class="text-[9px] md:text-[10px] text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1 transition-all bg-blue-500/10 px-2 py-1 rounded-md border border-blue-500/20 w-fit">
+                  <i class="fas fa-edit"></i> Update Amount
+                </button>
+              </div>
+              <div class="text-xs font-black text-white/90 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+                ₹${parseFloat(r.dieselAmount || 0).toLocaleString('en-IN')}
+              </div>
+            </div>
+          `;
+        }
+
+        card.innerHTML = `
+          <!-- Glowing Left Accent -->
+          <div class="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b ${accentColor}"></div>
+
+          <!-- Top row -->
+          <div class="flex items-start justify-between">
+            <div>
+              <div class="text-[9px] md:text-[10px] text-slate-400 font-bold uppercase tracking-wider">${fillDateStr} — ${fillTimeStr}</div>
+              <div class="text-base md:text-lg font-black text-blue-400 hover:text-blue-300 hover:underline tracking-wide mt-0.5 md:mt-1 cursor-pointer" onclick="viewReceiptPhoto('${r.key}', '${r.vehicleNo}')">${r.vehicleNo}</div>
+              <div class="text-[9px] md:text-[10px] text-slate-400 font-semibold uppercase mt-0.5">${r.vehicleType || '-'}</div>
+            </div>
+            <div class="text-right">
+              <div class="text-[9px] md:text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Response No</div>
+              <div class="text-base md:text-lg font-black text-emerald-400 mt-0.5 md:mt-1">#${r.linkedResponseNumber || '-'}</div>
+            </div>
+          </div>
+
+          <!-- Details Rows -->
+          <div class="grid grid-cols-2 gap-2 border-t border-b border-white/5 py-2 md:py-3 text-[10px] md:text-xs">
+            <div>
+              <span class="text-slate-500 font-bold uppercase text-[8px] md:text-[9px]">Route:</span>
+              <div class="font-extrabold text-slate-200 mt-0.5 truncate">${r.fromLocation || '-'} ➔ ${r.lastLocation || '-'}</div>
+            </div>
+            <div>
+              <span class="text-slate-500 font-bold uppercase text-[8px] md:text-[9px]">Odometer:</span>
+              <div class="font-extrabold text-slate-200 mt-0.5">${parseFloat(r.currentKm) ? parseFloat(r.currentKm).toLocaleString('en-IN') + ' KM' : (r.currentKm || '-')}</div>
+            </div>
+            <div class="col-span-2 mt-0.5 md:mt-1">
+              <span class="text-slate-500 font-bold uppercase text-[8px] md:text-[9px]">Vendor:</span>
+              <div class="font-extrabold text-slate-200 mt-0.5 truncate">${r.vendorName || '-'}</div>
+            </div>
+            ${(r.note && String(r.note).trim().toUpperCase() !== 'DRIVER REQUEST') ? `
+            <div class="col-span-2">
+              <span class="text-slate-500 font-bold uppercase text-[8px] md:text-[9px]">Note:</span>
+              <div class="font-medium text-slate-400 mt-0.5 italic truncate">${r.note}</div>
+            </div>` : ''}
+          </div>
+
+          ${bottomHtml}
+        `;
+        
+        frag.appendChild(card);
+      });
+      grid.appendChild(frag);
+    }
+
+    // Global variable to keep track of active request key being filled
+    let activeFillRequestKey = null;
+    let activeCameraContext = null;
+    let cameraStream = null;
+    let capturedPhotoBase64 = '';
+
+    // Confirm and process Diesel Filled (initiates camera flow)
+    function confirmDieselFilled(key) {
+      activeFillRequestKey = key;
+      activeCameraContext = { type: 'dispatch', key: key };
+      const req = driverRequestsList.find(r => r.key === key);
+      if (!req) return;
+
+      document.getElementById('camera-target-veh').textContent = req.vehicleNo;
+      document.getElementById('camera-modal-title').innerHTML = `<i class="fas fa-camera"></i> Capture Receipt Photo`;
+      document.getElementById('camera-modal-info').textContent = "Please align receipt clearly in the frame before clicking";
+      
+      // Open modal
+      const modal = document.getElementById('camera-modal');
+      modal.classList.remove('hidden');
+      
+      // Reset variables and state
+      capturedPhotoBase64 = '';
+      document.getElementById('camera-preview-img').src = '';
+      document.getElementById('preview-container').classList.add('hidden');
+      document.getElementById('video-container').classList.remove('hidden');
+      
+      document.getElementById('btn-capture').classList.remove('hidden');
+      document.getElementById('btn-fallback-trigger').classList.add('hidden');
+      document.getElementById('btn-confirm-submit').classList.add('hidden');
+      document.getElementById('btn-retake').classList.add('hidden');
+      document.getElementById('btn-cancel-cam').classList.remove('hidden');
+      
+      // Try starting WebRTC Camera
+      startCamera();
+    }
+
+    function startCamera() {
+      // Close existing stream if any
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+        cameraStream = null;
+      }
+      
+      const video = document.getElementById('camera-video');
+      const fallbackMsg = document.getElementById('camera-fallback-msg');
+      
+      document.getElementById('preview-container').classList.add('hidden');
+      document.getElementById('video-container').classList.remove('hidden');
+      document.getElementById('btn-capture').classList.remove('hidden');
+      document.getElementById('btn-fallback-trigger').classList.add('hidden');
+      document.getElementById('btn-confirm-submit').classList.add('hidden');
+      document.getElementById('btn-retake').classList.add('hidden');
+      document.getElementById('btn-cancel-cam').classList.remove('hidden');
+      capturedPhotoBase64 = '';
+      
+      navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" }
+        }
+      })
+      .then(stream => {
+        cameraStream = stream;
+        video.srcObject = stream;
+        video.classList.remove('hidden');
+        fallbackMsg.classList.add('hidden');
+      })
+      .catch(err => {
+        console.warn("WebRTC camera access failed: ", err);
+        video.classList.add('hidden');
+        fallbackMsg.classList.remove('hidden');
+        document.getElementById('btn-capture').classList.add('hidden');
+        document.getElementById('btn-fallback-trigger').classList.remove('hidden');
+      });
+    }
+
+    function closeCameraModal() {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+        cameraStream = null;
+      }
+      document.getElementById('camera-modal').classList.add('hidden');
+      activeFillRequestKey = null;
+      activeCameraContext = null;
+      capturedPhotoBase64 = '';
+    }
+
+    function triggerFallbackFile() {
+      document.getElementById('camera-file-input').click();
+    }
+
+    function compressAndPreviewImage(img) {
+      const canvas = document.getElementById('camera-canvas');
+      const ctx = canvas.getContext('2d');
+      
+      let width = img.width;
+      let height = img.height;
+      const maxDim = 640;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+      canvas.width = width;
+      canvas.height = height;
+      ctx.drawImage(img, 0, 0, width, height);
+      
+      capturedPhotoBase64 = canvas.toDataURL('image/jpeg', 0.6);
+      
+      // Stop camera video stream
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+        cameraStream = null;
+      }
+      
+      // Update UI
+      document.getElementById('camera-preview-img').src = capturedPhotoBase64;
+      document.getElementById('video-container').classList.add('hidden');
+      document.getElementById('preview-container').classList.remove('hidden');
+      
+      document.getElementById('btn-capture').classList.add('hidden');
+      document.getElementById('btn-fallback-trigger').classList.add('hidden');
+      document.getElementById('btn-confirm-submit').classList.remove('hidden');
+      document.getElementById('btn-retake').classList.remove('hidden');
+      document.getElementById('btn-cancel-cam').classList.add('hidden');
+    }
+
+    function handleFallbackFile(input) {
+      if (!input.files || !input.files[0]) return;
+      const file = input.files[0];
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          compressAndPreviewImage(img);
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function capturePhoto() {
+      const video = document.getElementById('camera-video');
+      
+      if (!cameraStream) {
+        alert("Camera stream is not active. Please use the fallback file upload button.");
+        return;
+      }
+      
+      const width = video.videoWidth || 640;
+      const height = video.videoHeight || 480;
+      
+      const img = new Image();
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = width;
+      tempCanvas.height = height;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.drawImage(video, 0, 0, width, height);
+      
+      img.onload = function() {
+        compressAndPreviewImage(img);
+      };
+      img.src = tempCanvas.toDataURL('image/jpeg');
+    }
+
+    // Guard against double submission (slow internet / multiple clicks)
+    let isSubmittingFill = false;
+
+    function setFillSubmitLoading(loading, text) {
+      const btn = document.getElementById('btn-confirm-submit');
+      const retake = document.getElementById('btn-retake');
+      const cancel = document.getElementById('btn-cancel-cam');
+      const capture = document.getElementById('btn-capture');
+      const fallback = document.getElementById('btn-fallback-trigger');
+      [btn, retake, cancel, capture, fallback].forEach(el => {
+        if (!el) return;
+        el.disabled = loading;
+        el.style.opacity = loading ? '0.6' : '';
+        el.style.pointerEvents = loading ? 'none' : '';
+        el.style.cursor = loading ? 'not-allowed' : '';
+      });
+      if (btn) {
+        if (loading) {
+          if (!btn.dataset.originalHtml) btn.dataset.originalHtml = btn.innerHTML;
+          btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ' + (text || 'Submitting...');
+        } else if (btn.dataset.originalHtml) {
+          btn.innerHTML = btn.dataset.originalHtml;
+        }
+      }
+    }
+
+    // Submit request marked as filled with base64 receipt photo
+    function submitDieselFilledWithPhoto() {
+      if (isSubmittingFill) return; // already submitting, ignore extra clicks
+      if (!activeFillRequestKey) return;
+      const isUpdateLookup = !!(activeCameraContext && activeCameraContext.type === 'update');
+      const req = (isUpdateLookup ? getAllRequests() : driverRequestsList).find(r => r.key === activeFillRequestKey);
+      if (!req) {
+        alert("Request not found. Please refresh and try again.");
+        closeCameraModal();
+        return;
+      }
+
+      const isUpdateFlow = !!(activeCameraContext && activeCameraContext.type === 'update');
+      if (!isUpdateFlow && (req.status === 'filled' || req.linkedResponseNumber)) {
+        alert("This request has already been filled.");
+        closeCameraModal();
+        return;
+      }
+
+      isSubmittingFill = true;
+      setFillSubmitLoading(true, isUpdateFlow ? 'Submitting...' : 'Saving...');
+
+      if (activeCameraContext && activeCameraContext.type === 'update') {
+        // Submit update request with the new photo stored as requestedReceiptPhoto
+        driverRequestsRef.child(activeFillRequestKey).update({
+          status: 'update_pending',
+          requestedAmount: String(activeCameraContext.requestedAmount),
+          requestedReceiptPhoto: capturedPhotoBase64 || ''
+        })
+        .then(() => {
+          isSubmittingFill = false;
+          setFillSubmitLoading(false);
+          closeCameraModal();
+          playSuccessSound();
+          alert("Amount update request submitted successfully! Awaiting Admin approval.");
+        })
+        .catch(err => {
+          isSubmittingFill = false;
+          setFillSubmitLoading(false);
+          alert("Failed to submit update request: " + err.message);
+        });
+        return;
+      }
+
+      // Declare newRespNum in outer function scope to avoid ReferenceError
+      let newRespNum = '';
+
+      // Fetch full request and photos from Firebase RTDB (checking both driverRequestPhotos and driverRequests)
+      Promise.all([
+        db.ref('driverRequestPhotos').child(activeFillRequestKey).once('value'),
+        driverRequestsRef.child(activeFillRequestKey).once('value'),
+        entriesRef.orderByKey().limitToLast(5).once('value')
+      ]).then(([photoSnap, reqSnap, entriesSnap]) => {
+        const photoData = photoSnap.val() || {};
+        const fullReq = { ...(reqSnap.val() || {}), ...photoData };
+
+        // Compute next sequential Response Number accurately from recent entries
+        const nums = [];
+        if (entriesSnap.val()) {
+          Object.keys(entriesSnap.val()).forEach(k => {
+            const n = parseInt(k);
+            if (!isNaN(n)) nums.push(n);
+          });
+        }
+        entriesList.forEach(x => {
+          const n = parseInt(x.responseNumber);
+          if (!isNaN(n)) nums.push(n);
+        });
+        const maxNum = nums.length > 0 ? Math.max(...nums) : 0;
+        newRespNum = String(maxNum + 1);
+
+        const isValidPhoto = p => typeof p === 'string' && (p.startsWith('data:image') || p.startsWith('http://') || p.startsWith('https://') || p.startsWith('blob:'));
+
+        // 1. Gather all existing receipt photos
+        let existingReceiptPhotos = [];
+        if (Array.isArray(fullReq.receiptPhotos)) {
+          existingReceiptPhotos = fullReq.receiptPhotos.filter(isValidPhoto);
+        } else if (fullReq.receiptPhotos && typeof fullReq.receiptPhotos === 'object') {
+          existingReceiptPhotos = Object.values(fullReq.receiptPhotos).filter(isValidPhoto);
+        }
+        if (existingReceiptPhotos.length === 0 && isValidPhoto(fullReq.receiptPhoto)) {
+          existingReceiptPhotos = [fullReq.receiptPhoto];
+        }
+
+        // 2. Merge newly captured photo from station with existing receipt photos
+        let allReceiptPhotos = [...existingReceiptPhotos];
+        if (isValidPhoto(capturedPhotoBase64) && !allReceiptPhotos.includes(capturedPhotoBase64)) {
+          allReceiptPhotos.push(capturedPhotoBase64);
+        }
+        if (allReceiptPhotos.length > 5) {
+          allReceiptPhotos = allReceiptPhotos.slice(0, 5);
+        }
+
+        // 3. Gather all existing KM photos
+        let allKmPhotos = [];
+        if (Array.isArray(fullReq.kmPhotos)) {
+          allKmPhotos = fullReq.kmPhotos.filter(isValidPhoto);
+        } else if (fullReq.kmPhotos && typeof fullReq.kmPhotos === 'object') {
+          allKmPhotos = Object.values(fullReq.kmPhotos).filter(isValidPhoto);
+        }
+        if (allKmPhotos.length === 0) {
+          const singleKm = fullReq.kmPhoto || fullReq.photo;
+          if (isValidPhoto(singleKm)) {
+            allKmPhotos = [singleKm];
+          }
+        }
+        if (allKmPhotos.length > 5) {
+          allKmPhotos = allKmPhotos.slice(0, 5);
+        }
+
+        // Prepare Ledger entry payload
+        const cleanReqNote = (String(req.note || fullReq.note || '').trim().toUpperCase() === 'DRIVER REQUEST') ? '' : String(req.note || fullReq.note || '').trim().toUpperCase();
+        const e = {
+          responseNumber: newRespNum,
+          date: req.date || fullReq.date || '',
+          time: req.time || fullReq.time || '',
+          vehicleNo: String(req.vehicleNo || fullReq.vehicleNo || '').toUpperCase(),
+          vehicleType: String(req.vehicleType || fullReq.vehicleType || '').toUpperCase(),
+          fromLocation: String(req.fromLocation || fullReq.fromLocation || '').toUpperCase(),
+          lastLocation: String(req.lastLocation || fullReq.lastLocation || '').toUpperCase(),
+          currentKm: String(req.currentKm || fullReq.currentKm || ''),
+          dieselAmount: String(req.dieselAmount || fullReq.dieselAmount || ''),
+          vendorName: String(req.vendorName || fullReq.vendorName || ''),
+          note: cleanReqNote,
+          litres: '',
+          mileage: ''
+        };
+
+        if ((req.location && req.location.lat) || (fullReq.location && fullReq.location.lat)) {
+          const loc = req.location || fullReq.location;
+          e.location = { lat: loc.lat, lng: loc.lng };
+        }
+
+        // Attach photo existence flags to entry (keep base64 strings OUT of entries ledger)
+        if (allReceiptPhotos.length > 0) {
+          e.hasReceiptPhoto = true;
+        }
+        if (isValidPhoto(capturedPhotoBase64)) {
+          e.hasCapturedPhoto = true;
+        }
+        if (allKmPhotos.length > 0) {
+          e.hasKmPhoto = true;
+        }
+
+        // Lookup mileage average
+        const vAvg = vehicleTypes[e.vehicleType.toUpperCase()];
+        if (vAvg) e.mileage = String(vAvg);
+
+        // Compute litres
+        if (e.dieselAmount && dieselRate > 0) {
+          e.litres = String((parseFloat(e.dieselAmount) / dieselRate).toFixed(2));
+        }
+
+        // Sanitize object to remove any undefined properties so Firebase .set never fails
+        const cleanEntryPayload = JSON.parse(JSON.stringify(e));
+
+        // 1. Save lightweight entry to entries ledger
+        return entriesRef.child(cleanEntryPayload.responseNumber).set(cleanEntryPayload).then(() => {
+          // 2. Save heavy photos in driverRequestPhotos and entryPhotos
+          const photoUpdates = {};
+          if (allReceiptPhotos.length > 0) {
+            photoUpdates.receiptPhotos = allReceiptPhotos;
+            photoUpdates.receiptPhoto = allReceiptPhotos[0];
+          }
+          if (allKmPhotos.length > 0) {
+            photoUpdates.kmPhotos = allKmPhotos;
+            photoUpdates.kmPhoto = allKmPhotos[0];
+          }
+          if (isValidPhoto(capturedPhotoBase64)) {
+            photoUpdates.capturedPhoto = capturedPhotoBase64;
+          }
+
+          // 3. Mark request as filled in driverRequests node with metadata only (strip heavy photos)
+          const reqUpdates = {
+            status: 'filled',
+            filledAt: firebase.database.ServerValue.TIMESTAMP,
+            linkedResponseNumber: newRespNum,
+            hasReceiptPhoto: (allReceiptPhotos.length > 0),
+            hasKmPhoto: (allKmPhotos.length > 0),
+            hasCapturedPhoto: isValidPhoto(capturedPhotoBase64),
+            receiptPhotosCount: allReceiptPhotos.length,
+            kmPhotosCount: allKmPhotos.length,
+            receiptPhotos: null,
+            receiptPhoto: null,
+            kmPhotos: null,
+            kmPhoto: null,
+            photo: null,
+            capturedPhoto: null
+          };
+
+          const writes = [
+            db.ref('driverRequestPhotos').child(activeFillRequestKey).set(photoUpdates),
+            driverRequestsRef.child(activeFillRequestKey).update(reqUpdates)
+          ];
+          if (Object.keys(photoUpdates).length > 0) {
+            writes.push(db.ref('entryPhotos').child(newRespNum).set(photoUpdates));
+          }
+
+          return Promise.all(writes);
+        });
+      })
+        .then(() => {
+          isSubmittingFill = false;
+          setFillSubmitLoading(false);
+          closeCameraModal();
+          playSuccessSound();
+          // Turant UI se hatao — network sync ka wait nahi
+          const fillKey = activeFillRequestKey;
+          driverRequestsList = driverRequestsList.filter(r => r.key !== fillKey);
+          saveToCache(ACTIVE_CACHE_KEY, driverRequestsList);
+          if (historyLoaded) loadHistory(true);
+          renderActiveCards();
+          alert(`Successfully filled! Recorded in ledger as entry #${newRespNum}`);
+        })
+        .catch(err => {
+          isSubmittingFill = false;
+          setFillSubmitLoading(false);
+          alert("Error processing fill confirmation: " + err.message);
+        });
+    }
+
+    // View captured receipt proof details
+    const photoMemCache = new Map();
+
+    function showReceiptImage(dataUrl) {
+      const img = document.getElementById('receipt-modal-img');
+      const emptyDiv = document.getElementById('receipt-modal-empty');
+      if (dataUrl && String(dataUrl).startsWith('data:image')) {
+        img.src = dataUrl;
+        img.classList.remove('hidden');
+        emptyDiv.classList.add('hidden');
+      } else {
+        img.src = '';
+        img.classList.add('hidden');
+        emptyDiv.classList.remove('hidden');
+        emptyDiv.textContent = 'No receipt photo available';
+      }
+    }
+
+    // Photo sirf tab download hoti hai jab user use kholta hai
+    function viewReceiptPhoto(recordKey, vehicleNo) {
+      const modal = document.getElementById('view-receipt-modal');
+      const img = document.getElementById('receipt-modal-img');
+      const emptyDiv = document.getElementById('receipt-modal-empty');
+      const targetVeh = document.getElementById('receipt-modal-veh');
+      
+      targetVeh.textContent = vehicleNo || '-';
+      modal.classList.remove('hidden');
+
+      if (!recordKey) { showReceiptImage(''); return; }
+      if (String(recordKey).startsWith('data:image')) { showReceiptImage(recordKey); return; }
+      if (photoMemCache.has(recordKey)) { showReceiptImage(photoMemCache.get(recordKey)); return; }
+
+      img.classList.add('hidden');
+      emptyDiv.classList.remove('hidden');
+      emptyDiv.textContent = 'Loading receipt photo...';
+
+      const rec = getAllRequests().find(r => r.key === recordKey);
+
+      Promise.all([
+        db.ref('driverRequestPhotos').child(recordKey).once('value'),
+        driverRequestsRef.child(recordKey).once('value')
+      ]).then(([pSnap, rSnap]) => {
+        const pVal = pSnap.val() || {};
+        const val = { ...(rSnap.val() || {}), ...pVal };
+        let data = '';
+        if (rec && rec.status === 'update_pending' && val.requestedReceiptPhoto) {
+          data = val.requestedReceiptPhoto;
+        }
+        if (!data) {
+          if (Array.isArray(val.receiptPhotos) && val.receiptPhotos.length > 0) {
+            data = val.receiptPhotos[0];
+          } else if (val.receiptPhoto) {
+            data = val.receiptPhoto;
+          } else if (val.capturedPhoto) {
+            data = val.capturedPhoto;
+          } else if (val.requestedReceiptPhoto) {
+            data = val.requestedReceiptPhoto;
+          }
+        }
+        if (!data && val.linkedResponseNumber) {
+          return Promise.all([
+            db.ref('entryPhotos').child(val.linkedResponseNumber).once('value').catch(() => ({ val: () => null })),
+            entriesRef.child(val.linkedResponseNumber).once('value').catch(() => ({ val: () => null }))
+          ]).then(([epSnap, eSnap]) => {
+            const epVal = (epSnap && typeof epSnap.val === 'function' ? epSnap.val() : null) || {};
+            const eVal = (eSnap && typeof eSnap.val === 'function' ? eSnap.val() : null) || {};
+            const mergedE = { ...eVal, ...epVal };
+            return (Array.isArray(mergedE.receiptPhotos) && mergedE.receiptPhotos.length > 0) 
+              ? mergedE.receiptPhotos[0] 
+              : (mergedE.receiptPhoto || mergedE.capturedPhoto || '');
+          });
+        }
+        return data;
+      }).then(data => {
+        if (data) photoMemCache.set(recordKey, data);
+        showReceiptImage(data);
+      }).catch(() => showReceiptImage(''));
+    }
+
+    function closeViewReceiptModal() {
+      document.getElementById('view-receipt-modal').classList.add('hidden');
+    }
+
+    window.closeCameraModal = closeCameraModal;
+    window.startCamera = startCamera;
+    window.capturePhoto = capturePhoto;
+    window.triggerFallbackFile = triggerFallbackFile;
+    window.handleFallbackFile = handleFallbackFile;
+    window.submitDieselFilledWithPhoto = submitDieselFilledWithPhoto;
+    window.viewReceiptPhoto = viewReceiptPhoto;
+    window.closeViewReceiptModal = closeViewReceiptModal;
+
+    function updateFilledAmount(key) {
+      const req = getAllRequests().find(r => r.key === key);
+      if (!req) return;
+
+      const newVal = prompt("Enter new Diesel Amount (₹ INR):", req.dieselAmount);
+      if (newVal === null) return;
+
+      const parsed = parseFloat(newVal);
+      if (isNaN(parsed) || parsed <= 0) {
+        alert("Please enter a valid positive numeric amount.");
+        return;
+      }
+
+      // Initialize update flow camera context
+      activeFillRequestKey = key;
+      activeCameraContext = { type: 'update', key: key, requestedAmount: parsed };
+
+      document.getElementById('camera-target-veh').textContent = req.vehicleNo;
+      document.getElementById('camera-modal-title').innerHTML = `<i class="fas fa-camera"></i> Capture New Receipt for Update`;
+      document.getElementById('camera-modal-info').textContent = "Please capture the new receipt photo for this amount update";
+
+      // Open camera modal
+      const modal = document.getElementById('camera-modal');
+      modal.classList.remove('hidden');
+      
+      // Reset variables and state
+      capturedPhotoBase64 = '';
+      document.getElementById('camera-preview-img').src = '';
+      document.getElementById('preview-container').classList.add('hidden');
+      document.getElementById('video-container').classList.remove('hidden');
+      
+      document.getElementById('btn-capture').classList.remove('hidden');
+      document.getElementById('btn-fallback-trigger').classList.add('hidden');
+      document.getElementById('btn-confirm-submit').classList.add('hidden');
+      document.getElementById('btn-retake').classList.add('hidden');
+      document.getElementById('btn-cancel-cam').classList.remove('hidden');
+      
+      // Try starting WebRTC Camera
+      startCamera();
+    }
+
+    window.updateFilledAmount = updateFilledAmount;
+
+    // ===== History lazy-load: network se sirf pehli baar, baar-baar download nahi =====
+    function loadHistory(forceRefresh) {
+      if (historyLoaded && !forceRefresh) { renderHistory(); return; }
+
+      // 1) Instant render from cache
+      if (!historyLoaded) {
+        const cachedHistory = readCache(HISTORY_CACHE_KEY);
+        if (cachedHistory.length) {
+          historyList = cachedHistory;
+          renderHistory();
+        }
+      }
+
+      // 2) Fresh data ek hi baar fetch hota hai
+      historyQuery().once('value').then(snapshot => {
+        const val = snapshot.val();
+        historyList = [];
+        if (val) {
+          Object.entries(val).forEach(([key, item]) => {
+            if (item && (item.status === 'filled' || item.status === 'update_pending' || item.status === 'update_rejected')) {
+              historyList.push(slim(item, key));
+            }
+          });
+          historyList.sort((a, b) => (b.filledAt || 0) - (a.filledAt || 0));
+        }
+        historyLoaded = true;
+        saveToCache(HISTORY_CACHE_KEY, historyList);
+        attachHistoryLiveSync();
+        if (currentView === 'history') renderHistory();
+      }).catch(err => {
+        console.error('History load failed:', err);
+        if (currentView === 'history') renderHistory();
+      });
+    }
+
+    // Sirf latest 150 records — poora database 4G pe download nahi hota
+    const HISTORY_FETCH_LIMIT = 150;
+    function historyQuery() {
+      return driverRequestsRef.orderByKey().limitToLast(HISTORY_FETCH_LIMIT);
+    }
+
+    function upsertHistory(record) {
+      const isHistory = record.status === 'filled' || record.status === 'update_pending' || record.status === 'update_rejected';
+      const idx = historyList.findIndex(r => r.key === record.key);
+      if (isHistory) {
+        if (idx !== -1) historyList[idx] = record; else historyList.unshift(record);
+        historyList.sort((a, b) => (b.filledAt || 0) - (a.filledAt || 0));
+      } else if (idx !== -1) {
+        historyList.splice(idx, 1);
+      }
+      saveToCache(HISTORY_CACHE_KEY, historyList);
+      if (currentView === 'history') renderHistory();
+    }
+
+    // Live updates after first history load (data already synced — no extra download)
+    function attachHistoryLiveSync() {
+      if (historyLiveSyncAttached) return;
+      historyLiveSyncAttached = true;
+
+      const hq = historyQuery();
+
+      hq.on('child_added', snapshot => {
+        if (!historyLoaded) return;
+        const item = snapshot.val();
+        if (!item) return;
+        upsertHistory(slim(item, snapshot.key));
+      });
+
+      hq.on('child_changed', snapshot => {
+        if (!historyLoaded) return;
+        const item = snapshot.val();
+        if (!item) return;
+        const prevItem = historyList.find(r => r.key === snapshot.key);
+        upsertHistory(slim(item, snapshot.key));
+        if (prevItem && prevItem.status === 'update_pending' && item.status === 'filled') {
+          if (item.dieselAmount !== prevItem.dieselAmount) {
+            playSuccessSound();
+            showNotification(`Amount update APPROVED for Vehicle: ${item.vehicleNo} (₹${prevItem.dieselAmount} -> ₹${item.dieselAmount})`);
+            triggerNativeNotification("RPM DIESEL - Update Approved", `Vehicle: ${item.vehicleNo}\nUpdated Amount: ₹${item.dieselAmount}`);
+          } else {
+            playChimeSound();
+            showNotification(`Amount update REJECTED for Vehicle: ${item.vehicleNo}`);
+            triggerNativeNotification("RPM DIESEL - Update Rejected", `Vehicle: ${item.vehicleNo}`);
+          }
+        }
+      });
+
+      hq.on('child_removed', snapshot => {
+        if (!historyLoaded) return;
+        const idx = historyList.findIndex(r => r.key === snapshot.key);
+        if (idx !== -1) {
+          historyList.splice(idx, 1);
+          saveToCache(HISTORY_CACHE_KEY, historyList);
+          if (currentView === 'history') renderHistory();
+        }
+      });
+    }
+
+    // Update views based on current view status
+    function updateViews() {
+      if (currentView === 'active') {
+        renderActiveCards();
+      } else {
+        renderHistory();
+      }
+    }
+
+    // Synthesize Audio Beeps on successful actions
+    function playSuccessSound() {
+      try {
+        const context = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = context.createOscillator();
+        const gain = context.createGain();
+        osc.connect(gain);
+        gain.connect(context.destination);
+        
+        const now = context.currentTime;
+        osc.type = 'sine';
+        
+        // Quick double beep
+        osc.frequency.setValueAtTime(587.33, now); // D5
+        gain.gain.setValueAtTime(0.15, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+        
+        osc.frequency.setValueAtTime(880.00, now + 0.12); // A5
+        gain.gain.setValueAtTime(0.15, now + 0.12);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+
+        osc.start(now);
+        osc.stop(now + 0.4);
+      } catch (e) {
+        console.warn("Sound play failed:", e);
+      }
+    }
+
+    // Doorbell chime notification sound helper
+    function playChimeSound() {
+      try {
+        const context = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = context.createOscillator();
+        const gain = context.createGain();
+        osc.connect(gain);
+        gain.connect(context.destination);
+        
+        const now = context.currentTime;
+        osc.type = 'sine';
+        
+        // First tone (doorbell chime E5 -> C5)
+        osc.frequency.setValueAtTime(659.25, now);
+        gain.gain.setValueAtTime(0.3, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+        
+        osc.frequency.setValueAtTime(523.25, now + 0.2);
+        gain.gain.setValueAtTime(0.3, now + 0.2);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.55);
+        
+        osc.start(now);
+        osc.stop(now + 0.6);
+      } catch (e) {
+        console.warn("Chime sound playback blocked/failed:", e);
+      }
+    }
+
+    // 4-digit autocomplete vehicle suggestions for history search
+    document.getElementById('history-search').addEventListener('input', e => {
+      const rawVal = e.target.value.trim();
+      const val = rawVal.toUpperCase();
+      const datalist = document.getElementById('history-vehicle-list');
+
+      if (rawVal.length >= 4) {
+        if (datalist && datalist.children.length === 0) {
+          Array.from(uniqueHistoryVehicles).sort().forEach(v => {
+            const opt = document.createElement('option');
+            opt.value = v;
+            datalist.appendChild(opt);
+          });
+        }
+      } else {
+        if (datalist) {
+          datalist.innerHTML = '';
+        }
+      }
+      
+      // Filter history list dynamically
+      renderHistory();
+    });
+
+    // Load initial views
+    setTimeout(() => {
+      updateViews();
+    }, 500);
+
+    // ==========================================
+  // MAINTENANCE MODE LOGIC
+  // ==========================================
+  db.ref('maintenanceMode').on('value', snap => {
+    const data = snap.val() || {};
+    const isMaintenanceActive = data.fullWeb || data.dieselFilled;
+    const overlay = document.getElementById('maintenance-overlay');
+    if (overlay) {
+      if (isMaintenanceActive) {
+        overlay.classList.remove('hidden');
+      } else {
+        overlay.classList.add('hidden');
+      }
+    }
+  });
+
+  // ==========================================
+  // CROSS-PAGE TELEGRAM AUTO BACKUP SELF-HEALING
+  // Runs silently in the background if backup is overdue
+  // ==========================================
+  setTimeout(() => {
+    try {
+      if (typeof db !== 'undefined' && db) {
+        db.ref('appConfig/telegramAutoBackup').once('value').then(async snap => {
+          const cfg = snap.val();
+          if (!cfg || !cfg.enabled || !cfg.nextBackupTimestamp) return;
+          const now = Date.now();
+          if (now < cfg.nextBackupTimestamp) return;
+
+          // Timestamp reached! Advance timestamp immediately to prevent duplicate runs
+          const intervalDays = Number(cfg.intervalDays) || 1;
+          let nextD = new Date(now);
+          if (cfg.preferredTime) {
+            const [pH, pM] = cfg.preferredTime.split(':').map(Number);
+            if (!isNaN(pH) && !isNaN(pM)) nextD.setHours(pH, pM, 0, 0);
+          }
+          nextD.setDate(nextD.getDate() + intervalDays);
+          while (nextD.getTime() <= Date.now()) {
+            nextD.setDate(nextD.getDate() + intervalDays);
+          }
+          await db.ref('appConfig/telegramAutoBackup/nextBackupTimestamp').set(nextD.getTime());
+
+          // Fetch full DB and send sanitized payload
+          const dbSnap = await db.ref().once('value');
+          const raw = dbSnap.val();
+          if (!raw) return;
+
+          function sanitize(obj) {
+            if (!obj || typeof obj !== 'object') return obj;
+            if (Array.isArray(obj)) return obj.map(sanitize);
+            const out = {};
+            for (const [k, v] of Object.entries(obj)) {
+              if (k === 'driverRequestPhotos' || k === 'entryPhotos') {
+                out[k] = { _backup_info: 'Omitted base64 photo records for compact Telegram backup' };
+                continue;
+              }
+              if (typeof v === 'string' && (v.startsWith('data:image') || (v.length > 2000 && /^[A-Za-z0-9+/=]+$/.test(v.slice(0, 80))))) {
+                out[k] = '[BASE64_IMAGE_OMITTED_FOR_BACKUP]';
+              } else if (typeof v === 'object' && v !== null) {
+                out[k] = sanitize(v);
+              } else {
+                out[k] = v;
+              }
+            }
+            return out;
+          }
+
+          const clean = sanitize(raw);
+          const jsonBlob = new Blob([JSON.stringify(clean)], { type: 'application/json' });
+          const sizeMb = (jsonBlob.size / (1024 * 1024)).toFixed(2);
+          const nowObj = new Date();
+          const fileName = `RPM_Diesel_AutoBackup_${nowObj.toISOString().slice(0,10)}_${nowObj.toTimeString().slice(0,8).replace(/:/g,'-')}.json`;
+          const caption = `📦 <b>RPM DIESEL CLOUD DATABASE BACKUP</b>\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `📅 <b>Timestamp:</b> ${nowObj.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} (IST)\n` +
+            `💾 <b>File:</b> <code>${fileName}</code>\n` +
+            `📊 <b>Size:</b> ${sizeMb} MB\n` +
+            `⏳ <b>Auto Schedule:</b> Every ${intervalDays} Day(s)\n` +
+            `⚙️ <b>Trigger:</b> Scheduled Fleet Self-Healing Trigger\n` +
+            `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+            `✅ <i>Realtime Database snapshot delivered securely. Direct restore supported in Portal.</i>`;
+
+          const fd = new FormData();
+          fd.append('chat_id', cfg.chatId || '7927138678');
+          fd.append('document', jsonBlob, fileName);
+          fd.append('caption', caption);
+          fd.append('parse_mode', 'HTML');
+
+          const token = (cfg.botToken || '8880618363:AAEGp8ReJEcB563j9_2XiaVvwaPHMigt1PM').trim();
+          await fetch(`https://api.telegram.org/bot${token}/sendDocument`, { method: 'POST', body: fd });
+          
+          await db.ref('appConfig/telegramAutoBackup/lastBackupTimestamp').set(now);
+          await db.ref('appConfig/telegramAutoBackup/lastBackupDate').set(nowObj.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
+        });
+      }
+    } catch (e) {
+      console.warn("Self-healing auto backup error:", e);
+    }
+  }, 7000);
+
+  // ==========================================
+  // VISITOR TELEGRAM TRACKING FOR DIESEL FILLED
+  // ==========================================
+  setTimeout(async () => {
+    if (sessionStorage.getItem('rpm_visitor_logged_diesel_filled')) return;
+    sessionStorage.setItem('rpm_visitor_logged_diesel_filled', '1');
+    try {
+      if (typeof db !== 'undefined' && db) {
+        db.ref('appConfig/telegramVisitLog').once('value').then(async snap => {
+          const cfg = snap.val();
+          if (cfg && cfg.enabled === false) return;
+          const token = (cfg?.botToken || "8880618363:AAEGp8ReJEcB563j9_2XiaVvwaPHMigt1PM").trim();
+          const chat = (cfg?.chatId || "7927138678").trim();
+          if (!token || !chat) return;
+
+          const dateStr = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+          const ua = navigator.userAgent;
+          let os = "Mobile / Desktop";
+          if (ua.indexOf("Win") !== -1) os = "Windows (v10/11)";
+          else if (ua.indexOf("Android") !== -1) os = "Android Mobile";
+          else if (ua.indexOf("iPhone") !== -1 || ua.indexOf("iPad") !== -1) os = "iOS Mobile";
+          
+          let browser = "Browser";
+          if (ua.indexOf("Chrome") !== -1) browser = "Chrome";
+          else if (ua.indexOf("Safari") !== -1) browser = "Safari";
+
+          let message = `🔔 New Visitor Notification\n⛽ Diesel Filling Station Portal\n\n`;
+          message += `📅 Date & Time: ${dateStr} (IST)\n`;
+          message += `📱 Device OS: ${os}\n`;
+          message += `🌐 Browser: ${browser}\n`;
+          message += `🖥️ Screen: ${window.screen.width}x${window.screen.height}\n`;
+
+          try {
+            const ipRes = await fetch('https://get.geojs.io/v1/ip/geo.json');
+            if (ipRes.ok) {
+              const data = await ipRes.json();
+              message += `ℹ️ IP: ${data.ip || 'Unknown'}\n`;
+              message += `📍 Location: ${data.city || 'Unknown'}, ${data.region || 'Unknown'}, ${data.country || 'Unknown'}\n`;
+              message += `🏢 ISP: ${data.organization_name || data.organization || 'Unknown'}\n`;
+              if (data.latitude && data.longitude) {
+                message += `🗺️ Google Maps: https://www.google.com/maps/search/?api=1&query=${data.latitude},${data.longitude}\n`;
+              }
+            }
+          } catch(e) {}
+
+          await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: chat, text: message, disable_web_page_preview: true })
+          });
+        });
+      }
+    } catch(e){}
+  }, 4000);
+
+</script>
+<script src="../broadcast.js?v=2" defer></script>
+</body>
+</html>
