@@ -84,16 +84,18 @@ function checkAndRunCloudAutoBackup() {
       const totalRequests = rawData.driverRequests ? Object.keys(rawData.driverRequests).length : 0;
       const intervalDays = Number(tgConfig.intervalDays) || 1;
 
-      const caption = "📦 <b>RPM DIESEL 24/7 CLOUD DATABASE BACKUP</b>\n" +
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
-        "📅 <b>Timestamp:</b> " + Utilities.formatDate(nowObj, "Asia/Kolkata", "dd MMM yyyy, hh:mm a") + " (IST)\n" +
-        "💾 <b>File:</b> <code>" + fileName + "</code>\n" +
-        "📊 <b>Size:</b> " + sizeMb + " MB\n" +
-        "📝 <b>Data:</b> " + totalEntries + " Entries | " + totalRequests + " Requests\n" +
-        "⏳ <b>Auto Schedule:</b> Every " + intervalDays + " Day(s)\n" +
-        "⚙️ <b>Trigger:</b> 24/7 Google Cloud Scheduler\n" +
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
-        "✅ <i>Realtime Database snapshot delivered securely.</i>";
+      const caption = [
+        "📦 <b>RPM DIESEL 24/7 CLOUD DATABASE BACKUP</b>",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        "📅 <b>Timestamp:</b> " + Utilities.formatDate(nowObj, "Asia/Kolkata", "dd MMM yyyy, hh:mm a") + " (IST)",
+        "💾 <b>File:</b> <code>" + fileName + "</code>",
+        "📊 <b>Size:</b> " + sizeMb + " MB",
+        "📝 <b>Data:</b> " + totalEntries + " Entries | " + totalRequests + " Requests",
+        "⏳ <b>Auto Schedule:</b> Every " + intervalDays + " Day(s)",
+        "⚙️ <b>Trigger:</b> 24/7 Google Cloud Scheduler",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        "✅ <i>Realtime Database snapshot delivered securely.</i>"
+      ].join(String.fromCharCode(10));
 
       const telegramUrl = "https://api.telegram.org/bot" + botToken + "/sendDocument";
       const payload = {
