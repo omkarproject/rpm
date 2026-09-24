@@ -8930,6 +8930,8 @@ let dmProgressStartTime = 0;
 let dmProgressCurrentPercent = 0;
 let dmActiveTaskName = "Operation";
 let dmNotificationDismissTimer = null;
+let activeLiveTask = null;
+let isDmProgressModalMinimized = false;
 
 // Request Desktop/Browser notification permission if supported
 function requestTaskDesktopNotificationPermission() {
@@ -8965,6 +8967,119 @@ function dismissLiveTaskNotification() {
 }
 window.dismissLiveTaskNotification = dismissLiveTaskNotification;
 
+function hideDmProgressModal() {
+  isDmProgressModalMinimized = true;
+  const modal = document.getElementById('dm-progress-modal');
+  if (modal) modal.classList.add('hidden');
+  toast.info("Task minimize ho gaya. Incoming Requests (Bell icon) me live progress chal raha hai.");
+  refreshNotificationDropdownWithActiveTask();
+}
+window.hideDmProgressModal = hideDmProgressModal;
+
+function reopenDmProgressModal() {
+  isDmProgressModalMinimized = false;
+  const modal = document.getElementById('dm-progress-modal');
+  if (modal) modal.classList.remove('hidden');
+}
+window.reopenDmProgressModal = reopenDmProgressModal;
+
+function updateDashboardActiveTaskKpi() {
+  const dashKpi = document.getElementById('dash-active-task-kpi');
+  if (!dashKpi) return;
+
+  if (!activeLiveTask) {
+    dashKpi.classList.add('hidden');
+    return;
+  }
+
+  const nameEl = document.getElementById('dash-active-task-name');
+  const badgeEl = document.getElementById('dash-active-task-badge');
+  const timerEl = document.getElementById('dash-active-task-timer');
+  const percentEl = document.getElementById('dash-active-task-percent');
+  const barEl = document.getElementById('dash-active-task-bar');
+  const descEl = document.getElementById('dash-active-task-desc');
+  const iconEl = document.getElementById('dash-active-task-icon');
+  const iconBox = document.getElementById('dash-active-task-icon-box');
+  const accent = document.getElementById('dash-active-task-accent');
+
+  if (nameEl) nameEl.textContent = activeLiveTask.name;
+  if (descEl) descEl.textContent = activeLiveTask.detail;
+  if (percentEl) percentEl.textContent = `${activeLiveTask.percent}%`;
+  if (barEl) barEl.style.width = `${activeLiveTask.percent}%`;
+  if (timerEl) timerEl.textContent = `⏱️ ${activeLiveTask.elapsed || '0s'}`;
+
+  const c = activeLiveTask.status === 'completed' ? 'emerald' : (activeLiveTask.status === 'failed' ? 'rose' : (activeLiveTask.color || 'blue'));
+
+  if (badgeEl) {
+    badgeEl.textContent = activeLiveTask.status === 'completed' ? 'COMPLETED' : (activeLiveTask.status === 'failed' ? 'FAILED' : 'RUNNING TASK');
+    badgeEl.className = `px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-${c}-500/20 text-${c}-300 border border-${c}-500/30 ${activeLiveTask.status === 'running' ? 'animate-pulse' : ''}`;
+  }
+  if (accent) accent.className = `absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-${c}-500 to-${c === 'emerald' ? 'teal' : (c === 'rose' ? 'red' : 'indigo')}-500`;
+  if (iconBox) iconBox.className = `w-10 h-10 rounded-2xl bg-${c}-500/20 text-${c}-400 flex items-center justify-center shrink-0 text-base shadow-sm`;
+  if (iconEl) iconEl.className = activeLiveTask.status === 'completed' ? 'fas fa-check-circle text-emerald-400' : (activeLiveTask.status === 'failed' ? 'fas fa-times-circle text-rose-400' : (activeLiveTask.icon || 'fas fa-spinner fa-spin'));
+
+  dashKpi.classList.remove('hidden');
+}
+
+function updateIncomingRequestsTaskCardLive() {
+  const card = document.getElementById('task-dropdown-kpi-card');
+  if (!card) {
+    if (typeof refreshNotificationDropdownWithActiveTask === 'function') {
+      refreshNotificationDropdownWithActiveTask();
+    }
+    return;
+  }
+
+  if (!activeLiveTask) return;
+
+  const t = activeLiveTask;
+  const isCompleted = t.status === 'completed';
+  const isFailed = t.status === 'failed';
+  const c = isCompleted ? 'emerald' : (isFailed ? 'rose' : (t.color || 'blue'));
+
+  const percentEl = document.getElementById('task-dd-percent');
+  const barEl = document.getElementById('task-dd-bar');
+  const stepEl = document.getElementById('task-dd-step');
+  const descEl = document.getElementById('task-dd-desc');
+  const timerEl = document.getElementById('task-dd-timer');
+
+  if (percentEl) {
+    percentEl.textContent = `${t.percent}%`;
+    percentEl.className = `font-black text-${c}-400`;
+  }
+  if (barEl) {
+    barEl.style.width = `${t.percent}%`;
+    barEl.className = `h-full rounded-full ${isCompleted ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : (isFailed ? 'bg-gradient-to-r from-rose-500 to-red-500' : 'bg-gradient-to-r from-blue-500 to-indigo-400')} transition-all duration-300`;
+  }
+  if (stepEl && t.step) stepEl.textContent = t.step;
+  if (timerEl && t.elapsed) timerEl.textContent = `⏱️ ${t.elapsed}`;
+  if (descEl) {
+    let descHtml = t.detail || '';
+    if (t.finishTimeStr) {
+      descHtml += `<div class="text-emerald-400 mt-1 font-semibold flex items-center gap-1"><i class="fas fa-clock"></i> Completed at: <b>${t.finishTimeStr}</b> (${t.durationSec}s)</div>`;
+    }
+    if (t.failTimeStr) {
+      descHtml += `<div class="text-rose-400 mt-1 font-semibold flex items-center gap-1"><i class="fas fa-exclamation-triangle"></i> Failed at: <b>${t.failTimeStr}</b> (${t.durationSec}s)</div>`;
+    }
+    descEl.innerHTML = descHtml;
+  }
+}
+
+function refreshNotificationDropdownWithActiveTask() {
+  const bellBtn = document.getElementById('mobile-nav-driver-request');
+  if (bellBtn && activeLiveTask && activeLiveTask.status === 'running') {
+    bellBtn.classList.add('ring-2', 'ring-blue-500/50', 'bg-blue-500/10');
+  } else if (bellBtn) {
+    bellBtn.classList.remove('ring-2', 'ring-blue-500/50', 'bg-blue-500/10');
+  }
+
+  updateDashboardActiveTaskKpi();
+
+  if (typeof renderNotificationDropdown === 'function') {
+    renderNotificationDropdown(window.lastActionRequests || [], window.lastPendingUsers || []);
+  }
+}
+
 function showDmProgress({
   title = "Processing...",
   taskName,
@@ -8996,6 +9111,19 @@ function showDmProgress({
   dmProgressStartTime = Date.now();
   dmProgressCurrentPercent = Math.max(0, Math.min(100, percent));
   dmActiveTaskName = taskName || title || "Operation";
+  isDmProgressModalMinimized = false;
+
+  activeLiveTask = {
+    name: dmActiveTaskName,
+    status: 'running',
+    percent: dmProgressCurrentPercent,
+    step: step,
+    detail: detail,
+    color: color,
+    icon: icon,
+    startTime: dmProgressStartTime,
+    elapsed: '0s'
+  };
 
   // 1. Center Modal updates
   const iconBox = document.getElementById('dm-progress-icon-box');
@@ -9070,10 +9198,16 @@ function showDmProgress({
     const sec = ((Date.now() - dmProgressStartTime) / 1000).toFixed(1);
     if (elapsedEl) elapsedEl.textContent = `${Math.floor(sec)}s`;
     if (notifElapsed) notifElapsed.textContent = `${sec}s`;
+    if (activeLiveTask) {
+      activeLiveTask.elapsed = `${sec}s`;
+      updateDashboardActiveTaskKpi();
+      updateIncomingRequestsTaskCardLive();
+    }
   }, 200);
 
-  if (modal) modal.classList.remove('hidden');
+  if (modal && !isDmProgressModalMinimized) modal.classList.remove('hidden');
   if (notifContainer) notifContainer.classList.remove('hidden');
+  refreshNotificationDropdownWithActiveTask();
 }
 
 function updateDmProgress(targetPercent, {
@@ -9092,7 +9226,16 @@ function updateDmProgress(targetPercent, {
   const boundedTarget = Math.min(100, Math.max(0, Math.round(targetPercent)));
   if (taskName) dmActiveTaskName = taskName;
 
+  if (activeLiveTask) {
+    activeLiveTask.percent = boundedTarget;
+    if (step) activeLiveTask.step = step;
+    if (detail) activeLiveTask.detail = detail;
+    if (color) activeLiveTask.color = color;
+    if (icon) activeLiveTask.icon = icon;
+  }
+
   // Modal elements
+  const modal = document.getElementById('dm-progress-modal');
   const iconEl = document.getElementById('dm-progress-icon');
   const subtitleEl = document.getElementById('dm-progress-subtitle');
   const stepEl = document.getElementById('dm-progress-step');
@@ -9153,6 +9296,11 @@ function updateDmProgress(targetPercent, {
     if (barEl) barEl.style.width = `${p}%`;
     if (notifPercent) notifPercent.textContent = `${p}%`;
     if (notifBar) notifBar.style.width = `${p}%`;
+    if (activeLiveTask) {
+      activeLiveTask.percent = p;
+      updateDashboardActiveTaskKpi();
+      updateIncomingRequestsTaskCardLive();
+    }
   };
 
   if (!animate || duration <= 0 || boundedTarget === dmProgressCurrentPercent) {
@@ -9188,6 +9336,14 @@ function updateDmProgress(targetPercent, {
     const finalSec = ((Date.now() - (dmProgressStartTime || Date.now())) / 1000).toFixed(1);
     const finishTimeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
 
+    if (activeLiveTask) {
+      activeLiveTask.status = 'completed';
+      activeLiveTask.percent = 100;
+      activeLiveTask.finishTimeStr = finishTimeStr;
+      activeLiveTask.durationSec = finalSec;
+      activeLiveTask.detail = detail || activeLiveTask.detail;
+    }
+
     if (notifCard) notifCard.className = `glass-panel p-4 rounded-2xl border border-emerald-500/50 bg-slate-900/95 dark:bg-slate-950/95 shadow-2xl backdrop-blur-xl text-white space-y-2.5 relative overflow-hidden transition-all duration-300`;
     if (notifAccent) notifAccent.className = `absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300`;
     if (notifIconBox) notifIconBox.className = `w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 text-sm shadow-sm transition-all duration-300`;
@@ -9212,9 +9368,16 @@ function updateDmProgress(targetPercent, {
 
     sendTaskDesktopNotification(`✅ ${dmActiveTaskName}: Completed`, `Finished in ${finalSec}s at ${finishTimeStr}\n${detail || 'Task completed successfully.'}`);
 
+    updateDashboardActiveTaskKpi();
+    updateIncomingRequestsTaskCardLive();
+    refreshNotificationDropdownWithActiveTask();
+
     if (dmNotificationDismissTimer) clearTimeout(dmNotificationDismissTimer);
     dmNotificationDismissTimer = setTimeout(() => {
       dismissLiveTaskNotification();
+      activeLiveTask = null;
+      updateDashboardActiveTaskKpi();
+      refreshNotificationDropdownWithActiveTask();
     }, 8000);
   } else if (isFail) {
     if (dmProgressTimer) {
@@ -9223,6 +9386,14 @@ function updateDmProgress(targetPercent, {
     }
     const finalSec = ((Date.now() - (dmProgressStartTime || Date.now())) / 1000).toFixed(1);
     const failTimeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+
+    if (activeLiveTask) {
+      activeLiveTask.status = 'failed';
+      activeLiveTask.failTimeStr = failTimeStr;
+      activeLiveTask.durationSec = finalSec;
+      activeLiveTask.errorMessage = errorMessage || detail;
+      activeLiveTask.detail = detail || activeLiveTask.detail;
+    }
 
     if (notifCard) notifCard.className = `glass-panel p-4 rounded-2xl border border-rose-500/50 bg-slate-900/95 dark:bg-slate-950/95 shadow-2xl backdrop-blur-xl text-white space-y-2.5 relative overflow-hidden transition-all duration-300`;
     if (notifAccent) notifAccent.className = `absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-500 to-red-500 transition-all duration-300`;
@@ -9248,9 +9419,16 @@ function updateDmProgress(targetPercent, {
 
     sendTaskDesktopNotification(`❌ ${dmActiveTaskName}: Failed`, `Failed at ${failTimeStr} (${finalSec}s)\n${errorMessage || detail}`);
 
+    updateDashboardActiveTaskKpi();
+    updateIncomingRequestsTaskCardLive();
+    refreshNotificationDropdownWithActiveTask();
+
     if (dmNotificationDismissTimer) clearTimeout(dmNotificationDismissTimer);
     dmNotificationDismissTimer = setTimeout(() => {
       dismissLiveTaskNotification();
+      activeLiveTask = null;
+      updateDashboardActiveTaskKpi();
+      refreshNotificationDropdownWithActiveTask();
     }, 10000);
   }
 }
@@ -18678,16 +18856,101 @@ document.addEventListener('click', event => {
 });
 
 function renderNotificationDropdown(actionRequests, pendingUsers = []) {
+  window.lastActionRequests = actionRequests;
+  window.lastPendingUsers = pendingUsers;
+
   const listContainer = document.getElementById('notification-dropdown-list');
   const countBadge = document.getElementById('notification-dropdown-count');
   if (!listContainer) return;
   
-  const totalCount = actionRequests.length + pendingUsers.length;
+  const hasActiveTask = !!(activeLiveTask && (activeLiveTask.status === 'running' || activeLiveTask.status === 'completed' || activeLiveTask.status === 'failed'));
+  const totalCount = actionRequests.length + pendingUsers.length + (hasActiveTask ? 1 : 0);
   
   if (countBadge) {
     countBadge.textContent = totalCount;
   }
   
+  const bellBadge = document.getElementById('driver-req-bell-badge');
+  const userRole = (getAuthSession('rpm_user_role') || '').toLowerCase();
+  const isVendorRole = (userRole === 'vendor');
+  if (bellBadge && !isVendorRole) {
+    if (totalCount > 0) {
+      bellBadge.textContent = totalCount;
+      bellBadge.classList.remove('hidden');
+    } else {
+      bellBadge.classList.add('hidden');
+    }
+  }
+  const bellBtn = document.getElementById('mobile-nav-driver-request');
+  if (bellBtn && !isVendorRole) {
+    if (hasActiveTask && activeLiveTask.status === 'running') {
+      bellBtn.classList.add('ring-2', 'ring-blue-500/70', 'bg-blue-500/15');
+    } else {
+      bellBtn.classList.remove('ring-2', 'ring-blue-500/70', 'bg-blue-500/15');
+    }
+  }
+
+  let taskKpiHtml = '';
+  if (hasActiveTask) {
+    const t = activeLiveTask;
+    const isCompleted = t.status === 'completed';
+    const isFailed = t.status === 'failed';
+    const isRunning = t.status === 'running';
+    const c = isCompleted ? 'emerald' : (isFailed ? 'rose' : (t.color || 'blue'));
+    const statusBadge = isCompleted ? 'COMPLETED' : (isFailed ? 'FAILED' : 'RUNNING TASK');
+    const badgePulse = isRunning ? 'animate-pulse' : '';
+
+    let finishFailMeta = '';
+    if (t.finishTimeStr) {
+      finishFailMeta = `<div class="text-[10px] text-emerald-400 font-semibold flex items-center gap-1 mt-1"><i class="fas fa-clock"></i> Completed at: <b>${t.finishTimeStr}</b> (${t.durationSec}s)</div>`;
+    } else if (t.failTimeStr) {
+      finishFailMeta = `<div class="text-[10px] text-rose-400 font-semibold flex items-center gap-1 mt-1"><i class="fas fa-exclamation-triangle"></i> Failed at: <b>${t.failTimeStr}</b> (${t.durationSec}s)</div>`;
+    }
+
+    taskKpiHtml = `
+      <div id="task-dropdown-kpi-card" class="relative overflow-hidden glass-panel p-4 rounded-2xl border-2 border-${c}-500/40 bg-gradient-to-br from-${c}-500/10 via-slate-900/40 to-slate-950/60 shadow-[0_8px_24px_rgba(0,0,0,0.3)] mb-3">
+        <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-${c}-500 to-${c === 'emerald' ? 'teal' : (c === 'rose' ? 'red' : 'indigo')}-500"></div>
+        <div class="flex items-center justify-between gap-2 mb-2">
+          <div class="flex items-center gap-2 min-w-0">
+            <div class="w-7 h-7 rounded-xl bg-${c}-500/20 text-${c}-400 flex items-center justify-center shrink-0 text-xs shadow-xs">
+              <i class="${isCompleted ? 'fas fa-check-circle' : (isFailed ? 'fas fa-times-circle' : (t.icon || 'fas fa-spinner fa-spin'))}"></i>
+            </div>
+            <div class="min-w-0">
+              <div class="text-[11px] font-black text-slate-100 truncate">${t.name || 'Live Operation'}</div>
+              <div class="text-[9px] text-slate-400 truncate flex items-center gap-1">
+                <span id="task-dd-step" class="font-bold text-${c}-400">${t.step || 'Progress'}</span>
+                <span id="task-dd-timer" class="text-slate-400 font-mono">⏱️ ${t.elapsed || '0s'}</span>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <span class="px-2 py-0.5 rounded-full text-[8px] font-black tracking-wider bg-${c}-500/20 text-${c}-300 border border-${c}-500/30 uppercase ${badgePulse}">${statusBadge}</span>
+            <button onclick="reopenDmProgressModal(); event.stopPropagation();" title="Expand Modal" class="px-2 py-0.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-[10px] font-black border border-blue-500/30 flex items-center gap-1 transition-all">
+              <i class="fas fa-expand text-[9px]"></i> View
+            </button>
+          </div>
+        </div>
+
+        <!-- Progress Bar & % -->
+        <div class="space-y-1 mb-2">
+          <div class="flex items-center justify-between text-[10px]">
+            <span class="text-slate-400 font-medium">Task Progress</span>
+            <span id="task-dd-percent" class="font-black text-${c}-400">${t.percent}%</span>
+          </div>
+          <div class="w-full bg-slate-800/80 rounded-full h-2 overflow-hidden border border-slate-700/60 p-[1px]">
+            <div id="task-dd-bar" class="h-full rounded-full ${isCompleted ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : (isFailed ? 'bg-gradient-to-r from-rose-500 to-red-500' : 'bg-gradient-to-r from-blue-500 to-indigo-400')} transition-all duration-300" style="width: ${t.percent}%"></div>
+          </div>
+        </div>
+
+        <!-- Hindi Step Detail -->
+        <div id="task-dd-desc" class="text-[10px] text-slate-300 font-medium leading-relaxed bg-slate-950/40 p-2 rounded-xl border border-slate-800/60">
+          ${t.detail || ''}
+          ${finishFailMeta}
+        </div>
+      </div>
+    `;
+  }
+
   if (totalCount === 0) {
     listContainer.innerHTML = `
       <div class="text-center py-8 text-slate-400 dark:text-slate-500 font-bold text-xs uppercase tracking-wider">
@@ -18698,7 +18961,18 @@ function renderNotificationDropdown(actionRequests, pendingUsers = []) {
     return;
   }
   
-  let html = '';
+  let html = taskKpiHtml;
+
+  if (actionRequests.length === 0 && pendingUsers.length === 0 && hasActiveTask) {
+    html += `
+      <div class="text-center py-5 text-slate-400 dark:text-slate-500 font-bold text-xs uppercase tracking-wider border-t border-slate-800/40">
+        <i class="fas fa-check-circle text-xl text-emerald-500 mb-1.5 block"></i>
+        No Pending Driver Requests
+      </div>
+    `;
+    listContainer.innerHTML = html;
+    return;
+  }
 
   // Render Pending Users First
   pendingUsers.forEach(u => {
@@ -18824,7 +19098,8 @@ function updateDriverRequestsBadges() {
     ? allUserAccounts.filter(u => u.status === 'pending' && u.role !== 'admin') 
     : [];
 
-  const totalActionPending = !isVendorRole ? (pendingCount + updatePendingCount + pendingUsers.length) : 0;
+  const hasRunningLiveTask = !!(activeLiveTask && (activeLiveTask.status === 'running' || activeLiveTask.status === 'completed'));
+  const totalActionPending = !isVendorRole ? (pendingCount + updatePendingCount + pendingUsers.length + (hasRunningLiveTask ? 1 : 0)) : 0;
 
   // Render the notification pop preview dropdown for all non-vendor users (Admin, Incharge, Watcher, Users)
   renderNotificationDropdown(

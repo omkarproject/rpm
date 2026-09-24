@@ -546,6 +546,41 @@
           <!-- Collapsible Filter Panel Container -->
           
 
+          <!-- Active Task Running KPI Card (Shows when task is minimized/running) -->
+          <div id="dash-active-task-kpi" class="hidden mb-4 p-4 rounded-3xl glass-panel border border-blue-500/40 bg-gradient-to-r from-blue-950/40 via-slate-900/90 to-slate-950/90 shadow-xl relative overflow-hidden transition-all duration-300 animate-fadeup cursor-pointer" onclick="reopenDmProgressModal()" title="Click to open full progress modal">
+            <div id="dash-active-task-accent" class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-indigo-500"></div>
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div class="flex items-center gap-3 min-w-0">
+                <div id="dash-active-task-icon-box" class="w-10 h-10 rounded-2xl bg-blue-500/20 text-blue-400 flex items-center justify-center shrink-0 text-base shadow-sm">
+                  <i id="dash-active-task-icon" class="fas fa-spinner fa-spin"></i>
+                </div>
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span id="dash-active-task-badge" class="px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                      RUNNING TASK
+                    </span>
+                    <span id="dash-active-task-timer" class="text-[10px] text-slate-400 font-mono">⏱️ 0s</span>
+                  </div>
+                  <h4 id="dash-active-task-name" class="text-sm font-black text-white truncate mt-0.5">Operation Name</h4>
+                </div>
+              </div>
+              <div class="flex items-center gap-3 shrink-0 self-end sm:self-center">
+                <span id="dash-active-task-percent" class="text-lg font-black font-mono text-blue-400">0%</span>
+                <button type="button" onclick="reopenDmProgressModal(); event.stopPropagation();" class="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md transition-all">
+                  <i class="fas fa-expand text-[10px]"></i> View Progress
+                </button>
+              </div>
+            </div>
+            <!-- Progress Bar -->
+            <div class="w-full h-2 rounded-full bg-slate-950/80 overflow-hidden p-0.5 border border-slate-800 shadow-inner mt-2.5">
+              <div id="dash-active-task-bar" class="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-400 transition-all duration-300" style="width: 0%;"></div>
+            </div>
+            <!-- Live Step Detail -->
+            <div id="dash-active-task-desc" class="text-[11px] text-slate-300 font-medium mt-2 truncate">
+              Step detail...
+            </div>
+          </div>
+
           <!-- KPI 8-Stats Grid -->
           <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             <!-- Card 1: Total Records -->
@@ -5693,6 +5728,12 @@
   <div id="dm-progress-modal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[1200] flex items-center justify-center p-4 hidden">
     <div class="glass-panel w-full max-w-sm rounded-3xl border border-slate-700/60 p-6 shadow-2xl space-y-4 animate-fadeup relative bg-slate-900/95 text-white text-center">
       
+      <!-- Top Action: Hide / Minimize Button -->
+      <button type="button" onclick="hideDmProgressModal()" class="absolute top-3.5 right-3.5 z-10 flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-800/90 hover:bg-slate-700/90 border border-slate-700/80 text-slate-300 hover:text-white text-[11px] font-bold transition-all shadow-md group" title="Minimize / Hide to Background">
+        <i class="fas fa-eye-slash text-[10px] group-hover:scale-110 transition-transform text-amber-400"></i>
+        <span>Hide</span>
+      </button>
+
       <!-- Top Icon with Pulsing Effect -->
       <div class="flex justify-center pt-1">
         <div id="dm-progress-icon-box" class="w-16 h-16 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-2xl relative shadow-lg shadow-emerald-500/20 transition-all duration-300">
@@ -5784,7 +5825,7 @@
   <div id="toasts-container"></div>
 
   <!-- Core JavaScript Core App Logic File -->
-  <script src="script.js?v=91" defer></script>
+  <script src="script.js?v=92" defer></script>
   <script src="broadcast.js" defer></script>
 
   <!-- Re-add transition after page load for smooth theme toggles -->
