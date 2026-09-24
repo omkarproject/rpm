@@ -5689,11 +5689,49 @@
       </div>
     </div>
   </div>
+  <!-- Modal: Data Operations Progress Modal (1% to 100%) -->
+  <div id="dm-progress-modal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[1200] flex items-center justify-center p-4 hidden">
+    <div class="glass-panel w-full max-w-sm rounded-3xl border border-slate-700/60 p-6 shadow-2xl space-y-4 animate-fadeup relative bg-slate-900/95 text-white text-center">
+      
+      <!-- Top Icon with Pulsing Effect -->
+      <div class="flex justify-center pt-1">
+        <div id="dm-progress-icon-box" class="w-16 h-16 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-2xl relative shadow-lg shadow-emerald-500/20 transition-all duration-300">
+          <i id="dm-progress-icon" class="fas fa-spinner fa-spin"></i>
+          <span id="dm-progress-ping" class="animate-ping absolute inline-flex h-full w-full rounded-2xl bg-emerald-400 opacity-20"></span>
+        </div>
+      </div>
+
+      <!-- Title & Subtitle -->
+      <div class="space-y-1">
+        <h3 id="dm-progress-title" class="text-base font-black text-white tracking-wide">Processing Operation</h3>
+        <p id="dm-progress-subtitle" class="text-xs text-slate-400 leading-relaxed font-medium">Connecting to cloud database...</p>
+      </div>
+
+      <!-- Percentage & Step Info -->
+      <div class="space-y-2 pt-1">
+        <div class="flex justify-between items-center px-1">
+          <span id="dm-progress-step" class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Step 1 of 4</span>
+          <span id="dm-progress-percent" class="text-xl font-black text-emerald-400 font-mono tracking-tight">0%</span>
+        </div>
+        
+        <!-- Progress Track & Bar -->
+        <div class="w-full h-3.5 rounded-full bg-slate-950/80 p-0.5 border border-slate-800 shadow-inner overflow-hidden">
+          <div id="dm-progress-bar" class="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300 shadow-md shadow-emerald-500/50" style="width: 0%;"></div>
+        </div>
+      </div>
+
+      <!-- Real-time Live Log / Details -->
+      <div class="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 font-mono text-[10px] text-slate-400 flex items-center justify-between">
+        <span class="truncate text-left" id="dm-progress-detail">Initializing snapshot...</span>
+        <span id="dm-progress-elapsed" class="shrink-0 text-slate-500 pl-2">0s</span>
+      </div>
+    </div>
+  </div>
 
   <div id="toasts-container"></div>
 
   <!-- Core JavaScript Core App Logic File -->
-  <script src="script.js?v=89" defer></script>
+  <script src="script.js?v=90" defer></script>
   <script src="broadcast.js" defer></script>
 
   <!-- Re-add transition after page load for smooth theme toggles -->

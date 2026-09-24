@@ -8921,60 +8921,337 @@ document.getElementById('dm-update-reset').onclick = () => {
   }
 };
 
-// JSON database full backup download
+/* ══════════════════════════════════════════════════════════
+   18.0 DATA OPERATIONS PROGRESS BAR CONTROLLER (1% to 100%)
+   ══════════════════════════════════════════════════════════ */
+let dmProgressTimer = null;
+let dmProgressAnimInterval = null;
+let dmProgressStartTime = 0;
+let dmProgressCurrentPercent = 0;
+
+function showDmProgress({
+  title = "Processing...",
+  subtitle = "Please wait...",
+  icon = "fas fa-spinner fa-spin",
+  color = "emerald",
+  step = "Step 1 of 4",
+  percent = 5,
+  detail = "Starting operation..."
+}) {
+  const modal = document.getElementById('dm-progress-modal');
+  if (!modal) return;
+
+  if (dmProgressAnimInterval) {
+    clearInterval(dmProgressAnimInterval);
+    dmProgressAnimInterval = null;
+  }
+  if (dmProgressTimer) {
+    clearInterval(dmProgressTimer);
+    dmProgressTimer = null;
+  }
+
+  dmProgressCurrentPercent = Math.max(0, Math.min(100, percent));
+
+  const iconBox = document.getElementById('dm-progress-icon-box');
+  const iconEl = document.getElementById('dm-progress-icon');
+  const pingEl = document.getElementById('dm-progress-ping');
+  const titleEl = document.getElementById('dm-progress-title');
+  const subtitleEl = document.getElementById('dm-progress-subtitle');
+  const stepEl = document.getElementById('dm-progress-step');
+  const percentEl = document.getElementById('dm-progress-percent');
+  const barEl = document.getElementById('dm-progress-bar');
+  const detailEl = document.getElementById('dm-progress-detail');
+  const elapsedEl = document.getElementById('dm-progress-elapsed');
+
+  if (iconBox && pingEl && barEl && percentEl) {
+    iconBox.className = `w-16 h-16 rounded-2xl bg-${color}-500/20 text-${color}-400 flex items-center justify-center text-2xl relative shadow-lg shadow-${color}-500/20 transition-all duration-300`;
+    pingEl.className = `animate-ping absolute inline-flex h-full w-full rounded-2xl bg-${color}-400 opacity-20`;
+    barEl.className = `h-full rounded-full bg-gradient-to-r from-${color}-500 to-${color}-400 transition-all duration-300 shadow-md shadow-${color}-500/50`;
+    percentEl.className = `text-xl font-black text-${color}-400 font-mono tracking-tight`;
+  }
+
+  if (iconEl) iconEl.className = icon;
+  if (titleEl) titleEl.textContent = title;
+  if (subtitleEl) subtitleEl.textContent = subtitle;
+  if (stepEl) stepEl.textContent = step;
+  if (percentEl) percentEl.textContent = `${dmProgressCurrentPercent}%`;
+  if (barEl) barEl.style.width = `${dmProgressCurrentPercent}%`;
+  if (detailEl) detailEl.textContent = detail;
+
+  dmProgressStartTime = Date.now();
+  if (elapsedEl) {
+    elapsedEl.textContent = "0s";
+    dmProgressTimer = setInterval(() => {
+      const sec = Math.floor((Date.now() - dmProgressStartTime) / 1000);
+      elapsedEl.textContent = `${sec}s`;
+    }, 1000);
+  }
+
+  modal.classList.remove('hidden');
+}
+
+function updateDmProgress(targetPercent, {
+  subtitle,
+  step,
+  detail,
+  icon,
+  color,
+  animate = true,
+  duration = 400
+} = {}) {
+  const boundedTarget = Math.min(100, Math.max(0, Math.round(targetPercent)));
+  const iconEl = document.getElementById('dm-progress-icon');
+  const subtitleEl = document.getElementById('dm-progress-subtitle');
+  const stepEl = document.getElementById('dm-progress-step');
+  const percentEl = document.getElementById('dm-progress-percent');
+  const barEl = document.getElementById('dm-progress-bar');
+  const detailEl = document.getElementById('dm-progress-detail');
+  const iconBox = document.getElementById('dm-progress-icon-box');
+  const pingEl = document.getElementById('dm-progress-ping');
+
+  if (subtitle && subtitleEl) subtitleEl.textContent = subtitle;
+  if (step && stepEl) stepEl.textContent = step;
+  if (detail && detailEl) detailEl.textContent = detail;
+  if (icon && iconEl) iconEl.className = icon;
+
+  if (color && iconBox && pingEl && barEl && percentEl) {
+    iconBox.className = `w-16 h-16 rounded-2xl bg-${color}-500/20 text-${color}-400 flex items-center justify-center text-2xl relative shadow-lg shadow-${color}-500/20 transition-all duration-300`;
+    pingEl.className = `animate-ping absolute inline-flex h-full w-full rounded-2xl bg-${color}-400 opacity-20`;
+    barEl.className = `h-full rounded-full bg-gradient-to-r from-${color}-500 to-${color}-400 transition-all duration-300 shadow-md shadow-${color}-500/50`;
+    percentEl.className = `text-xl font-black text-${color}-400 font-mono tracking-tight`;
+  }
+
+  if (dmProgressAnimInterval) {
+    clearInterval(dmProgressAnimInterval);
+    dmProgressAnimInterval = null;
+  }
+
+  if (!animate || duration <= 0 || boundedTarget === dmProgressCurrentPercent) {
+    dmProgressCurrentPercent = boundedTarget;
+    if (percentEl) percentEl.textContent = `${dmProgressCurrentPercent}%`;
+    if (barEl) barEl.style.width = `${dmProgressCurrentPercent}%`;
+    return;
+  }
+
+  const startPercent = dmProgressCurrentPercent;
+  const diff = boundedTarget - startPercent;
+  const startTime = Date.now();
+
+  dmProgressAnimInterval = setInterval(() => {
+    const elapsed = Date.now() - startTime;
+    const progressRatio = Math.min(1, elapsed / duration);
+    const easeProgress = 1 - (1 - progressRatio) * (1 - progressRatio);
+    dmProgressCurrentPercent = Math.round(startPercent + diff * easeProgress);
+
+    if (percentEl) percentEl.textContent = `${dmProgressCurrentPercent}%`;
+    if (barEl) barEl.style.width = `${dmProgressCurrentPercent}%`;
+
+    if (progressRatio >= 1) {
+      clearInterval(dmProgressAnimInterval);
+      dmProgressAnimInterval = null;
+      dmProgressCurrentPercent = boundedTarget;
+      if (percentEl) percentEl.textContent = `${boundedTarget}%`;
+      if (barEl) barEl.style.width = `${boundedTarget}%`;
+    }
+  }, 25);
+}
+
+function closeDmProgress(delayMs = 900) {
+  if (dmProgressTimer) {
+    clearInterval(dmProgressTimer);
+    dmProgressTimer = null;
+  }
+  if (dmProgressAnimInterval) {
+    clearInterval(dmProgressAnimInterval);
+    dmProgressAnimInterval = null;
+  }
+  setTimeout(() => {
+    const modal = document.getElementById('dm-progress-modal');
+    if (modal) modal.classList.add('hidden');
+  }, delayMs);
+}
+window.showDmProgress = showDmProgress;
+window.updateDmProgress = updateDmProgress;
+window.closeDmProgress = closeDmProgress;
+
+// JSON database full backup download with 1% - 100% Progress Bar
 function backupDatabase() {
-  toast.info("Creating backup...");
+  showDmProgress({
+    title: "Download Cloud Backup",
+    subtitle: "Connecting to Firebase Database...",
+    icon: "fas fa-file-arrow-down animate-bounce",
+    color: "emerald",
+    step: "Step 1 of 4",
+    percent: 12,
+    detail: "Initializing database query..."
+  });
+
+  setTimeout(() => {
+    updateDmProgress(38, {
+      subtitle: "Reading cloud records from Firebase...",
+      step: "Step 2 of 4",
+      detail: "Fetching entries, requests & master data...",
+      duration: 450
+    });
+  }, 200);
+
   db.ref().once('value')
     .then(snap => {
       const val = snap.val();
-      if (!val) return toast.err("Database is empty.");
-      
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(val, null, 2));
-      const dlAnchor = document.createElement('a');
-      const date = new Date().toISOString().slice(0, 10);
-      dlAnchor.setAttribute("href", dataStr);
-      dlAnchor.setAttribute("download", `rpm_diesel_cloud_backup_${date}.json`);
-      document.body.appendChild(dlAnchor);
-      dlAnchor.click();
-      dlAnchor.remove();
-      toast.ok("JSON backup download initiated.");
+      if (!val) {
+        updateDmProgress(100, {
+          subtitle: "Database is empty!",
+          step: "Warning",
+          icon: "fas fa-exclamation-triangle text-amber-400",
+          color: "amber",
+          detail: "No records found to backup."
+        });
+        closeDmProgress(1500);
+        return toast.err("Database is empty.");
+      }
+
+      updateDmProgress(72, {
+        subtitle: "Formatting & compressing JSON data...",
+        step: "Step 3 of 4",
+        detail: "Generating structured JSON export...",
+        duration: 400
+      });
+
+      setTimeout(() => {
+        updateDmProgress(92, {
+          subtitle: "Preparing download stream...",
+          step: "Step 4 of 4",
+          detail: "Creating browser download file...",
+          duration: 350
+        });
+
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(val, null, 2));
+        const dlAnchor = document.createElement('a');
+        const date = new Date().toISOString().slice(0, 10);
+        dlAnchor.setAttribute("href", dataStr);
+        dlAnchor.setAttribute("download", `rpm_diesel_cloud_backup_${date}.json`);
+        document.body.appendChild(dlAnchor);
+        dlAnchor.click();
+        dlAnchor.remove();
+
+        updateDmProgress(100, {
+          subtitle: "Backup Downloaded Successfully!",
+          step: "Completed (100%)",
+          icon: "fas fa-check-circle text-emerald-400",
+          color: "emerald",
+          detail: `Saved rpm_diesel_cloud_backup_${date}.json to device.`,
+          duration: 300
+        });
+        closeDmProgress(1200);
+        toast.ok("JSON backup download initiated.");
+      }, 350);
     })
-    .catch(() => toast.err("Backup operation failed."));
+    .catch((err) => {
+      updateDmProgress(100, {
+        subtitle: "Backup Failed!",
+        step: "Error",
+        icon: "fas fa-times-circle text-rose-400",
+        color: "rose",
+        detail: (err && err.message) || "Failed to read database."
+      });
+      closeDmProgress(2000);
+      toast.err("Backup operation failed.");
+    });
 }
 
-// Restore Database from JSON or GZIP (.json / .json.gz / .gz)
+// Restore Database from JSON or GZIP (.json / .json.gz / .gz) with 1% - 100% Progress Bar
 document.getElementById('db-restore-submit-btn').onclick = async () => {
   const fileInput = document.getElementById('db-restore-file');
   const file = fileInput.files[0];
   if (!file) return toast.warn("Choose a backup JSON or GZ file first.");
 
+  const pass = prompt("DANGER! This will overwrite the entire database.\nEnter admin passcode to authorize:");
+  if (pass !== '@RPM@2026@') {
+    if (pass !== null) toast.err("Incorrect admin passcode.");
+    return;
+  }
+
+  showDmProgress({
+    title: "Database Restore & Import",
+    subtitle: "Reading backup file...",
+    icon: "fas fa-file-arrow-up animate-bounce",
+    color: "blue",
+    step: "Step 1 of 4",
+    percent: 15,
+    detail: `Reading file: ${file.name} (${(file.size / 1024).toFixed(1)} KB)...`
+  });
+
   try {
     let jsonText = '';
     if (file.name.endsWith('.gz') || file.type.includes('gzip')) {
       if (typeof DecompressionStream === 'function') {
+        updateDmProgress(32, {
+          subtitle: "Decompressing GZIP archive...",
+          step: "Step 2 of 4",
+          detail: "Streaming through DecompressionStream...",
+          duration: 350
+        });
         const ds = new DecompressionStream('gzip');
         const stream = file.stream().pipeThrough(ds);
         jsonText = await new Response(stream).text();
       } else {
+        closeDmProgress(0);
         return toast.err("Your browser does not support decompressing .gz files.");
       }
     } else {
+      updateDmProgress(32, {
+        subtitle: "Reading file contents...",
+        step: "Step 2 of 4",
+        detail: "Loading text into memory...",
+        duration: 350
+      });
       jsonText = await file.text();
     }
 
+    updateDmProgress(58, {
+      subtitle: "Parsing & validating JSON database...",
+      step: "Step 3 of 4",
+      detail: "Checking keys, schema, and nodes...",
+      duration: 400
+    });
+
     const parsed = JSON.parse(jsonText);
-    if (parsed) {
-      const pass = prompt("DANGER! This will overwrite the entire database.\nEnter admin passcode to authorize:");
-      if (pass === '@RPM@2026@') {
-        await db.ref().set(parsed);
-        toast.ok("Full database restored successfully!");
-        fileInput.value = '';
-        setTimeout(() => location.reload(), 1500);
-      } else if (pass !== null) {
-        toast.err("Incorrect admin passcode.");
-      }
+    if (!parsed || typeof parsed !== 'object') {
+      throw new Error("Invalid JSON structure in backup file.");
     }
+
+    updateDmProgress(82, {
+      subtitle: "Overwriting Firebase Realtime Database...",
+      step: "Step 4 of 4",
+      icon: "fas fa-database animate-pulse",
+      detail: "Writing records to cloud database...",
+      duration: 500
+    });
+
+    await db.ref().set(parsed);
+
+    updateDmProgress(100, {
+      subtitle: "Database Restored Successfully!",
+      step: "Completed (100%)",
+      icon: "fas fa-check-circle text-blue-400",
+      color: "blue",
+      detail: "All records imported. Reloading application...",
+      duration: 300
+    });
+
+    fileInput.value = '';
+    closeDmProgress(1300);
+    toast.ok("Full database restored successfully!");
+    setTimeout(() => location.reload(), 1500);
   } catch (err) {
+    updateDmProgress(100, {
+      subtitle: "Restore Failed!",
+      step: "Error",
+      icon: "fas fa-times-circle text-rose-400",
+      color: "rose",
+      detail: err.message
+    });
+    closeDmProgress(2500);
     toast.err("Failed to restore backup: " + err.message);
   }
 };
@@ -10115,14 +10392,40 @@ async function sendTelegramBackup(isManual = false) {
   }
 
   if (isManual) {
-    toast.info("Preparing and sending database JSON to Telegram...");
+    showDmProgress({
+      title: "Telegram Cloud Backup",
+      subtitle: "Connecting to Telegram service...",
+      icon: "fab fa-telegram-plane animate-bounce",
+      color: "sky",
+      step: "Step 1 of 4",
+      percent: 12,
+      detail: "Validating Bot Key & Chat ID..."
+    });
+    setTimeout(() => {
+      updateDmProgress(35, {
+        subtitle: "Fetching records from Firebase...",
+        step: "Step 2 of 4",
+        detail: "Downloading cloud database snapshot...",
+        duration: 400
+      });
+    }, 200);
   }
 
   try {
     const snap = await db.ref().once('value');
     const val = snap.val();
     if (!val) {
-      if (isManual) toast.err("Database is empty, nothing to backup.");
+      if (isManual) {
+        updateDmProgress(100, {
+          subtitle: "Database is empty!",
+          step: "Warning",
+          icon: "fas fa-exclamation-triangle text-amber-400",
+          color: "amber",
+          detail: "No records found to backup."
+        });
+        closeDmProgress(1500);
+        toast.err("Database is empty, nothing to backup.");
+      }
       return;
     }
 
@@ -10152,6 +10455,15 @@ async function sendTelegramBackup(isManual = false) {
     const sizeMb = (uploadBlob.size / (1024 * 1024)).toFixed(2);
     const sizeKb = (uploadBlob.size / 1024).toFixed(1);
 
+    if (isManual) {
+      updateDmProgress(68, {
+        subtitle: "Packaging & compressing JSON document...",
+        step: "Step 3 of 4",
+        detail: `Preparing ${totalRecords} entries (${sizeMb >= 1 ? sizeMb + ' MB' : sizeKb + ' KB'})...`,
+        duration: 350
+      });
+    }
+
     const caption = `📦 <b>RPM DIESEL CLOUD DATABASE BACKUP</b>\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `📅 <b>Timestamp:</b> ${now.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} (IST)\n` +
@@ -10168,6 +10480,16 @@ async function sendTelegramBackup(isManual = false) {
     formData.append('document', uploadBlob, fileName);
     formData.append('caption', caption);
     formData.append('parse_mode', 'HTML');
+
+    if (isManual) {
+      updateDmProgress(86, {
+        subtitle: "Transmitting document to Telegram API...",
+        step: "Step 4 of 4",
+        icon: "fas fa-paper-plane animate-pulse",
+        detail: "Uploading payload to api.telegram.org...",
+        duration: 400
+      });
+    }
 
     const res = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
       method: 'POST',
@@ -10204,15 +10526,46 @@ async function sendTelegramBackup(isManual = false) {
         }
       }
 
+      if (isManual) {
+        updateDmProgress(100, {
+          subtitle: "Delivered to Telegram Chat!",
+          step: "Completed (100%)",
+          icon: "fas fa-check-circle text-sky-400",
+          color: "sky",
+          detail: `Document ${fileName} delivered to chat.`,
+          duration: 300
+        });
+        closeDmProgress(1200);
+      }
       toast.ok("Database backup successfully sent to Telegram Bot!");
       updateAutoBackupBadge();
       updateAutoBackupUI();
     } else {
       console.error("Telegram API response error:", resData);
+      if (isManual) {
+        updateDmProgress(100, {
+          subtitle: "Telegram Delivery Failed!",
+          step: "Error",
+          icon: "fas fa-times-circle text-rose-400",
+          color: "rose",
+          detail: resData.description || 'Unknown Telegram error'
+        });
+        closeDmProgress(2500);
+      }
       toast.err(`Telegram Error: ${resData.description || 'Unknown error'}`);
     }
   } catch (err) {
     console.error("Auto backup failed:", err);
+    if (isManual) {
+      updateDmProgress(100, {
+        subtitle: "Telegram Backup Failed!",
+        step: "Error",
+        icon: "fas fa-times-circle text-rose-400",
+        color: "rose",
+        detail: err.message
+      });
+      closeDmProgress(2500);
+    }
     toast.err(`Backup to Telegram failed: ${err.message}`);
   } finally {
     if (testBtn && isManual) {
@@ -10249,6 +10602,23 @@ async function sendDriveBackup(isManual = false) {
   }
 
   if (isManual) {
+    showDmProgress({
+      title: "Saving to Google Drive",
+      subtitle: "Connecting to Google Drive service...",
+      icon: "fab fa-google-drive text-amber-400",
+      color: "amber",
+      step: "Step 1 of 4",
+      percent: 10,
+      detail: "Validating Folder ID & Web App Endpoint..."
+    });
+    setTimeout(() => {
+      updateDmProgress(35, {
+        subtitle: "Fetching cloud database records...",
+        step: "Step 2 of 4",
+        detail: "Downloading database snapshot from Firebase...",
+        duration: 400
+      });
+    }, 200);
     toast.info("Database JSON backup Google Drive me bheja ja raha hai...");
   }
 
@@ -10256,7 +10626,17 @@ async function sendDriveBackup(isManual = false) {
     const snap = await db.ref().once('value');
     const val = snap.val();
     if (!val) {
-      if (isManual) toast.err("Database is empty, nothing to backup.");
+      if (isManual) {
+        updateDmProgress(100, {
+          subtitle: "Database is empty!",
+          step: "Warning",
+          icon: "fas fa-exclamation-triangle text-amber-400",
+          color: "amber",
+          detail: "No records found to backup."
+        });
+        closeDmProgress(1500);
+        toast.err("Database is empty, nothing to backup.");
+      }
       return;
     }
 
@@ -10268,7 +10648,29 @@ async function sendDriveBackup(isManual = false) {
     const timeStr = now.toTimeString().slice(0, 8).replace(/:/g, '-');
     const fileName = `RPM_Diesel_AutoBackup_${dateStr}_${timeStr}.json`;
 
+    const totalRecords = (cleanVal.entries ? Object.keys(cleanVal.entries).length : 0);
+    const sizeKb = (new Blob([jsonStr]).size / 1024).toFixed(1);
+
+    if (isManual) {
+      updateDmProgress(65, {
+        subtitle: "Packaging database snapshot...",
+        step: "Step 3 of 4",
+        detail: `Preparing ${totalRecords} entries (${sizeKb} KB JSON payload)...`,
+        duration: 350
+      });
+    }
+
     let uploadSuccess = false;
+
+    if (isManual) {
+      updateDmProgress(85, {
+        subtitle: "Saving file directly to Google Drive folder...",
+        step: "Step 4 of 4",
+        icon: "fas fa-cloud-upload-alt text-amber-400 animate-pulse",
+        detail: "Uploading payload to Google Apps Script Web App...",
+        duration: 400
+      });
+    }
 
     // Send payload directly to Google Apps Script Web App
     try {
@@ -10328,11 +10730,33 @@ async function sendDriveBackup(isManual = false) {
       }
     }
 
+    if (isManual) {
+      updateDmProgress(100, {
+        subtitle: "Saved to Google Drive Successfully!",
+        step: "Completed (100%)",
+        icon: "fas fa-check-circle text-emerald-400",
+        color: "emerald",
+        detail: `File '${fileName}' successfully saved into Drive folder!`,
+        duration: 300
+      });
+      closeDmProgress(1200);
+    }
+
     toast.ok("✅ Backup file aapke Google Drive folder me successfully save ho gayi hai!");
     updateAutoBackupBadge();
     updateDriveBackupUI();
   } catch (err) {
     console.error("Drive auto backup failed:", err);
+    if (isManual) {
+      updateDmProgress(100, {
+        subtitle: "Google Drive Backup Failed!",
+        step: "Error",
+        icon: "fas fa-times-circle text-rose-400",
+        color: "rose",
+        detail: err.message
+      });
+      closeDmProgress(2500);
+    }
     toast.err(`Google Drive backup failed: ${err.message}`);
   } finally {
     if (testBtn && isManual) {
