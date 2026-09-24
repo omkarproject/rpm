@@ -119,7 +119,7 @@
   --sidebar-border: rgba(255, 255, 255, 0.08);
   --sidebar-text: #9ca3af;
   
-  --header-bg: rgba(8, 10, 18, 0.65);
+  --header-bg: rgba(8, 10, 18, 0.88);
   --header-border: rgba(255, 255, 255, 0.08);
 }
 
@@ -130,6 +130,10 @@
   padding: 0;
 }
 
+html {
+  overflow-x: clip;
+}
+
 body {
   font-family: var(--font-family);
   background-color: var(--bg-color);
@@ -138,7 +142,8 @@ body {
   background-size: cover;
   color: var(--text-main);
   min-height: 100vh;
-  overflow-x: hidden;
+  overflow-x: clip;
+  overflow-y: auto;
   position: relative;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -372,6 +377,8 @@ body.cursor-hovering #custom-cursor-dot {
 }
 
 #main-content {
+  overflow-x: clip !important;
+  overflow-y: visible !important;
   transition: margin-left 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -409,9 +416,10 @@ body.cursor-hovering #custom-cursor-dot {
 
 /* STICKY HEADER POSITION FIX (Forced stickiness over relative panels) */
 #top-bar {
+  position: -webkit-sticky !important;
   position: sticky !important;
   top: 0 !important;
-  z-index: 30 !important;
+  z-index: 40 !important;
   background: var(--header-bg) !important;
   backdrop-filter: blur(16px) saturate(160%) !important;
   -webkit-backdrop-filter: blur(16px) saturate(160%) !important;
@@ -1088,7 +1096,7 @@ input[type="checkbox"]:checked + .checkbox-custom i {
 }
 
 #top-bar {
-  z-index: 30 !important;
+  z-index: 40 !important;
 }
 
 /* Custom Scrollbar for Request History top scroll and table scroll (Forced visibility on mobile) */
