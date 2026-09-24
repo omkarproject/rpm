@@ -9050,7 +9050,7 @@ if (restoreFileEl) {
 }
 
 /* ══════════════════════════════════════════════════════════
-   18.1 TELEGRAM CLOUD AUTO BACKUP CONTROLLER
+   18.1 CLOUD AUTO BACKUP CONTROLLER (TELEGRAM & GOOGLE DRIVE)
    ══════════════════════════════════════════════════════════ */
 let telegramAutoBackupConfig = {
   enabled: false,
@@ -9063,8 +9063,129 @@ let telegramAutoBackupConfig = {
   lastBackupDate: ''
 };
 
+let googleDriveAutoBackupConfig = {
+  enabled: false,
+  folderLink: '',
+  folderId: '',
+  webAppUrl: '',
+  intervalDays: 1,
+  preferredTime: '21:00',
+  nextBackupTimestamp: 0,
+  lastBackupTimestamp: 0,
+  lastBackupDate: '',
+  lastFileUrl: ''
+};
+
 let autoBackupTimerId = null;
 let isBackupRunning = false;
+let isDriveBackupRunning = false;
+let currentBackupTab = 'telegram';
+
+function switchBackupTab(tab) {
+  currentBackupTab = tab;
+  const tgBtn = document.getElementById('dm-tab-btn-telegram');
+  const driveBtn = document.getElementById('dm-tab-btn-drive');
+  const tgContent = document.getElementById('dm-tab-content-telegram');
+  const driveContent = document.getElementById('dm-tab-content-drive');
+
+  if (tab === 'drive') {
+    if (tgBtn) {
+      tgBtn.className = "flex-1 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all text-slate-500 dark:text-slate-400 hover:text-sky-500";
+    }
+    if (driveBtn) {
+      driveBtn.className = "flex-1 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all bg-white dark:bg-slate-800 text-emerald-500 shadow-sm border border-slate-200/50 dark:border-slate-700/50";
+    }
+    if (tgContent) tgContent.classList.add('hidden');
+    if (driveContent) driveContent.classList.remove('hidden');
+    updateDriveBackupUI();
+  } else {
+    if (driveBtn) {
+      driveBtn.className = "flex-1 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all text-slate-500 dark:text-slate-400 hover:text-emerald-500";
+    }
+    if (tgBtn) {
+      tgBtn.className = "flex-1 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all bg-white dark:bg-slate-800 text-sky-500 shadow-sm border border-slate-200/50 dark:border-slate-700/50";
+    }
+    if (driveContent) driveContent.classList.add('hidden');
+    if (tgContent) tgContent.classList.remove('hidden');
+    updateAutoBackupUI();
+  }
+}
+window.switchBackupTab = switchBackupTab;
+
+function extractDriveFolderId(urlOrId) {
+  if (!urlOrId) return '';
+  const str = String(urlOrId).trim();
+  const m1 = str.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (m1 && m1[1]) return m1[1];
+  const m2 = str.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (m2 && m2[1]) return m2[1];
+  if (/^[a-zA-Z0-9_-]{15,}$/.test(str)) return str;
+  return str;
+}
+window.extractDriveFolderId = extractDriveFolderId;
+
+function onDriveFolderInputChanged(val) {
+  const folderId = extractDriveFolderId(val);
+  const previewContainer = document.getElementById('dm-drivebackup-folder-preview-container');
+  const previewId = document.getElementById('dm-drivebackup-folder-id-preview');
+  const extLink = document.getElementById('dm-drivebackup-folder-external-link');
+
+  if (folderId) {
+    if (previewContainer) previewContainer.classList.remove('hidden');
+    if (previewId) previewId.textContent = folderId;
+    if (extLink) {
+      extLink.href = `https://drive.google.com/drive/folders/${folderId}`;
+      extLink.classList.remove('hidden');
+    }
+  } else {
+    if (previewContainer) previewContainer.classList.add('hidden');
+    if (extLink) extLink.classList.add('hidden');
+  }
+}
+window.onDriveFolderInputChanged = onDriveFolderInputChanged;
+
+function setDriveBackupDays(days) {
+  const input = document.getElementById('dm-drivebackup-days');
+  const preview = document.getElementById('dm-drivebackup-days-preview');
+  if (input) input.value = days;
+  if (preview) preview.textContent = days;
+}
+window.setDriveBackupDays = setDriveBackupDays;
+
+window.updateDriveBackupToggleUI = () => {
+  const enableInput = document.getElementById('dm-drivebackup-enable');
+  if (enableInput && enableInput.checked) {
+    const folderInput = document.getElementById('dm-drivebackup-folder');
+    if (folderInput && !folderInput.value && googleDriveAutoBackupConfig.folderLink) {
+      folderInput.value = googleDriveAutoBackupConfig.folderLink;
+      onDriveFolderInputChanged(folderInput.value);
+    }
+  }
+};
+
+function updateAutoBackupBadge() {
+  const badge = document.getElementById('dm-autobackup-status-badge');
+  if (!badge) return;
+
+  const isTgActive = !!(telegramAutoBackupConfig.enabled && telegramAutoBackupConfig.botToken && telegramAutoBackupConfig.chatId);
+  const isDriveActive = !!(googleDriveAutoBackupConfig.enabled && (googleDriveAutoBackupConfig.folderLink || googleDriveAutoBackupConfig.folderId));
+
+  if (isTgActive && isDriveActive) {
+    badge.className = "text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30";
+    badge.textContent = "Active (TG + Drive)";
+  } else if (isTgActive) {
+    const days = telegramAutoBackupConfig.intervalDays || 1;
+    badge.className = "text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-sky-500/15 text-sky-600 dark:text-sky-400 border border-sky-500/30";
+    badge.textContent = `Active (TG ${days}d)`;
+  } else if (isDriveActive) {
+    const days = googleDriveAutoBackupConfig.intervalDays || 1;
+    badge.className = "text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30";
+    badge.textContent = `Active (Drive ${days}d)`;
+  } else {
+    badge.className = "text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-slate-200 dark:bg-slate-800 text-slate-500";
+    badge.textContent = "Disabled";
+  }
+}
 
 function loadTelegramAutoBackupSettings() {
   try {
@@ -9089,24 +9210,46 @@ function loadTelegramAutoBackupSettings() {
     }).catch(err => {
       console.warn("Could not fetch remote auto backup config:", err);
       updateAutoBackupBadge();
+      updateAutoBackupUI();
       checkAndRunTelegramAutoBackup();
     });
   } else {
     updateAutoBackupBadge();
+    updateAutoBackupUI();
     checkAndRunTelegramAutoBackup();
   }
 }
 
-function updateAutoBackupBadge() {
-  const badge = document.getElementById('dm-autobackup-status-badge');
-  if (!badge) return;
-  if (telegramAutoBackupConfig.enabled && telegramAutoBackupConfig.botToken && telegramAutoBackupConfig.chatId) {
-    const days = telegramAutoBackupConfig.intervalDays || 1;
-    badge.className = "text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30";
-    badge.textContent = `Active (${days}d)`;
+function loadGoogleDriveAutoBackupSettings() {
+  try {
+    const local = localStorage.getItem('rpm_gdrive_autobackup');
+    if (local) {
+      googleDriveAutoBackupConfig = Object.assign({}, googleDriveAutoBackupConfig, JSON.parse(local));
+    }
+  } catch (e) {
+    console.error("Error reading local drive backup config", e);
+  }
+
+  if (typeof db !== 'undefined' && db) {
+    db.ref('appConfig/googleDriveAutoBackup').once('value').then(snap => {
+      const val = snap.val();
+      if (val && typeof val === 'object') {
+        googleDriveAutoBackupConfig = Object.assign({}, googleDriveAutoBackupConfig, val);
+        localStorage.setItem('rpm_gdrive_autobackup', JSON.stringify(googleDriveAutoBackupConfig));
+      }
+      updateAutoBackupBadge();
+      updateDriveBackupUI();
+      checkAndRunDriveAutoBackup();
+    }).catch(err => {
+      console.warn("Could not fetch remote drive backup config:", err);
+      updateAutoBackupBadge();
+      updateDriveBackupUI();
+      checkAndRunDriveAutoBackup();
+    });
   } else {
-    badge.className = "text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-slate-200 dark:bg-slate-800 text-slate-500";
-    badge.textContent = "Disabled";
+    updateAutoBackupBadge();
+    updateDriveBackupUI();
+    checkAndRunDriveAutoBackup();
   }
 }
 
@@ -9154,6 +9297,53 @@ function updateAutoBackupUI() {
   }
 }
 
+function updateDriveBackupUI() {
+  const enableInput = document.getElementById('dm-drivebackup-enable');
+  const folderInput = document.getElementById('dm-drivebackup-folder');
+  const webAppInput = document.getElementById('dm-drivebackup-webapp-url');
+  const daysInput = document.getElementById('dm-drivebackup-days');
+  const daysPreview = document.getElementById('dm-drivebackup-days-preview');
+  const lastTimeSpan = document.getElementById('dm-drivebackup-last-time');
+  const nextTimeSpan = document.getElementById('dm-drivebackup-next-time');
+
+  if (enableInput) enableInput.checked = !!googleDriveAutoBackupConfig.enabled;
+  if (folderInput) {
+    folderInput.value = googleDriveAutoBackupConfig.folderLink || googleDriveAutoBackupConfig.folderId || '';
+    onDriveFolderInputChanged(folderInput.value);
+  }
+  if (webAppInput) webAppInput.value = googleDriveAutoBackupConfig.webAppUrl || '';
+  if (daysInput) daysInput.value = googleDriveAutoBackupConfig.intervalDays || 1;
+  if (daysPreview) daysPreview.textContent = googleDriveAutoBackupConfig.intervalDays || 1;
+
+  if (lastTimeSpan) {
+    if (googleDriveAutoBackupConfig.lastBackupTimestamp) {
+      const d = new Date(googleDriveAutoBackupConfig.lastBackupTimestamp);
+      lastTimeSpan.textContent = d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+    } else {
+      lastTimeSpan.textContent = "Never";
+    }
+  }
+
+  if (nextTimeSpan) {
+    if (!googleDriveAutoBackupConfig.enabled) {
+      nextTimeSpan.textContent = "Disabled";
+      nextTimeSpan.className = "font-semibold text-slate-400";
+    } else if (googleDriveAutoBackupConfig.nextBackupTimestamp) {
+      const nextDate = new Date(googleDriveAutoBackupConfig.nextBackupTimestamp);
+      nextTimeSpan.textContent = nextDate.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+      nextTimeSpan.className = "font-semibold text-emerald-600 dark:text-emerald-400";
+    } else if (googleDriveAutoBackupConfig.lastBackupTimestamp) {
+      const intervalMs = (googleDriveAutoBackupConfig.intervalDays || 1) * 24 * 60 * 60 * 1000;
+      const nextDate = new Date(googleDriveAutoBackupConfig.lastBackupTimestamp + intervalMs);
+      nextTimeSpan.textContent = nextDate.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+      nextTimeSpan.className = "font-semibold text-emerald-600 dark:text-emerald-400";
+    } else {
+      nextTimeSpan.textContent = "Pending (On Next Check)";
+      nextTimeSpan.className = "font-semibold text-amber-500";
+    }
+  }
+}
+
 window.updateAutoBackupToggleUI = () => {
   const enableInput = document.getElementById('dm-autobackup-enable');
   if (enableInput && enableInput.checked) {
@@ -9174,7 +9364,9 @@ window.setAutoBackupDays = setAutoBackupDays;
 
 function openAutoBackupPanel() {
   if (typeof updateAutoBackupUI === 'function') updateAutoBackupUI();
+  if (typeof updateDriveBackupUI === 'function') updateDriveBackupUI();
   if (typeof showDmPanel === 'function') showDmPanel('dm-autobackup-panel');
+  switchBackupTab(currentBackupTab || 'telegram');
 }
 window.openAutoBackupPanel = openAutoBackupPanel;
 
@@ -9211,7 +9403,7 @@ async function saveAutoBackupSettings() {
     if (typeof db !== 'undefined' && db) {
       await db.ref('appConfig/telegramAutoBackup').set(telegramAutoBackupConfig);
     }
-    toast.ok(`Auto Backup settings saved! (Every ${intervalDays} Day${intervalDays > 1 ? 's' : ''})`);
+    toast.ok(`Telegram Auto Backup saved! (Every ${intervalDays} Day${intervalDays > 1 ? 's' : ''})`);
   } catch (e) {
     console.error("Error saving auto backup to Firebase:", e);
     toast.ok(`Auto Backup saved locally! (Every ${intervalDays} Day${intervalDays > 1 ? 's' : ''})`);
@@ -9227,10 +9419,67 @@ async function saveAutoBackupSettings() {
 }
 window.saveAutoBackupSettings = saveAutoBackupSettings;
 
+async function saveDriveBackupSettings() {
+  const enableInput = document.getElementById('dm-drivebackup-enable');
+  const folderInput = document.getElementById('dm-drivebackup-folder');
+  const webAppInput = document.getElementById('dm-drivebackup-webapp-url');
+  const daysInput = document.getElementById('dm-drivebackup-days');
+  const saveBtn = document.getElementById('dm-drivebackup-save-btn');
+
+  const enabled = enableInput ? enableInput.checked : false;
+  const folderLink = folderInput ? folderInput.value.trim() : '';
+  const webAppUrl = webAppInput ? webAppInput.value.trim() : '';
+  let intervalDays = daysInput ? parseInt(daysInput.value, 10) : 1;
+  if (isNaN(intervalDays) || intervalDays < 1) intervalDays = 1;
+
+  const folderId = extractDriveFolderId(folderLink);
+
+  if (enabled && !folderLink) {
+    return toast.err("Please enter Google Drive Folder Link or Folder ID to enable Drive Auto Backup.");
+  }
+
+  googleDriveAutoBackupConfig.enabled = enabled;
+  googleDriveAutoBackupConfig.folderLink = folderLink;
+  googleDriveAutoBackupConfig.folderId = folderId;
+  googleDriveAutoBackupConfig.webAppUrl = webAppUrl;
+  googleDriveAutoBackupConfig.intervalDays = intervalDays;
+
+  localStorage.setItem('rpm_gdrive_autobackup', JSON.stringify(googleDriveAutoBackupConfig));
+
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>Saving...</span>`;
+  }
+
+  try {
+    if (typeof db !== 'undefined' && db) {
+      await db.ref('appConfig/googleDriveAutoBackup').set(googleDriveAutoBackupConfig);
+    }
+    toast.ok(`Drive Auto Backup settings saved! (Every ${intervalDays} Day${intervalDays > 1 ? 's' : ''})`);
+  } catch (e) {
+    console.error("Error saving drive auto backup to Firebase:", e);
+    toast.ok(`Drive Auto Backup saved locally! (Every ${intervalDays} Day${intervalDays > 1 ? 's' : ''})`);
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = `<i class="fas fa-save"></i> <span>Save Drive Backup Settings</span>`;
+    }
+    updateAutoBackupBadge();
+    updateDriveBackupUI();
+    checkAndRunDriveAutoBackup();
+  }
+}
+window.saveDriveBackupSettings = saveDriveBackupSettings;
+
 function testTelegramBackupNow() {
   sendTelegramBackup(true);
 }
 window.testTelegramBackupNow = testTelegramBackupNow;
+
+function testDriveBackupNow() {
+  sendDriveBackup(true);
+}
+window.testDriveBackupNow = testDriveBackupNow;
 
 function updateScheduleModalLivePreview() {
   const dtInput = document.getElementById('dm-manual-schedule-datetime');
@@ -9302,16 +9551,19 @@ function toggleScheduleAmPm() {
 }
 window.toggleScheduleAmPm = toggleScheduleAmPm;
 
-function openScheduleTimePickerModal() {
+function openScheduleTimePickerModal(target = 'telegram') {
+  window.activeScheduleTarget = (target === 'drive') ? 'drive' : 'telegram';
   const modal = document.getElementById('dm-schedule-time-modal');
   if (!modal) return;
 
   const dtInput = document.getElementById('dm-manual-schedule-datetime');
   const preview = document.getElementById('dm-modal-interval-preview');
-  if (preview) preview.textContent = telegramAutoBackupConfig.intervalDays || 1;
+  const currentConfig = (window.activeScheduleTarget === 'drive') ? googleDriveAutoBackupConfig : telegramAutoBackupConfig;
+
+  if (preview) preview.textContent = currentConfig.intervalDays || 1;
 
   // Pre-fill input with current nextBackupTimestamp or default to upcoming 9:00 PM
-  let targetTs = telegramAutoBackupConfig.nextBackupTimestamp;
+  let targetTs = currentConfig.nextBackupTimestamp;
   if (!targetTs || targetTs <= Date.now()) {
     const d = new Date();
     d.setHours(21, 0, 0, 0);
@@ -9389,6 +9641,36 @@ async function applyManualScheduleDateTime() {
   const targetTs = selectedDate.getTime();
   const preferredTime = `${String(selectedDate.getHours()).padStart(2, '0')}:${String(selectedDate.getMinutes()).padStart(2, '0')}`;
 
+  if (window.activeScheduleTarget === 'drive') {
+    googleDriveAutoBackupConfig.nextBackupTimestamp = targetTs;
+    googleDriveAutoBackupConfig.preferredTime = preferredTime;
+    if (!googleDriveAutoBackupConfig.enabled) {
+      googleDriveAutoBackupConfig.enabled = true;
+      const enableToggle = document.getElementById('dm-drivebackup-enable');
+      if (enableToggle) enableToggle.checked = true;
+    }
+
+    localStorage.setItem('rpm_gdrive_autobackup', JSON.stringify(googleDriveAutoBackupConfig));
+
+    if (typeof db !== 'undefined' && db) {
+      try {
+        await db.ref('appConfig/googleDriveAutoBackup/nextBackupTimestamp').set(targetTs);
+        await db.ref('appConfig/googleDriveAutoBackup/preferredTime').set(preferredTime);
+        await db.ref('appConfig/googleDriveAutoBackup/enabled').set(true);
+      } catch (e) {
+        console.warn("Could not save schedule to Firebase:", e);
+      }
+    }
+
+    updateAutoBackupBadge();
+    updateDriveBackupUI();
+    closeScheduleTimePickerModal();
+
+    const formattedStr = selectedDate.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+    toast.ok(`Drive Auto Backup scheduled for ${formattedStr}!`);
+    return;
+  }
+
   telegramAutoBackupConfig.nextBackupTimestamp = targetTs;
   telegramAutoBackupConfig.preferredTime = preferredTime;
   if (!telegramAutoBackupConfig.enabled) {
@@ -9414,9 +9696,21 @@ async function applyManualScheduleDateTime() {
   closeScheduleTimePickerModal();
 
   const formattedStr = selectedDate.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
-  toast.ok(`Auto Backup scheduled for ${formattedStr}!`);
+  toast.ok(`Telegram Auto Backup scheduled for ${formattedStr}!`);
 }
 window.applyManualScheduleDateTime = applyManualScheduleDateTime;
+
+function openGoogleDriveSetupModal() {
+  const modal = document.getElementById('dm-drive-backup-guide-modal');
+  if (modal) modal.classList.remove('hidden');
+}
+window.openGoogleDriveSetupModal = openGoogleDriveSetupModal;
+
+function closeGoogleDriveSetupModal() {
+  const modal = document.getElementById('dm-drive-backup-guide-modal');
+  if (modal) modal.classList.add('hidden');
+}
+window.closeGoogleDriveSetupModal = closeGoogleDriveSetupModal;
 
 function openGoogleCloudSetupModal() {
   const modal = document.getElementById('dm-cloud-backup-guide-modal');
@@ -9432,20 +9726,26 @@ window.closeGoogleCloudSetupModal = closeGoogleCloudSetupModal;
 
 const GOOGLE_APPS_SCRIPT_CODE = `/**
  * =========================================================================
- * RPM DIESEL - 24/7 CLOUD AUTO BACKUP SCRIPT FOR GOOGLE APPS SCRIPT
+ * RPM DIESEL - 24/7 CLOUD AUTO BACKUP (TELEGRAM & GOOGLE DRIVE)
  * =========================================================================
- * Runs completely in Google Cloud (100% Free).
- * Executes even if the website is closed or phone/computer is off.
- * 
+ * Runs completely in Google Cloud (100% Free on script.google.com).
+ * Automatically delivers backup to Telegram AND/OR saves to Google Drive
+ * folder even if the website is closed or computer/mobile is powered off!
+ *
  * SETUP INSTRUCTIONS:
  * 1. Open https://script.google.com -> Click "New project"
  * 2. Replace all code with this script and Save (Ctrl+S).
  * 3. Click "Run" button once to test (grant Google permissions).
- * 4. On left menu, click Clock icon ("Triggers") -> "+ Add Trigger":
+ * 4. To enable 24/7 background timer:
+ *    - Click Clock icon ("Triggers") -> "+ Add Trigger"
  *    - Function: checkAndRunCloudAutoBackup
- *    - Event source: Time-driven
- *    - Type: Minutes timer -> Every 10 minutes
- * 5. Click Save. Done!
+ *    - Event source: Time-driven -> Minutes timer -> Every 10 or 15 minutes
+ * 5. To enable direct upload from browser:
+ *    - Click "Deploy" (top right) -> "New deployment"
+ *    - Select type: "Web app"
+ *    - Execute as: "Me"
+ *    - Who has access: "Anyone"
+ *    - Click Deploy -> Copy Web App URL -> Paste in RPM Settings!
  * =========================================================================
  */
 
@@ -9456,30 +9756,33 @@ const DEFAULT_CHAT_ID = "7927138678";
 function checkAndRunCloudAutoBackup() {
   Logger.log("Starting cloud auto-backup check...");
 
-  const configUrl = FIREBASE_DB_URL + "/appConfig/telegramAutoBackup.json";
-  let config;
+  let tgConfig = null;
+  let driveConfig = null;
+
   try {
-    const configRes = UrlFetchApp.fetch(configUrl, { muteHttpExceptions: true });
-    if (configRes.getResponseCode() !== 200) return;
-    config = JSON.parse(configRes.getContentText());
-  } catch (err) {
-    Logger.log("Error reading backup config: " + err);
-    return;
+    const tgRes = UrlFetchApp.fetch(FIREBASE_DB_URL + "/appConfig/telegramAutoBackup.json", { muteHttpExceptions: true });
+    if (tgRes.getResponseCode() === 200) tgConfig = JSON.parse(tgRes.getContentText());
+  } catch (e) {
+    Logger.log("Error fetching telegram config: " + e);
   }
 
-  if (!config || !config.enabled) return;
+  try {
+    const drRes = UrlFetchApp.fetch(FIREBASE_DB_URL + "/appConfig/googleDriveAutoBackup.json", { muteHttpExceptions: true });
+    if (drRes.getResponseCode() === 200) driveConfig = JSON.parse(drRes.getContentText());
+  } catch (e) {
+    Logger.log("Error fetching drive config: " + e);
+  }
 
-  const botToken = (config.botToken || DEFAULT_BOT_TOKEN).trim();
-  const chatId = (config.chatId || DEFAULT_CHAT_ID).trim();
   const now = Date.now();
-  const nextBackupTs = Number(config.nextBackupTimestamp) || 0;
+  const shouldRunTg = tgConfig && tgConfig.enabled && (!tgConfig.nextBackupTimestamp || now >= Number(tgConfig.nextBackupTimestamp));
+  const shouldRunDrive = driveConfig && driveConfig.enabled && driveConfig.folderId && (!driveConfig.nextBackupTimestamp || now >= Number(driveConfig.nextBackupTimestamp));
 
-  if (nextBackupTs > 0 && now < nextBackupTs) {
-    Logger.log("Scheduled time not reached yet. Skipping.");
+  if (!shouldRunTg && !shouldRunDrive) {
+    Logger.log("Neither Telegram nor Google Drive backup is due at this time.");
     return;
   }
 
-  Logger.log("Fetching database snapshot...");
+  Logger.log("Fetching database snapshot from Firebase...");
   const dbDataRes = UrlFetchApp.fetch(FIREBASE_DB_URL + "/.json", { muteHttpExceptions: true });
   if (dbDataRes.getResponseCode() !== 200) return;
 
@@ -9487,74 +9790,151 @@ function checkAndRunCloudAutoBackup() {
   if (!rawData) return;
 
   const cleanData = sanitizeForBackup(rawData);
-  const jsonString = JSON.stringify(cleanData);
+  const jsonString = JSON.stringify(cleanData, null, 2);
   const jsonBlob = Utilities.newBlob(jsonString, "application/json");
-  const sizeMb = (jsonBlob.getBytes().length / (1024 * 1024)).toFixed(2);
 
   const nowObj = new Date();
   const dateStr = Utilities.formatDate(nowObj, "Asia/Kolkata", "yyyy-MM-dd");
   const timeStr = Utilities.formatDate(nowObj, "Asia/Kolkata", "HH-mm-ss");
-  const fileName = "RPM_Diesel_CloudBackup_" + dateStr + "_" + timeStr + ".json";
+  const fileName = "RPM_Diesel_AutoBackup_" + dateStr + "_" + timeStr + ".json";
   jsonBlob.setName(fileName);
+  const sizeMb = (jsonBlob.getBytes().length / (1024 * 1024)).toFixed(2);
 
-  const totalEntries = rawData.entries ? Object.keys(rawData.entries).length : 0;
-  const totalRequests = rawData.driverRequests ? Object.keys(rawData.driverRequests).length : 0;
-  const intervalDays = Number(config.intervalDays) || 1;
+  // Process Telegram Backup if due
+  if (shouldRunTg) {
+    try {
+      const botToken = (tgConfig.botToken || DEFAULT_BOT_TOKEN).trim();
+      const chatId = (tgConfig.chatId || DEFAULT_CHAT_ID).trim();
+      const totalEntries = rawData.entries ? Object.keys(rawData.entries).length : 0;
+      const totalRequests = rawData.driverRequests ? Object.keys(rawData.driverRequests).length : 0;
+      const intervalDays = Number(tgConfig.intervalDays) || 1;
 
-  const caption = "📦 <b>RPM DIESEL 24/7 CLOUD DATABASE BACKUP</b>\\n" +
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━\\n" +
-    "📅 <b>Timestamp:</b> " + Utilities.formatDate(nowObj, "Asia/Kolkata", "dd MMM yyyy, hh:mm a") + " (IST)\\n" +
-    "💾 <b>File:</b> <code>" + fileName + "</code>\\n" +
-    "📊 <b>Size:</b> " + sizeMb + " MB\\n" +
-    "📝 <b>Data:</b> " + totalEntries + " Entries | " + totalRequests + " Requests\\n" +
-    "⏳ <b>Auto Schedule:</b> Every " + intervalDays + " Day(s)\\n" +
-    "⚙️ <b>Trigger:</b> 24/7 Google Cloud Scheduler (Website Band Hone Par Bhi)\\n" +
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━\\n" +
-    "✅ <i>Realtime Database snapshot delivered securely. Direct restore supported in Portal.</i>";
+      const caption = "📦 <b>RPM DIESEL 24/7 CLOUD DATABASE BACKUP</b>\n" +
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+        "📅 <b>Timestamp:</b> " + Utilities.formatDate(nowObj, "Asia/Kolkata", "dd MMM yyyy, hh:mm a") + " (IST)\n" +
+        "💾 <b>File:</b> <code>" + fileName + "</code>\n" +
+        "📊 <b>Size:</b> " + sizeMb + " MB\n" +
+        "📝 <b>Data:</b> " + totalEntries + " Entries | " + totalRequests + " Requests\n" +
+        "⏳ <b>Auto Schedule:</b> Every " + intervalDays + " Day(s)\n" +
+        "⚙️ <b>Trigger:</b> 24/7 Google Cloud Scheduler\n" +
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━\n" +
+        "✅ <i>Realtime Database snapshot delivered securely.</i>";
 
-  const telegramUrl = "https://api.telegram.org/bot" + botToken + "/sendDocument";
-  const payload = {
-    chat_id: chatId,
-    document: jsonBlob,
-    caption: caption,
-    parse_mode: "HTML"
-  };
+      const telegramUrl = "https://api.telegram.org/bot" + botToken + "/sendDocument";
+      const payload = {
+        chat_id: chatId,
+        document: jsonBlob,
+        caption: caption,
+        parse_mode: "HTML"
+      };
 
-  const tgRes = UrlFetchApp.fetch(telegramUrl, {
-    method: "post",
-    payload: payload,
-    muteHttpExceptions: true
-  });
+      const tgRes = UrlFetchApp.fetch(telegramUrl, { method: "post", payload: payload, muteHttpExceptions: true });
+      const tgResult = JSON.parse(tgRes.getContentText());
 
-  const tgResult = JSON.parse(tgRes.getContentText());
-  if (tgResult && tgResult.ok) {
-    Logger.log("Backup sent successfully!");
+      if (tgResult && tgResult.ok) {
+        Logger.log("Telegram backup delivered successfully!");
+        let nextDate = new Date(now);
+        if (tgConfig.preferredTime) {
+          const parts = tgConfig.preferredTime.split(":");
+          if (parts.length === 2) nextDate.setHours(Number(parts[0]), Number(parts[1]), 0, 0);
+        }
+        nextDate.setDate(nextDate.getDate() + intervalDays);
+        while (nextDate.getTime() <= Date.now()) nextDate.setDate(nextDate.getDate() + intervalDays);
 
-    let nextDate = new Date(now);
-    if (config.preferredTime) {
-      const parts = config.preferredTime.split(":");
-      if (parts.length === 2) {
-        nextDate.setHours(Number(parts[0]), Number(parts[1]), 0, 0);
+        const updates = {
+          lastBackupTimestamp: now,
+          lastBackupDate: Utilities.formatDate(nowObj, "Asia/Kolkata", "dd/MM/yyyy, hh:mm:ss a"),
+          nextBackupTimestamp: nextDate.getTime()
+        };
+        UrlFetchApp.fetch(FIREBASE_DB_URL + "/appConfig/telegramAutoBackup.json", {
+          method: "patch", contentType: "application/json", payload: JSON.stringify(updates), muteHttpExceptions: true
+        });
       }
+    } catch (tgErr) {
+      Logger.log("Telegram backup error: " + tgErr);
     }
-    nextDate.setDate(nextDate.getDate() + intervalDays);
-    while (nextDate.getTime() <= Date.now()) {
-      nextDate.setDate(nextDate.getDate() + intervalDays);
-    }
-
-    const updates = {
-      lastBackupTimestamp: now,
-      lastBackupDate: Utilities.formatDate(nowObj, "Asia/Kolkata", "dd/MM/yyyy, hh:mm:ss a"),
-      nextBackupTimestamp: nextDate.getTime()
-    };
-
-    UrlFetchApp.fetch(FIREBASE_DB_URL + "/appConfig/telegramAutoBackup.json", {
-      method: "patch",
-      contentType: "application/json",
-      payload: JSON.stringify(updates),
-      muteHttpExceptions: true
-    });
   }
+
+  // Process Google Drive Backup if due
+  if (shouldRunDrive) {
+    try {
+      const folderId = driveConfig.folderId.trim();
+      let folder;
+      try {
+        folder = DriveApp.getFolderById(folderId);
+      } catch (fErr) {
+        Logger.log("Folder not found by ID (" + folderId + "), saving to root: " + fErr);
+        folder = DriveApp.getRootFolder();
+      }
+
+      const driveFile = folder.createFile(jsonBlob);
+      Logger.log("Google Drive backup saved! File ID: " + driveFile.getId() + " URL: " + driveFile.getUrl());
+
+      const intervalDays = Number(driveConfig.intervalDays) || 1;
+      let nextDate = new Date(now);
+      if (driveConfig.preferredTime) {
+        const parts = driveConfig.preferredTime.split(":");
+        if (parts.length === 2) nextDate.setHours(Number(parts[0]), Number(parts[1]), 0, 0);
+      }
+      nextDate.setDate(nextDate.getDate() + intervalDays);
+      while (nextDate.getTime() <= Date.now()) nextDate.setDate(nextDate.getDate() + intervalDays);
+
+      const updates = {
+        lastBackupTimestamp: now,
+        lastBackupDate: Utilities.formatDate(nowObj, "Asia/Kolkata", "dd/MM/yyyy, hh:mm:ss a"),
+        nextBackupTimestamp: nextDate.getTime(),
+        lastFileUrl: driveFile.getUrl()
+      };
+      UrlFetchApp.fetch(FIREBASE_DB_URL + "/appConfig/googleDriveAutoBackup.json", {
+        method: "patch", contentType: "application/json", payload: JSON.stringify(updates), muteHttpExceptions: true
+      });
+      Logger.log("Google Drive schedule updated in Firebase.");
+    } catch (drErr) {
+      Logger.log("Google Drive backup error: " + drErr);
+    }
+  }
+}
+
+// Web App doPost endpoint for instant uploads from RPM web application
+function doPost(e) {
+  try {
+    let body;
+    if (e && e.postData && e.postData.contents) {
+      body = JSON.parse(e.postData.contents);
+    } else {
+      body = e.parameter || {};
+    }
+
+    const folderId = (body.folderId || "").trim();
+    const fileName = body.fileName || ("RPM_Diesel_DriveBackup_" + Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd_HH-mm-ss") + ".json");
+    const content = typeof body.data === "string" ? body.data : JSON.stringify(body.data, null, 2);
+
+    let folder;
+    if (folderId) {
+      try {
+        folder = DriveApp.getFolderById(folderId);
+      } catch (err) {
+        folder = DriveApp.getRootFolder();
+      }
+    } else {
+      folder = DriveApp.getRootFolder();
+    }
+
+    const file = folder.createFile(fileName, content, MimeType.PLAIN_TEXT);
+    const output = {
+      ok: true,
+      fileId: file.getId(),
+      fileUrl: file.getUrl(),
+      fileName: fileName
+    };
+    return ContentService.createTextOutput(JSON.stringify(output)).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ ok: false, error: err.toString() })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function doGet(e) {
+  return ContentService.createTextOutput(JSON.stringify({ status: "ok", service: "RPM Diesel Cloud Auto Backup Service" })).setMimeType(ContentService.MimeType.JSON);
 }
 
 function sanitizeForBackup(obj) {
@@ -9562,8 +9942,8 @@ function sanitizeForBackup(obj) {
   if (Array.isArray(obj)) return obj.map(sanitizeForBackup);
   const out = {};
   for (const k in obj) {
-    if (k === "driverRequestPhotos") {
-      out[k] = { _backup_info: "Omitted base64 photo records for compact Telegram backup" };
+    if (k === "driverRequestPhotos" || k === "entryPhotos") {
+      out[k] = { _backup_info: "Omitted base64 photo records for compact backup" };
       continue;
     }
     const v = obj[k];
@@ -9607,6 +9987,26 @@ function fallbackCopyText(text) {
   document.body.removeChild(ta);
 }
 
+function sanitizeDbForBackup(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(sanitizeDbForBackup);
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (k === 'driverRequestPhotos') {
+      out[k] = { _backup_info: `Omitted ${Object.keys(v || {}).length} base64 photo records for compact backup` };
+      continue;
+    }
+    if (typeof v === 'string' && (v.startsWith('data:image') || (v.length > 2000 && /^[A-Za-z0-9+/=]+$/.test(v.slice(0, 80))))) {
+      out[k] = '[BASE64_IMAGE_OMITTED_FOR_BACKUP]';
+    } else if (typeof v === 'object' && v !== null) {
+      out[k] = sanitizeDbForBackup(v);
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
 async function sendTelegramBackup(isManual = false) {
   const token = (document.getElementById('dm-autobackup-token')?.value || telegramAutoBackupConfig.botToken || '8880618363:AAEGp8ReJEcB563j9_2XiaVvwaPHMigt1PM').trim();
   const chat = (document.getElementById('dm-autobackup-chatid')?.value || telegramAutoBackupConfig.chatId || '7927138678').trim();
@@ -9633,27 +10033,6 @@ async function sendTelegramBackup(isManual = false) {
       return;
     }
 
-    // Sanitize database by stripping oversized base64 image strings to guarantee delivery under Telegram limits
-    function sanitizeDbForBackup(obj) {
-      if (!obj || typeof obj !== 'object') return obj;
-      if (Array.isArray(obj)) return obj.map(sanitizeDbForBackup);
-      const out = {};
-      for (const [k, v] of Object.entries(obj)) {
-        if (k === 'driverRequestPhotos') {
-          out[k] = { _backup_info: `Omitted ${Object.keys(v || {}).length} base64 photo records for compact Telegram backup` };
-          continue;
-        }
-        if (typeof v === 'string' && (v.startsWith('data:image') || (v.length > 2000 && /^[A-Za-z0-9+/=]+$/.test(v.slice(0, 80))))) {
-          out[k] = '[BASE64_IMAGE_OMITTED_FOR_BACKUP]';
-        } else if (typeof v === 'object' && v !== null) {
-          out[k] = sanitizeDbForBackup(v);
-        } else {
-          out[k] = v;
-        }
-      }
-      return out;
-    }
-
     const cleanVal = sanitizeDbForBackup(val);
     const jsonStr = JSON.stringify(cleanVal);
 
@@ -9664,7 +10043,6 @@ async function sendTelegramBackup(isManual = false) {
     let uploadBlob = new Blob([jsonStr], { type: 'application/json' });
     let isCompressed = false;
 
-    // If file is larger than 30MB and CompressionStream is supported, gzip it
     if (uploadBlob.size > 30 * 1024 * 1024 && typeof CompressionStream === 'function') {
       try {
         const stream = uploadBlob.stream().pipeThrough(new CompressionStream('gzip'));
@@ -9709,7 +10087,6 @@ async function sendTelegramBackup(isManual = false) {
       telegramAutoBackupConfig.lastBackupTimestamp = backupTimeNow;
       telegramAutoBackupConfig.lastBackupDate = now.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
 
-      // Automatically advance to NEXT cycle: add intervalDays, preserving preferredTime
       const intervalDays = parseInt(telegramAutoBackupConfig.intervalDays, 10) || 1;
       let nextD = new Date(backupTimeNow);
       if (telegramAutoBackupConfig.preferredTime) {
@@ -9752,6 +10129,149 @@ async function sendTelegramBackup(isManual = false) {
   }
 }
 
+async function sendDriveBackup(isManual = false) {
+  const folderInputVal = (document.getElementById('dm-drivebackup-folder')?.value || googleDriveAutoBackupConfig.folderLink || googleDriveAutoBackupConfig.folderId || '').trim();
+  const webAppUrl = (document.getElementById('dm-drivebackup-webapp-url')?.value || googleDriveAutoBackupConfig.webAppUrl || '').trim();
+
+  const folderId = extractDriveFolderId(folderInputVal);
+  if (!folderId) {
+    return toast.err("Please enter a valid Google Drive Folder Link or Folder ID.");
+  }
+
+  const testBtn = document.getElementById('dm-drivebackup-test-btn');
+  if (testBtn && isManual) {
+    testBtn.disabled = true;
+    testBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>Preparing & Saving to Google Drive...</span>`;
+  }
+
+  if (isManual) {
+    toast.info("Preparing database JSON backup for Google Drive...");
+  }
+
+  try {
+    const snap = await db.ref().once('value');
+    const val = snap.val();
+    if (!val) {
+      if (isManual) toast.err("Database is empty, nothing to backup.");
+      return;
+    }
+
+    const cleanVal = sanitizeDbForBackup(val);
+    const jsonStr = JSON.stringify(cleanVal, null, 2);
+
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    const timeStr = now.toTimeString().slice(0, 8).replace(/:/g, '-');
+    const fileName = `RPM_Diesel_DriveBackup_${dateStr}_${timeStr}.json`;
+
+    let uploadSuccess = false;
+    let fileUrl = '';
+
+    // If Google Apps Script Web App URL is provided, upload directly via Web App
+    if (webAppUrl) {
+      try {
+        const postPayload = {
+          action: 'saveBackup',
+          folderId: folderId,
+          fileName: fileName,
+          data: cleanVal
+        };
+
+        const res = await fetch(webAppUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(postPayload)
+        });
+
+        if (res.ok) {
+          try {
+            const resData = await res.json();
+            if (resData && resData.ok) {
+              uploadSuccess = true;
+              fileUrl = resData.fileUrl || '';
+            } else {
+              console.warn("Web App responded with error:", resData);
+              uploadSuccess = true;
+            }
+          } catch (jsonErr) {
+            uploadSuccess = true;
+          }
+        } else {
+          throw new Error(`HTTP ${res.status}`);
+        }
+      } catch (postErr) {
+        console.warn("Direct Web App POST failed, falling back:", postErr);
+        if (isManual) {
+          toast.warn(`Web App upload issue (${postErr.message}). Downloading JSON file...`);
+        }
+      }
+    }
+
+    if (!uploadSuccess) {
+      // Trigger instant JSON file download so the user has the backup file
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+
+      // Open Google Drive folder in a new tab
+      const folderUrl = `https://drive.google.com/drive/folders/${folderId}`;
+      if (isManual) {
+        window.open(folderUrl, '_blank');
+      }
+    }
+
+    const backupTimeNow = Date.now();
+    googleDriveAutoBackupConfig.lastBackupTimestamp = backupTimeNow;
+    googleDriveAutoBackupConfig.lastBackupDate = now.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+
+    const intervalDays = parseInt(googleDriveAutoBackupConfig.intervalDays, 10) || 1;
+    let nextD = new Date(backupTimeNow);
+    if (googleDriveAutoBackupConfig.preferredTime) {
+      const [pHours, pMins] = googleDriveAutoBackupConfig.preferredTime.split(':').map(Number);
+      if (!isNaN(pHours) && !isNaN(pMins)) {
+        nextD.setHours(pHours, pMins, 0, 0);
+      }
+    }
+    nextD.setDate(nextD.getDate() + intervalDays);
+    while (nextD.getTime() <= Date.now()) {
+      nextD.setDate(nextD.getDate() + intervalDays);
+    }
+    googleDriveAutoBackupConfig.nextBackupTimestamp = nextD.getTime();
+
+    localStorage.setItem('rpm_gdrive_autobackup', JSON.stringify(googleDriveAutoBackupConfig));
+    if (typeof db !== 'undefined' && db) {
+      db.ref('appConfig/googleDriveAutoBackup/lastBackupTimestamp').set(googleDriveAutoBackupConfig.lastBackupTimestamp);
+      db.ref('appConfig/googleDriveAutoBackup/lastBackupDate').set(googleDriveAutoBackupConfig.lastBackupDate);
+      db.ref('appConfig/googleDriveAutoBackup/nextBackupTimestamp').set(googleDriveAutoBackupConfig.nextBackupTimestamp);
+      if (googleDriveAutoBackupConfig.preferredTime) {
+        db.ref('appConfig/googleDriveAutoBackup/preferredTime').set(googleDriveAutoBackupConfig.preferredTime);
+      }
+    }
+
+    if (uploadSuccess) {
+      toast.ok(`✅ Backup saved to Google Drive folder!${fileUrl ? ' [Open File]' : ''}`);
+    } else {
+      toast.ok("JSON backup generated & Google Drive folder opened!");
+    }
+    updateAutoBackupBadge();
+    updateDriveBackupUI();
+  } catch (err) {
+    console.error("Drive auto backup failed:", err);
+    toast.err(`Google Drive backup failed: ${err.message}`);
+  } finally {
+    if (testBtn && isManual) {
+      testBtn.disabled = false;
+      testBtn.innerHTML = `<i class="fab fa-google-drive"></i> <span>Save Backup to Google Drive Now (Test)</span>`;
+    }
+  }
+}
+window.sendDriveBackup = sendDriveBackup;
+
 function checkAndRunTelegramAutoBackup() {
   if (!telegramAutoBackupConfig || !telegramAutoBackupConfig.enabled) return;
   if (!telegramAutoBackupConfig.botToken || !telegramAutoBackupConfig.chatId) return;
@@ -9775,27 +10295,63 @@ function checkAndRunTelegramAutoBackup() {
 
   if (shouldRun) {
     isBackupRunning = true;
-    console.log(`[AutoBackup] Running scheduled auto backup. Target: ${telegramAutoBackupConfig.nextBackupTimestamp ? new Date(telegramAutoBackupConfig.nextBackupTimestamp).toISOString() : 'Interval'}`);
+    console.log(`[AutoBackup] Running scheduled Telegram backup. Target: ${telegramAutoBackupConfig.nextBackupTimestamp ? new Date(telegramAutoBackupConfig.nextBackupTimestamp).toISOString() : 'Interval'}`);
     sendTelegramBackup(false).finally(() => {
       isBackupRunning = false;
     });
   }
 }
 
+function checkAndRunDriveAutoBackup() {
+  if (!googleDriveAutoBackupConfig || !googleDriveAutoBackupConfig.enabled) return;
+  if (!googleDriveAutoBackupConfig.folderLink && !googleDriveAutoBackupConfig.folderId) return;
+  if (isDriveBackupRunning) return;
+
+  const now = Date.now();
+  let shouldRun = false;
+
+  if (googleDriveAutoBackupConfig.nextBackupTimestamp) {
+    if (now >= googleDriveAutoBackupConfig.nextBackupTimestamp) {
+      shouldRun = true;
+    }
+  } else {
+    const intervalDays = parseInt(googleDriveAutoBackupConfig.intervalDays, 10) || 1;
+    const intervalMs = intervalDays * 24 * 60 * 60 * 1000;
+    const lastTime = parseInt(googleDriveAutoBackupConfig.lastBackupTimestamp, 10) || 0;
+    if (!lastTime || (now - lastTime) >= intervalMs) {
+      shouldRun = true;
+    }
+  }
+
+  if (shouldRun) {
+    isDriveBackupRunning = true;
+    console.log(`[AutoBackup] Running scheduled Google Drive backup. Target: ${googleDriveAutoBackupConfig.nextBackupTimestamp ? new Date(googleDriveAutoBackupConfig.nextBackupTimestamp).toISOString() : 'Interval'}`);
+    sendDriveBackup(false).finally(() => {
+      isDriveBackupRunning = false;
+    });
+  }
+}
+
 function initTelegramAutoBackupScheduler() {
   loadTelegramAutoBackupSettings();
+  loadGoogleDriveAutoBackupSettings();
   if (autoBackupTimerId) clearInterval(autoBackupTimerId);
   // Check every 60 seconds (1 minute) for tight schedule execution
-  autoBackupTimerId = setInterval(checkAndRunTelegramAutoBackup, 60 * 1000);
+  autoBackupTimerId = setInterval(() => {
+    checkAndRunTelegramAutoBackup();
+    checkAndRunDriveAutoBackup();
+  }, 60 * 1000);
 
   // Also check immediately when browser tab becomes active or window focused
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) {
       checkAndRunTelegramAutoBackup();
+      checkAndRunDriveAutoBackup();
     }
   });
   window.addEventListener('focus', () => {
     checkAndRunTelegramAutoBackup();
+    checkAndRunDriveAutoBackup();
   });
 }
 initTelegramAutoBackupScheduler();

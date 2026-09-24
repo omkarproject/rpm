@@ -2058,15 +2058,15 @@
                 <!-- AUTO BACKUP Card -->
                 <div onclick="openAutoBackupPanel()" class="bg-slate-50/40 dark:bg-slate-950/20 border border-slate-200/30 dark:border-slate-800/20 rounded-2xl p-4 flex items-center justify-between cursor-pointer transition-all hover:scale-[1.01] hover:bg-slate-100/60 dark:hover:bg-slate-900/40">
                   <div class="flex items-center gap-3">
-                    <div class="w-11 h-11 rounded-xl bg-sky-500 flex items-center justify-center text-white text-lg">
-                      <i class="fab fa-telegram-plane"></i>
+                    <div class="w-11 h-11 rounded-xl bg-gradient-to-tr from-sky-500 via-blue-600 to-emerald-500 flex items-center justify-center text-white text-lg shadow-md shadow-sky-500/20">
+                      <i class="fas fa-cloud-upload-alt"></i>
                     </div>
                     <div>
                       <div class="flex items-center gap-2">
                         <h4 class="font-extrabold text-xs text-slate-800 dark:text-white">AUTO BACKUP</h4>
                         <span id="dm-autobackup-status-badge" class="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-slate-200 dark:bg-slate-800 text-slate-500">Disabled</span>
                       </div>
-                      <p class="text-[10px] text-slate-400 mt-0.5">Automated JSON database backup to Telegram Bot</p>
+                      <p class="text-[10px] text-slate-400 mt-0.5">Automated JSON database backup to Telegram & Google Drive</p>
                     </div>
                   </div>
                   <i class="fas fa-chevron-right text-sky-500 text-sm"></i>
@@ -2196,125 +2196,273 @@
               </div>
             </div>
 
-            <!-- Panel 5: Telegram Auto Backup Setup (dm-autobackup-panel) -->
-            <div id="dm-autobackup-panel" class="space-y-4 hidden max-h-[75vh] overflow-y-auto">
-              <div class="text-center pt-5 pb-1">
-                <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-sky-500 to-blue-600 text-white text-xl flex items-center justify-center mx-auto shadow-lg shadow-sky-500/30 mb-2">
-                  <i class="fab fa-telegram-plane"></i>
+            <!-- Panel 5: Cloud Auto Backup Setup (dm-autobackup-panel) -->
+            <div id="dm-autobackup-panel" class="space-y-3 hidden max-h-[78vh] overflow-y-auto">
+              <!-- Top Tab Switcher: Telegram vs Google Drive -->
+              <div class="px-5 pt-3">
+                <div class="flex items-center p-1 bg-slate-100 dark:bg-slate-900/90 rounded-2xl border border-slate-200/70 dark:border-slate-800/70 shadow-inner">
+                  <button id="dm-tab-btn-telegram" onclick="switchBackupTab('telegram')" type="button" class="flex-1 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all bg-white dark:bg-slate-800 text-sky-500 shadow-sm border border-slate-200/50 dark:border-slate-700/50">
+                    <i class="fab fa-telegram-plane text-sm"></i> <span>Telegram Backup</span>
+                  </button>
+                  <button id="dm-tab-btn-drive" onclick="switchBackupTab('drive')" type="button" class="flex-1 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all text-slate-500 dark:text-slate-400 hover:text-emerald-500">
+                    <i class="fab fa-google-drive text-sm"></i> <span>Drive Backup</span>
+                  </button>
                 </div>
-                <h4 class="font-extrabold text-sm text-slate-800 dark:text-white">Telegram Cloud Auto Backup</h4>
-                <p class="text-[10px] text-slate-400">Automatically send full database JSON backup to your Telegram Bot</p>
               </div>
 
-              <div class="px-5 space-y-3.5 text-left">
-                <!-- Master Toggle Switch -->
-                <div class="p-3.5 rounded-2xl border border-sky-500/20 bg-sky-500/5 flex items-center justify-between">
+              <!-- TAB 1: TELEGRAM BACKUP CONTENT -->
+              <div id="dm-tab-content-telegram" class="space-y-4">
+                <div class="text-center pt-2 pb-1">
+                  <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-sky-500 to-blue-600 text-white text-xl flex items-center justify-center mx-auto shadow-lg shadow-sky-500/30 mb-2">
+                    <i class="fab fa-telegram-plane"></i>
+                  </div>
+                  <h4 class="font-extrabold text-sm text-slate-800 dark:text-white">Telegram Cloud Auto Backup</h4>
+                  <p class="text-[10px] text-slate-400">Automatically send full database JSON backup to your Telegram Bot</p>
+                </div>
+
+                <div class="px-5 space-y-3.5 text-left">
+                  <!-- Master Toggle Switch -->
+                  <div class="p-3.5 rounded-2xl border border-sky-500/20 bg-sky-500/5 flex items-center justify-between">
+                    <div>
+                      <h5 class="text-xs font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
+                        <i class="fas fa-power-off text-sky-500"></i> Auto Backup System
+                      </h5>
+                      <p class="text-[10px] text-slate-400">Enable automatic scheduled JSON backup to Telegram</p>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" id="dm-autobackup-enable" class="sr-only peer" onchange="updateAutoBackupToggleUI()">
+                      <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sky-500"></div>
+                    </label>
+                  </div>
+
+                  <!-- Telegram Bot Token (Bot Key) -->
                   <div>
-                    <h5 class="text-xs font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
-                      <i class="fas fa-power-off text-sky-500"></i> Auto Backup System
-                    </h5>
-                    <p class="text-[10px] text-slate-400">Enable automatic scheduled JSON backup to Telegram</p>
+                    <label class="calc-label text-[10px]" for="dm-autobackup-token">🤖 TELEGRAM BOT KEY / TOKEN</label>
+                    <input type="text" id="dm-autobackup-token" class="calc-input font-mono text-[11px] py-2" placeholder="e.g. 8880618363:AAEGp8ReJEcB563j9_2XiaVvwaPHMigt1PM">
+                    <p class="text-[9px] text-slate-400 mt-1">Get bot token from <a href="https://t.me/BotFather" target="_blank" class="text-sky-500 underline font-bold">@BotFather</a></p>
                   </div>
-                  <label class="relative inline-flex items-center cursor-pointer">
-                    <input type="checkbox" id="dm-autobackup-enable" class="sr-only peer" onchange="updateAutoBackupToggleUI()">
-                    <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sky-500"></div>
-                  </label>
-                </div>
 
-                <!-- Telegram Bot Token (Bot Key) -->
-                <div>
-                  <label class="calc-label text-[10px]" for="dm-autobackup-token">🤖 TELEGRAM BOT KEY / TOKEN</label>
-                  <input type="text" id="dm-autobackup-token" class="calc-input font-mono text-[11px] py-2" placeholder="e.g. 8880618363:AAEGp8ReJEcB563j9_2XiaVvwaPHMigt1PM">
-                  <p class="text-[9px] text-slate-400 mt-1">Get bot token from <a href="https://t.me/BotFather" target="_blank" class="text-sky-500 underline font-bold">@BotFather</a></p>
-                </div>
-
-                <!-- Telegram Chat ID -->
-                <div>
-                  <label class="calc-label text-[10px]" for="dm-autobackup-chatid">💬 TELEGRAM CHAT ID</label>
-                  <input type="text" id="dm-autobackup-chatid" class="calc-input font-mono text-[11px] py-2" placeholder="e.g. 7927138678 or -100xxxxxxx">
-                  <p class="text-[9px] text-slate-400 mt-1">Personal Telegram chat ID or Group/Channel ID</p>
-                </div>
-
-                <!-- Days Interval Input & Preset Chips -->
-                <div>
-                  <label class="calc-label text-[10px]" for="dm-autobackup-days">⏳ BACKUP INTERVAL (IN DAYS)</label>
-                  <div class="flex items-center gap-2">
-                    <input type="number" id="dm-autobackup-days" min="1" max="365" class="calc-input font-bold text-center text-sm py-2 w-28" placeholder="1" value="1" oninput="document.getElementById('dm-autobackup-days-preview').textContent = this.value || '1'">
-                    <span class="text-xs font-extrabold text-slate-600 dark:text-slate-300">Day(s)</span>
+                  <!-- Telegram Chat ID -->
+                  <div>
+                    <label class="calc-label text-[10px]" for="dm-autobackup-chatid">💬 TELEGRAM CHAT ID</label>
+                    <input type="text" id="dm-autobackup-chatid" class="calc-input font-mono text-[11px] py-2" placeholder="e.g. 7927138678 or -100xxxxxxx">
+                    <p class="text-[9px] text-slate-400 mt-1">Personal Telegram chat ID or Group/Channel ID</p>
                   </div>
-                  <!-- Quick Preset Chips -->
-                  <div class="flex flex-wrap gap-1.5 mt-2">
-                    <button type="button" onclick="setAutoBackupDays(1)" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all">Every Day (1)</button>
-                    <button type="button" onclick="setAutoBackupDays(2)" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all">2 Days</button>
-                    <button type="button" onclick="setAutoBackupDays(5)" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all">5 Days</button>
-                    <button type="button" onclick="setAutoBackupDays(7)" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all">7 Days (Weekly)</button>
-                    <button type="button" onclick="setAutoBackupDays(30)" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all">30 Days (Monthly)</button>
-                    <button type="button" onclick="setAutoBackupDays(100)" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all">100 Days</button>
-                  </div>
-                  <p class="text-[9px] text-slate-400 mt-1.5">Har <span id="dm-autobackup-days-preview" class="font-bold text-sky-500">1</span> din me auto backup JSON file Telegram Bot par deliver ho jayegi.</p>
-                </div>
 
-                <!-- Status & Timing Card -->
-                <div class="p-3.5 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-slate-50/50 dark:bg-slate-900/30 space-y-1.5 text-[11px]">
-                  <div class="flex items-center justify-between text-slate-600 dark:text-slate-300">
-                    <span class="font-bold flex items-center gap-1.5"><i class="fas fa-history text-slate-400"></i> Last Auto Backup:</span>
-                    <span id="dm-autobackup-last-time" class="font-semibold text-slate-700 dark:text-slate-200">Never</span>
+                  <!-- Days Interval Input & Preset Chips -->
+                  <div>
+                    <label class="calc-label text-[10px]" for="dm-autobackup-days">⏳ BACKUP INTERVAL (IN DAYS)</label>
+                    <div class="flex items-center gap-2">
+                      <input type="number" id="dm-autobackup-days" min="1" max="365" class="calc-input font-bold text-center text-sm py-2 w-28" placeholder="1" value="1" oninput="document.getElementById('dm-autobackup-days-preview').textContent = this.value || '1'">
+                      <span class="text-xs font-extrabold text-slate-600 dark:text-slate-300">Day(s)</span>
+                    </div>
+                    <!-- Quick Preset Chips -->
+                    <div class="flex flex-wrap gap-1.5 mt-2">
+                      <button type="button" onclick="setAutoBackupDays(1)" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all">Every Day (1)</button>
+                      <button type="button" onclick="setAutoBackupDays(2)" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all">2 Days</button>
+                      <button type="button" onclick="setAutoBackupDays(5)" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all">5 Days</button>
+                      <button type="button" onclick="setAutoBackupDays(7)" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all">7 Days (Weekly)</button>
+                      <button type="button" onclick="setAutoBackupDays(30)" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all">30 Days (Monthly)</button>
+                      <button type="button" onclick="setAutoBackupDays(100)" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all">100 Days</button>
+                    </div>
+                    <p class="text-[9px] text-slate-400 mt-1.5">Har <span id="dm-autobackup-days-preview" class="font-bold text-sky-500">1</span> din me auto backup JSON file Telegram Bot par deliver ho jayegi.</p>
                   </div>
-                  <div class="flex items-center justify-between text-slate-600 dark:text-slate-300">
-                    <span class="font-bold flex items-center gap-1.5"><i class="fas fa-calendar-check text-sky-500"></i> Next Scheduled:</span>
-                    <div class="flex items-center gap-1.5">
-                      <span id="dm-autobackup-next-time" class="font-semibold text-sky-600 dark:text-sky-400">-</span>
-                      <button type="button" onclick="openScheduleTimePickerModal()" class="w-6 h-6 rounded-lg bg-sky-500/10 hover:bg-sky-500/25 border border-sky-500/30 text-sky-600 dark:text-sky-400 flex items-center justify-center text-[11px] transition-all cursor-pointer shadow-xs active:scale-90" title="Set Custom Backup Date & Time">
-                        <i class="fas fa-clock"></i>
+
+                  <!-- Status & Timing Card -->
+                  <div class="p-3.5 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-slate-50/50 dark:bg-slate-900/30 space-y-1.5 text-[11px]">
+                    <div class="flex items-center justify-between text-slate-600 dark:text-slate-300">
+                      <span class="font-bold flex items-center gap-1.5"><i class="fas fa-history text-slate-400"></i> Last Auto Backup:</span>
+                      <span id="dm-autobackup-last-time" class="font-semibold text-slate-700 dark:text-slate-200">Never</span>
+                    </div>
+                    <div class="flex items-center justify-between text-slate-600 dark:text-slate-300">
+                      <span class="font-bold flex items-center gap-1.5"><i class="fas fa-calendar-check text-sky-500"></i> Next Scheduled:</span>
+                      <div class="flex items-center gap-1.5">
+                        <span id="dm-autobackup-next-time" class="font-semibold text-sky-600 dark:text-sky-400">-</span>
+                        <button type="button" onclick="openScheduleTimePickerModal('telegram')" class="w-6 h-6 rounded-lg bg-sky-500/10 hover:bg-sky-500/25 border border-sky-500/30 text-sky-600 dark:text-sky-400 flex items-center justify-center text-[11px] transition-all cursor-pointer shadow-xs active:scale-90" title="Set Custom Backup Date & Time">
+                          <i class="fas fa-clock"></i>
+                        </button>
+                      </div>
+                    </div>
+                    <div class="flex items-center justify-between text-slate-600 dark:text-slate-300 pt-1 border-t border-slate-200/40 dark:border-slate-800/40">
+                      <span class="font-bold flex items-center gap-1.5"><i class="fas fa-shield-halved text-emerald-500"></i> Backup Content:</span>
+                      <span class="font-semibold text-emerald-600 dark:text-emerald-400">Full Cloud RTDB (.json)</span>
+                    </div>
+                  </div>
+
+                  <!-- Test / Send Now Button -->
+                  <div class="pt-1">
+                    <button onclick="testTelegramBackupNow()" id="dm-autobackup-test-btn" type="button" class="w-full py-2.5 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-600 dark:text-sky-400 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all">
+                      <i class="fas fa-paper-plane"></i> <span>Send Backup to Telegram Now (Test)</span>
+                    </button>
+                  </div>
+
+                  <!-- 24/7 Cloud Background Automation Card (Website Closed Run) -->
+                  <div class="p-3.5 rounded-2xl border border-indigo-500/30 bg-gradient-to-r from-indigo-950/40 to-slate-900/60 space-y-2.5">
+                    <div class="flex items-center gap-2.5">
+                      <span class="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-sm shrink-0">
+                        <i class="fas fa-cloud"></i>
+                      </span>
+                      <div class="min-w-0">
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                          <h5 class="text-xs font-black text-slate-800 dark:text-white">24/7 Cloud Auto Backup</h5>
+                          <span class="text-[8px] font-bold px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">Website Closed Run</span>
+                        </div>
+                        <p class="text-[9px] text-slate-400">Website & phone band hone par bhi exact set time par Telegram par backup chala jayega.</p>
+                      </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-2 pt-0.5">
+                      <button type="button" onclick="copyGoogleCloudBackupScript()" class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-[11px] flex items-center justify-center gap-1.5 shadow-md shadow-indigo-900/30 transition-all">
+                        <i class="fas fa-copy"></i> Copy Cloud Script
+                      </button>
+                      <button type="button" onclick="openGoogleCloudSetupModal()" class="w-full py-2 bg-slate-800 hover:bg-slate-700 border border-indigo-500/30 text-indigo-300 rounded-xl font-bold text-[11px] flex items-center justify-center gap-1.5 transition-all">
+                        <i class="fas fa-book-open"></i> 1-Min Setup Guide
                       </button>
                     </div>
                   </div>
-                  <div class="flex items-center justify-between text-slate-600 dark:text-slate-300 pt-1 border-t border-slate-200/40 dark:border-slate-800/40">
-                    <span class="font-bold flex items-center gap-1.5"><i class="fas fa-shield-halved text-emerald-500"></i> Backup Content:</span>
-                    <span class="font-semibold text-emerald-600 dark:text-emerald-400">Full Cloud RTDB (.json)</span>
-                  </div>
                 </div>
 
-                <!-- Test / Send Now Button -->
-                <div class="pt-1">
-                  <button onclick="testTelegramBackupNow()" id="dm-autobackup-test-btn" type="button" class="w-full py-2.5 bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-600 dark:text-sky-400 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all">
-                    <i class="fas fa-paper-plane"></i> <span>Send Backup to Telegram Now (Test)</span>
+                <!-- Footer Actions Row -->
+                <div class="h-px bg-slate-200 dark:bg-slate-800/60 my-4 mx-5"></div>
+                <div class="flex justify-between px-5 pb-5">
+                  <button onclick="showDmPanel('dm-options-panel')" type="button" class="px-4 py-2 border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-bold transition-all">Back</button>
+                  <button onclick="saveAutoBackupSettings()" id="dm-autobackup-save-btn" type="button" class="px-5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold shadow-md shadow-sky-600/30 transition-all flex items-center gap-1.5">
+                    <i class="fas fa-save"></i> <span>Save Auto Backup Settings</span>
                   </button>
-                </div>
-
-                <!-- 24/7 Cloud Background Automation Card (Website Closed Run) -->
-                <div class="p-3.5 rounded-2xl border border-indigo-500/30 bg-gradient-to-r from-indigo-950/40 to-slate-900/60 space-y-2.5">
-                  <div class="flex items-center gap-2.5">
-                    <span class="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-sm shrink-0">
-                      <i class="fas fa-cloud"></i>
-                    </span>
-                    <div class="min-w-0">
-                      <div class="flex items-center gap-1.5 flex-wrap">
-                        <h5 class="text-xs font-black text-slate-800 dark:text-white">24/7 Cloud Auto Backup</h5>
-                        <span class="text-[8px] font-bold px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">Website Closed Run</span>
-                      </div>
-                      <p class="text-[9px] text-slate-400">Website & phone band hone par bhi exact set time par Telegram par backup chala jayega.</p>
-                    </div>
-                  </div>
-                  
-                  <div class="grid grid-cols-2 gap-2 pt-0.5">
-                    <button type="button" onclick="copyGoogleCloudBackupScript()" class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-[11px] flex items-center justify-center gap-1.5 shadow-md shadow-indigo-900/30 transition-all">
-                      <i class="fas fa-copy"></i> Copy Cloud Script
-                    </button>
-                    <button type="button" onclick="openGoogleCloudSetupModal()" class="w-full py-2 bg-slate-800 hover:bg-slate-700 border border-indigo-500/30 text-indigo-300 rounded-xl font-bold text-[11px] flex items-center justify-center gap-1.5 transition-all">
-                      <i class="fas fa-book-open"></i> 1-Min Setup Guide
-                    </button>
-                  </div>
                 </div>
               </div>
 
-              <!-- Footer Actions Row -->
-              <div class="h-px bg-slate-200 dark:bg-slate-800/60 my-4 mx-5"></div>
-              <div class="flex justify-between px-5 pb-5">
-                <button onclick="showDmPanel('dm-options-panel')" type="button" class="px-4 py-2 border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-bold transition-all">Back</button>
-                <button onclick="saveAutoBackupSettings()" id="dm-autobackup-save-btn" type="button" class="px-5 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold shadow-md shadow-sky-600/30 transition-all flex items-center gap-1.5">
-                  <i class="fas fa-save"></i> <span>Save Auto Backup Settings</span>
-                </button>
+              <!-- TAB 2: GOOGLE DRIVE BACKUP CONTENT -->
+              <div id="dm-tab-content-drive" class="space-y-4 hidden">
+                <div class="text-center pt-2 pb-1">
+                  <div class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 via-teal-500 to-sky-600 text-white text-xl flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/30 mb-2">
+                    <i class="fab fa-google-drive"></i>
+                  </div>
+                  <h4 class="font-extrabold text-sm text-slate-800 dark:text-white">Google Drive Cloud Auto Backup</h4>
+                  <p class="text-[10px] text-slate-400">Automatically upload full database JSON backup to your Google Drive folder</p>
+                </div>
+
+                <div class="px-5 space-y-3.5 text-left">
+                  <!-- Master Toggle Switch -->
+                  <div class="p-3.5 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 flex items-center justify-between">
+                    <div>
+                      <h5 class="text-xs font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
+                        <i class="fas fa-power-off text-emerald-500"></i> Drive Auto Backup System
+                      </h5>
+                      <p class="text-[10px] text-slate-400">Enable automatic scheduled JSON backup to Google Drive</p>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" id="dm-drivebackup-enable" class="sr-only peer" onchange="updateDriveBackupToggleUI()">
+                      <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                    </label>
+                  </div>
+
+                  <!-- Google Drive Folder Link or ID -->
+                  <div>
+                    <div class="flex items-center justify-between">
+                      <label class="calc-label text-[10px]" for="dm-drivebackup-folder">📁 GOOGLE DRIVE FOLDER LINK OR ID</label>
+                      <a id="dm-drivebackup-folder-external-link" href="#" target="_blank" class="hidden text-[10px] text-emerald-500 font-bold hover:underline flex items-center gap-1">
+                        <span>Open Folder</span> <i class="fas fa-external-link-alt text-[9px]"></i>
+                      </a>
+                    </div>
+                    <input type="text" id="dm-drivebackup-folder" class="calc-input font-mono text-[11px] py-2" placeholder="e.g. https://drive.google.com/drive/folders/1ABCxyz... or Folder ID" oninput="onDriveFolderInputChanged(this.value)">
+                    <div id="dm-drivebackup-folder-preview-container" class="hidden mt-1.5 p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center justify-between">
+                      <span class="flex items-center gap-1.5 font-mono truncate">
+                        <i class="fas fa-folder-open text-emerald-500"></i> Folder ID: <b id="dm-drivebackup-folder-id-preview">-</b>
+                      </span>
+                      <span class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 font-bold uppercase shrink-0">Valid ID</span>
+                    </div>
+                    <p class="text-[9px] text-slate-400 mt-1">Google Drive me folder banayein -> Share -> <b>Anyone with link (Viewer/Editor)</b> karke link yahan paste karein.</p>
+                  </div>
+
+                  <!-- Google Apps Script Web App URL (Optional / Direct Upload) -->
+                  <div>
+                    <label class="calc-label text-[10px]" for="dm-drivebackup-webapp-url">🔗 GOOGLE APPS SCRIPT WEBHOOK URL (Optional / Direct Upload)</label>
+                    <input type="text" id="dm-drivebackup-webapp-url" class="calc-input font-mono text-[11px] py-2" placeholder="e.g. https://script.google.com/macros/s/AKfycb.../exec">
+                    <p class="text-[9px] text-slate-400 mt-1">Direct upload ke liye Google Apps Script Web App URL paste karein (1-Min Drive Setup Guide dekhein).</p>
+                  </div>
+
+                  <!-- Days Interval Input & Preset Chips -->
+                  <div>
+                    <label class="calc-label text-[10px]" for="dm-drivebackup-days">⏳ BACKUP INTERVAL (IN DAYS)</label>
+                    <div class="flex items-center gap-2">
+                      <input type="number" id="dm-drivebackup-days" min="1" max="365" class="calc-input font-bold text-center text-sm py-2 w-28" placeholder="1" value="1" oninput="document.getElementById('dm-drivebackup-days-preview').textContent = this.value || '1'">
+                      <span class="text-xs font-extrabold text-slate-600 dark:text-slate-300">Day(s)</span>
+                    </div>
+                    <!-- Quick Preset Chips -->
+                    <div class="flex flex-wrap gap-1.5 mt-2">
+                      <button type="button" onclick="setDriveBackupDays(1)" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all">Every Day (1)</button>
+                      <button type="button" onclick="setDriveBackupDays(2)" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all">2 Days</button>
+                      <button type="button" onclick="setDriveBackupDays(5)" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all">5 Days</button>
+                      <button type="button" onclick="setDriveBackupDays(7)" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all">7 Days (Weekly)</button>
+                      <button type="button" onclick="setDriveBackupDays(30)" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all">30 Days (Monthly)</button>
+                      <button type="button" onclick="setDriveBackupDays(100)" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all">100 Days</button>
+                    </div>
+                    <p class="text-[9px] text-slate-400 mt-1.5">Har <span id="dm-drivebackup-days-preview" class="font-bold text-emerald-500">1</span> din me auto backup JSON file Google Drive me save ho jayegi.</p>
+                  </div>
+
+                  <!-- Status & Timing Card -->
+                  <div class="p-3.5 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-slate-50/50 dark:bg-slate-900/30 space-y-1.5 text-[11px]">
+                    <div class="flex items-center justify-between text-slate-600 dark:text-slate-300">
+                      <span class="font-bold flex items-center gap-1.5"><i class="fas fa-history text-slate-400"></i> Last Drive Backup:</span>
+                      <span id="dm-drivebackup-last-time" class="font-semibold text-slate-700 dark:text-slate-200">Never</span>
+                    </div>
+                    <div class="flex items-center justify-between text-slate-600 dark:text-slate-300">
+                      <span class="font-bold flex items-center gap-1.5"><i class="fas fa-calendar-check text-emerald-500"></i> Next Scheduled:</span>
+                      <div class="flex items-center gap-1.5">
+                        <span id="dm-drivebackup-next-time" class="font-semibold text-emerald-600 dark:text-emerald-400">-</span>
+                        <button type="button" onclick="openScheduleTimePickerModal('drive')" class="w-6 h-6 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-[11px] transition-all cursor-pointer shadow-xs active:scale-90" title="Set Custom Backup Date & Time">
+                          <i class="fas fa-clock"></i>
+                        </button>
+                      </div>
+                    </div>
+                    <div class="flex items-center justify-between text-slate-600 dark:text-slate-300 pt-1 border-t border-slate-200/40 dark:border-slate-800/40">
+                      <span class="font-bold flex items-center gap-1.5"><i class="fas fa-shield-halved text-emerald-500"></i> Backup Content:</span>
+                      <span class="font-semibold text-emerald-600 dark:text-emerald-400">Full Cloud RTDB (.json)</span>
+                    </div>
+                  </div>
+
+                  <!-- Test / Send Now Button -->
+                  <div class="pt-1">
+                    <button onclick="testDriveBackupNow()" id="dm-drivebackup-test-btn" type="button" class="w-full py-2.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all">
+                      <i class="fab fa-google-drive"></i> <span>Save Backup to Google Drive Now (Test)</span>
+                    </button>
+                  </div>
+
+                  <!-- 24/7 Cloud Background Automation Card -->
+                  <div class="p-3.5 rounded-2xl border border-emerald-500/30 bg-gradient-to-r from-emerald-950/40 to-slate-900/60 space-y-2.5">
+                    <div class="flex items-center gap-2.5">
+                      <span class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm shrink-0">
+                        <i class="fas fa-cloud"></i>
+                      </span>
+                      <div class="min-w-0">
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                          <h5 class="text-xs font-black text-slate-800 dark:text-white">24/7 Cloud Auto Backup</h5>
+                          <span class="text-[8px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Google Cloud Run</span>
+                        </div>
+                        <p class="text-[9px] text-slate-400">Website band hone par bhi Google Cloud automatically JSON backup aapke Google Drive folder me save kar dega.</p>
+                      </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-2 pt-0.5">
+                      <button type="button" onclick="copyGoogleCloudBackupScript()" class="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-[11px] flex items-center justify-center gap-1.5 shadow-md shadow-emerald-900/30 transition-all">
+                        <i class="fas fa-copy"></i> Copy Cloud Script
+                      </button>
+                      <button type="button" onclick="openGoogleDriveSetupModal()" class="w-full py-2 bg-slate-800 hover:bg-slate-700 border border-emerald-500/30 text-emerald-300 rounded-xl font-bold text-[11px] flex items-center justify-center gap-1.5 transition-all">
+                        <i class="fas fa-book-open"></i> 1-Min Drive Setup Guide
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Footer Actions Row -->
+                <div class="h-px bg-slate-200 dark:bg-slate-800/60 my-4 mx-5"></div>
+                <div class="flex justify-between px-5 pb-5">
+                  <button onclick="showDmPanel('dm-options-panel')" type="button" class="px-4 py-2 border border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl text-xs font-bold transition-all">Back</button>
+                  <button onclick="saveDriveBackupSettings()" id="dm-drivebackup-save-btn" type="button" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/30 transition-all flex items-center gap-1.5">
+                    <i class="fas fa-save"></i> <span>Save Drive Backup Settings</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -5439,6 +5587,98 @@
 
       <div class="pt-2 border-t border-slate-800 flex justify-end">
         <button type="button" onclick="closeGoogleCloudSetupModal()" class="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition-colors">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Google Drive 24/7 Auto Backup Setup Guide -->
+  <div id="dm-drive-backup-guide-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[1100] flex items-center justify-center p-4 hidden">
+    <div class="glass-panel w-full max-w-md rounded-3xl border border-emerald-500/40 p-5 shadow-2xl space-y-4 animate-fadeup relative bg-slate-900/95 text-white max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-base">
+            <i class="fab fa-google-drive"></i>
+          </div>
+          <div>
+            <h4 class="font-extrabold text-sm text-white">Google Drive Auto Backup Setup</h4>
+            <p class="text-[10px] text-emerald-300 font-semibold">Folder Link & 24/7 Cloud Setup (1-Min Guide)</p>
+          </div>
+        </div>
+        <button type="button" onclick="closeGoogleDriveSetupModal()" class="w-7 h-7 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-xs transition-colors">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-left text-xs leading-relaxed">
+        <div class="bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-2xl">
+          <p class="text-[11px] text-emerald-200">
+            📁 <b>Google Drive Backup Kaise Kaam Karta Hai?</b><br>
+            Aap apne Google Drive me ek folder banakar uska link yahan paste karte hain. Google Apps Script 24/7 background me bina website khole har din aapki full JSON database backup file usi folder me save karti rahegi!
+          </p>
+        </div>
+
+        <div class="space-y-2.5">
+          <div class="flex items-start gap-2.5 bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+            <span class="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0">1</span>
+            <div class="flex-1">
+              <p class="font-bold text-slate-200">Google Drive me Folder Banayein</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Apne Google Drive me jaayein aur ek naya folder banayein (jaise: <b>RPM Backups</b>).</p>
+              <a href="https://drive.google.com" target="_blank" class="inline-flex items-center gap-1 mt-1.5 px-3 py-1 bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-emerald-300 rounded-lg text-[10px] font-bold transition-all">
+                Open drive.google.com <i class="fas fa-external-link-alt text-[9px]"></i>
+              </a>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-2.5 bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+            <span class="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0">2</span>
+            <div class="flex-1">
+              <p class="font-bold text-slate-200">Folder Share karein (Anyone with link)</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Folder par right-click karein -> <b>Share</b> -> General access me <b>"Anyone with the link"</b> chunein aur <b>Copy Link</b> karke RPM Portal me paste karein.</p>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-2.5 bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+            <span class="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0">3</span>
+            <div class="flex-1">
+              <p class="font-bold text-slate-200">Cloud Script Code Paste karein</p>
+              <p class="text-[11px] text-slate-400 mt-0.5"><a href="https://script.google.com" target="_blank" class="text-emerald-400 underline font-bold">script.google.com</a> par New project banakar script code paste karein aur Save (Ctrl+S) karein.</p>
+              <button type="button" onclick="copyGoogleCloudBackupScript()" class="inline-flex items-center gap-1.5 mt-1.5 px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-bold shadow-md transition-all">
+                <i class="fas fa-copy"></i> Copy Cloud Script Code
+              </button>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-2.5 bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+            <span class="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0">4</span>
+            <div class="flex-1">
+              <p class="font-bold text-slate-200">Deploy Web App (Direct Upload ke liye)</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Google Script me top-right me <b>Deploy -> New deployment</b> -> Type: <b>Web app</b> -> Who has access: <b>Anyone</b> -> Deploy karein. Web App URL ko RPM Settings me paste karein.</p>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-2.5 bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+            <span class="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0">5</span>
+            <div class="flex-1">
+              <p class="font-bold text-slate-200">24/7 Cloud Background Trigger Lagayein</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Left side clock icon (<b>Triggers</b>) par click karein -> <b>+ Add Trigger</b>:</p>
+              <ul class="list-disc list-inside text-[10px] text-emerald-300 mt-1 space-y-0.5 font-mono">
+                <li>Function: checkAndRunCloudAutoBackup</li>
+                <li>Event source: Time-driven</li>
+                <li>Timer type: Minutes timer -> Every 10 or 15 minutes</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <p class="text-[10px] text-emerald-400 bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20 font-medium">
+          ✅ <b>Sab Set Hai!</b> Ab phone/computer band hone par bhi Google Cloud automatically aapke folder me JSON backup save karega!
+        </p>
+      </div>
+
+      <div class="pt-2 border-t border-slate-800 flex justify-end">
+        <button type="button" onclick="closeGoogleDriveSetupModal()" class="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition-colors">
           Close
         </button>
       </div>
