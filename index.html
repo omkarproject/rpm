@@ -2375,11 +2375,16 @@
                     <p class="text-[9px] text-slate-400 mt-1">Google Drive me folder banayein -> Share -> <b>Anyone with link (Viewer/Editor)</b> karke link yahan paste karein.</p>
                   </div>
 
-                  <!-- Google Apps Script Web App URL (Optional / Direct Upload) -->
+                  <!-- Google Apps Script Web App URL (Direct Drive Save) -->
                   <div>
-                    <label class="calc-label text-[10px]" for="dm-drivebackup-webapp-url">🔗 GOOGLE APPS SCRIPT WEBHOOK URL (Optional / Direct Upload)</label>
-                    <input type="text" id="dm-drivebackup-webapp-url" class="calc-input font-mono text-[11px] py-2" placeholder="e.g. https://script.google.com/macros/s/AKfycb.../exec">
-                    <p class="text-[9px] text-slate-400 mt-1">Direct upload ke liye Google Apps Script Web App URL paste karein (1-Min Drive Setup Guide dekhein).</p>
+                    <label class="calc-label text-[10px] text-emerald-400 font-extrabold flex items-center justify-between" for="dm-drivebackup-webapp-url">
+                      <span>⚡ GOOGLE APPS SCRIPT WEB APP URL (Drive me Direct Save ke liye)</span>
+                      <button type="button" onclick="openGoogleDriveSetupModal()" class="text-[9px] text-emerald-400 hover:text-emerald-300 underline font-bold lowercase normal-case tracking-normal">
+                        <i class="fas fa-magic"></i> 1-Min me Banayein
+                      </button>
+                    </label>
+                    <input type="text" id="dm-drivebackup-webapp-url" class="calc-input font-mono text-[11px] py-2" placeholder="https://script.google.com/macros/s/.../exec (Yahan Web App URL paste karein)">
+                    <p class="text-[9px] text-slate-400 mt-1">Google Drive me bina device download kiye file direct save karne ke liye Google Apps Script ka Web App URL yahan paste karein.</p>
                   </div>
 
                   <!-- Days Interval Input & Preset Chips -->
@@ -5688,7 +5693,7 @@
   <div id="toasts-container"></div>
 
   <!-- Core JavaScript Core App Logic File -->
-  <script src="script.js?v=88" defer></script>
+  <script src="script.js?v=89" defer></script>
   <script src="broadcast.js" defer></script>
 
   <!-- Re-add transition after page load for smooth theme toggles -->

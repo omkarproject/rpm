@@ -9428,7 +9428,10 @@ async function saveDriveBackupSettings() {
 
   const enabled = enableInput ? enableInput.checked : false;
   const folderLink = folderInput ? folderInput.value.trim() : '';
-  const webAppUrl = webAppInput ? webAppInput.value.trim() : '';
+  let webAppUrl = webAppInput ? webAppInput.value.trim() : '';
+  if (webAppUrl && !/^https?:\/\//i.test(webAppUrl)) {
+    webAppUrl = 'https://' + webAppUrl;
+  }
   let intervalDays = daysInput ? parseInt(daysInput.value, 10) : 1;
   if (isNaN(intervalDays) || intervalDays < 1) intervalDays = 1;
 
@@ -9898,16 +9901,32 @@ function checkAndRunCloudAutoBackup() {
 // Web App doPost endpoint for instant uploads from RPM web application
 function doPost(e) {
   try {
-    let body;
+    let body = {};
     if (e && e.postData && e.postData.contents) {
-      body = JSON.parse(e.postData.contents);
-    } else {
-      body = e.parameter || {};
+      try {
+        body = JSON.parse(e.postData.contents);
+      } catch (pErr) {
+        body = e.parameter || {};
+      }
+    } else if (e && e.parameter) {
+      body = e.parameter;
     }
 
     const folderId = (body.folderId || "").trim();
-    const fileName = body.fileName || ("RPM_Diesel_DriveBackup_" + Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd_HH-mm-ss") + ".json");
-    const content = typeof body.data === "string" ? body.data : JSON.stringify(body.data, null, 2);
+    const nowObj = new Date();
+    const dateStr = Utilities.formatDate(nowObj, "Asia/Kolkata", "yyyy-MM-dd");
+    const timeStr = Utilities.formatDate(nowObj, "Asia/Kolkata", "HH-mm-ss");
+    const fileName = (body.fileName || ("RPM_Diesel_AutoBackup_" + dateStr + "_" + timeStr + ".json")).trim();
+
+    let content = "";
+    if (body.data) {
+      content = typeof body.data === "string" ? body.data : JSON.stringify(body.data, null, 2);
+    } else {
+      const dbDataRes = UrlFetchApp.fetch(FIREBASE_DB_URL + "/.json", { muteHttpExceptions: true });
+      const rawData = JSON.parse(dbDataRes.getContentText());
+      const cleanData = sanitizeForBackup(rawData);
+      content = JSON.stringify(cleanData, null, 2);
+    }
 
     let folder;
     if (folderId) {
@@ -9920,7 +9939,22 @@ function doPost(e) {
       folder = DriveApp.getRootFolder();
     }
 
-    const file = folder.createFile(fileName, content, MimeType.PLAIN_TEXT);
+    const jsonBlob = Utilities.newBlob(content, "application/json", fileName);
+    const file = folder.createFile(jsonBlob);
+
+    try {
+      UrlFetchApp.fetch(FIREBASE_DB_URL + "/appConfig/googleDriveAutoBackup.json", {
+        method: "patch",
+        contentType: "application/json",
+        payload: JSON.stringify({
+          lastBackupTimestamp: Date.now(),
+          lastBackupDate: Utilities.formatDate(nowObj, "Asia/Kolkata", "dd/MM/yyyy, hh:mm:ss a"),
+          lastFileUrl: file.getUrl()
+        }),
+        muteHttpExceptions: true
+      });
+    } catch (fbErr) {}
+
     const output = {
       ok: true,
       fileId: file.getId(),
@@ -9934,7 +9968,64 @@ function doPost(e) {
 }
 
 function doGet(e) {
-  return ContentService.createTextOutput(JSON.stringify({ status: "ok", service: "RPM Diesel Cloud Auto Backup Service" })).setMimeType(ContentService.MimeType.JSON);
+  try {
+    const params = (e && e.parameter) ? e.parameter : {};
+    const action = params.action;
+    const folderId = (params.folderId || "").trim();
+
+    if (action === "saveBackup" || action === "backupNow" || action === "test") {
+      const dbDataRes = UrlFetchApp.fetch(FIREBASE_DB_URL + "/.json", { muteHttpExceptions: true });
+      if (dbDataRes.getResponseCode() !== 200) {
+        return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Firebase read failed: " + dbDataRes.getResponseCode() })).setMimeType(ContentService.MimeType.JSON);
+      }
+      const rawData = JSON.parse(dbDataRes.getContentText());
+      const cleanData = sanitizeForBackup(rawData);
+      const jsonString = JSON.stringify(cleanData, null, 2);
+
+      const nowObj = new Date();
+      const dateStr = Utilities.formatDate(nowObj, "Asia/Kolkata", "yyyy-MM-dd");
+      const timeStr = Utilities.formatDate(nowObj, "Asia/Kolkata", "HH-mm-ss");
+      const fileName = (params.fileName || ("RPM_Diesel_AutoBackup_" + dateStr + "_" + timeStr + ".json")).trim();
+
+      let folder;
+      if (folderId) {
+        try {
+          folder = DriveApp.getFolderById(folderId);
+        } catch (fErr) {
+          folder = DriveApp.getRootFolder();
+        }
+      } else {
+        folder = DriveApp.getRootFolder();
+      }
+
+      const jsonBlob = Utilities.newBlob(jsonString, "application/json", fileName);
+      const file = folder.createFile(jsonBlob);
+
+      try {
+        UrlFetchApp.fetch(FIREBASE_DB_URL + "/appConfig/googleDriveAutoBackup.json", {
+          method: "patch",
+          contentType: "application/json",
+          payload: JSON.stringify({
+            lastBackupTimestamp: Date.now(),
+            lastBackupDate: Utilities.formatDate(nowObj, "Asia/Kolkata", "dd/MM/yyyy, hh:mm:ss a"),
+            lastFileUrl: file.getUrl()
+          }),
+          muteHttpExceptions: true
+        });
+      } catch (fbErr) {}
+
+      return ContentService.createTextOutput(JSON.stringify({
+        ok: true,
+        fileId: file.getId(),
+        fileUrl: file.getUrl(),
+        fileName: fileName
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    return ContentService.createTextOutput(JSON.stringify({ status: "ok", service: "RPM Diesel Cloud Auto Backup Service" })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ ok: false, error: err.toString() })).setMimeType(ContentService.MimeType.JSON);
+  }
 }
 
 function sanitizeForBackup(obj) {
@@ -10131,21 +10222,32 @@ async function sendTelegramBackup(isManual = false) {
 
 async function sendDriveBackup(isManual = false) {
   const folderInputVal = (document.getElementById('dm-drivebackup-folder')?.value || googleDriveAutoBackupConfig.folderLink || googleDriveAutoBackupConfig.folderId || '').trim();
-  const webAppUrl = (document.getElementById('dm-drivebackup-webapp-url')?.value || googleDriveAutoBackupConfig.webAppUrl || '').trim();
+  let webAppUrl = (document.getElementById('dm-drivebackup-webapp-url')?.value || googleDriveAutoBackupConfig.webAppUrl || '').trim();
+  if (webAppUrl && !/^https?:\/\//i.test(webAppUrl)) {
+    webAppUrl = 'https://' + webAppUrl;
+  }
 
   const folderId = extractDriveFolderId(folderInputVal);
   if (!folderId) {
     return toast.err("Please enter a valid Google Drive Folder Link or Folder ID.");
   }
 
+  if (!webAppUrl) {
+    if (isManual) {
+      toast.warn("Google Drive me direct save karne ke liye Google Apps Script ka 'Web App URL' paste karein.");
+      openGoogleDriveSetupModal();
+    }
+    return;
+  }
+
   const testBtn = document.getElementById('dm-drivebackup-test-btn');
   if (testBtn && isManual) {
     testBtn.disabled = true;
-    testBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>Preparing & Saving to Google Drive...</span>`;
+    testBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>Saving directly to Google Drive...</span>`;
   }
 
   if (isManual) {
-    toast.info("Preparing database JSON backup for Google Drive...");
+    toast.info("Database JSON backup Google Drive me bheja ja raha hai...");
   }
 
   try {
@@ -10162,72 +10264,42 @@ async function sendDriveBackup(isManual = false) {
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10);
     const timeStr = now.toTimeString().slice(0, 8).replace(/:/g, '-');
-    const fileName = `RPM_Diesel_DriveBackup_${dateStr}_${timeStr}.json`;
+    const fileName = `RPM_Diesel_AutoBackup_${dateStr}_${timeStr}.json`;
 
     let uploadSuccess = false;
-    let fileUrl = '';
 
-    // If Google Apps Script Web App URL is provided, upload directly via Web App
-    if (webAppUrl) {
+    // Send payload directly to Google Apps Script Web App
+    try {
+      const postPayload = {
+        action: 'saveBackup',
+        folderId: folderId,
+        fileName: fileName,
+        data: cleanVal
+      };
+
+      await fetch(webAppUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(postPayload)
+      });
+      uploadSuccess = true;
+    } catch (postErr) {
+      console.warn("POST to Web App failed, attempting GET trigger:", postErr);
       try {
-        const postPayload = {
-          action: 'saveBackup',
-          folderId: folderId,
-          fileName: fileName,
-          data: cleanVal
-        };
-
-        const res = await fetch(webAppUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify(postPayload)
-        });
-
-        if (res.ok) {
-          try {
-            const resData = await res.json();
-            if (resData && resData.ok) {
-              uploadSuccess = true;
-              fileUrl = resData.fileUrl || '';
-            } else {
-              console.warn("Web App responded with error:", resData);
-              uploadSuccess = true;
-            }
-          } catch (jsonErr) {
-            uploadSuccess = true;
-          }
-        } else {
-          throw new Error(`HTTP ${res.status}`);
-        }
-      } catch (postErr) {
-        console.warn("Direct Web App POST failed, falling back:", postErr);
-        if (isManual) {
-          toast.warn(`Web App upload issue (${postErr.message}). Downloading JSON file...`);
-        }
-      }
-    }
-
-    if (!uploadSuccess) {
-      // Trigger instant JSON file download so the user has the backup file
-      const blob = new Blob([jsonStr], { type: 'application/json' });
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(a.href);
-
-      // Open Google Drive folder in a new tab
-      const folderUrl = `https://drive.google.com/drive/folders/${folderId}`;
-      if (isManual) {
-        window.open(folderUrl, '_blank');
+        const getUrl = `${webAppUrl}${webAppUrl.includes('?') ? '&' : '?'}action=saveBackup&folderId=${encodeURIComponent(folderId)}&fileName=${encodeURIComponent(fileName)}&t=${Date.now()}`;
+        await fetch(getUrl, { method: 'GET', mode: 'no-cors' });
+        uploadSuccess = true;
+      } catch (getErr) {
+        console.error("GET trigger also failed:", getErr);
+        throw new Error("Google Apps Script Web App tak connect nahi ho paya. Kripya Web App URL check karein.");
       }
     }
 
     const backupTimeNow = Date.now();
     googleDriveAutoBackupConfig.lastBackupTimestamp = backupTimeNow;
     googleDriveAutoBackupConfig.lastBackupDate = now.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    googleDriveAutoBackupConfig.webAppUrl = webAppUrl;
 
     const intervalDays = parseInt(googleDriveAutoBackupConfig.intervalDays, 10) || 1;
     let nextD = new Date(backupTimeNow);
@@ -10248,16 +10320,13 @@ async function sendDriveBackup(isManual = false) {
       db.ref('appConfig/googleDriveAutoBackup/lastBackupTimestamp').set(googleDriveAutoBackupConfig.lastBackupTimestamp);
       db.ref('appConfig/googleDriveAutoBackup/lastBackupDate').set(googleDriveAutoBackupConfig.lastBackupDate);
       db.ref('appConfig/googleDriveAutoBackup/nextBackupTimestamp').set(googleDriveAutoBackupConfig.nextBackupTimestamp);
+      db.ref('appConfig/googleDriveAutoBackup/webAppUrl').set(googleDriveAutoBackupConfig.webAppUrl);
       if (googleDriveAutoBackupConfig.preferredTime) {
         db.ref('appConfig/googleDriveAutoBackup/preferredTime').set(googleDriveAutoBackupConfig.preferredTime);
       }
     }
 
-    if (uploadSuccess) {
-      toast.ok(`✅ Backup saved to Google Drive folder!${fileUrl ? ' [Open File]' : ''}`);
-    } else {
-      toast.ok("JSON backup generated & Google Drive folder opened!");
-    }
+    toast.ok("✅ Backup file aapke Google Drive folder me successfully save ho gayi hai!");
     updateAutoBackupBadge();
     updateDriveBackupUI();
   } catch (err) {

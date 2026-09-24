@@ -173,16 +173,32 @@ function checkAndRunCloudAutoBackup() {
 // Web App doPost endpoint for instant uploads from RPM web application
 function doPost(e) {
   try {
-    let body;
+    let body = {};
     if (e && e.postData && e.postData.contents) {
-      body = JSON.parse(e.postData.contents);
-    } else {
-      body = e.parameter || {};
+      try {
+        body = JSON.parse(e.postData.contents);
+      } catch (pErr) {
+        body = e.parameter || {};
+      }
+    } else if (e && e.parameter) {
+      body = e.parameter;
     }
 
     const folderId = (body.folderId || "").trim();
-    const fileName = body.fileName || ("RPM_Diesel_DriveBackup_" + Utilities.formatDate(new Date(), "Asia/Kolkata", "yyyy-MM-dd_HH-mm-ss") + ".json");
-    const content = typeof body.data === "string" ? body.data : JSON.stringify(body.data, null, 2);
+    const nowObj = new Date();
+    const dateStr = Utilities.formatDate(nowObj, "Asia/Kolkata", "yyyy-MM-dd");
+    const timeStr = Utilities.formatDate(nowObj, "Asia/Kolkata", "HH-mm-ss");
+    const fileName = (body.fileName || ("RPM_Diesel_AutoBackup_" + dateStr + "_" + timeStr + ".json")).trim();
+
+    let content = "";
+    if (body.data) {
+      content = typeof body.data === "string" ? body.data : JSON.stringify(body.data, null, 2);
+    } else {
+      const dbDataRes = UrlFetchApp.fetch(FIREBASE_DB_URL + "/.json", { muteHttpExceptions: true });
+      const rawData = JSON.parse(dbDataRes.getContentText());
+      const cleanData = sanitizeForBackup(rawData);
+      content = JSON.stringify(cleanData, null, 2);
+    }
 
     let folder;
     if (folderId) {
@@ -195,7 +211,22 @@ function doPost(e) {
       folder = DriveApp.getRootFolder();
     }
 
-    const file = folder.createFile(fileName, content, MimeType.PLAIN_TEXT);
+    const jsonBlob = Utilities.newBlob(content, "application/json", fileName);
+    const file = folder.createFile(jsonBlob);
+
+    try {
+      UrlFetchApp.fetch(FIREBASE_DB_URL + "/appConfig/googleDriveAutoBackup.json", {
+        method: "patch",
+        contentType: "application/json",
+        payload: JSON.stringify({
+          lastBackupTimestamp: Date.now(),
+          lastBackupDate: Utilities.formatDate(nowObj, "Asia/Kolkata", "dd/MM/yyyy, hh:mm:ss a"),
+          lastFileUrl: file.getUrl()
+        }),
+        muteHttpExceptions: true
+      });
+    } catch (fbErr) {}
+
     const output = {
       ok: true,
       fileId: file.getId(),
@@ -209,7 +240,64 @@ function doPost(e) {
 }
 
 function doGet(e) {
-  return ContentService.createTextOutput(JSON.stringify({ status: "ok", service: "RPM Diesel Cloud Auto Backup Service" })).setMimeType(ContentService.MimeType.JSON);
+  try {
+    const params = (e && e.parameter) ? e.parameter : {};
+    const action = params.action;
+    const folderId = (params.folderId || "").trim();
+
+    if (action === "saveBackup" || action === "backupNow" || action === "test") {
+      const dbDataRes = UrlFetchApp.fetch(FIREBASE_DB_URL + "/.json", { muteHttpExceptions: true });
+      if (dbDataRes.getResponseCode() !== 200) {
+        return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Firebase read failed: " + dbDataRes.getResponseCode() })).setMimeType(ContentService.MimeType.JSON);
+      }
+      const rawData = JSON.parse(dbDataRes.getContentText());
+      const cleanData = sanitizeForBackup(rawData);
+      const jsonString = JSON.stringify(cleanData, null, 2);
+
+      const nowObj = new Date();
+      const dateStr = Utilities.formatDate(nowObj, "Asia/Kolkata", "yyyy-MM-dd");
+      const timeStr = Utilities.formatDate(nowObj, "Asia/Kolkata", "HH-mm-ss");
+      const fileName = (params.fileName || ("RPM_Diesel_AutoBackup_" + dateStr + "_" + timeStr + ".json")).trim();
+
+      let folder;
+      if (folderId) {
+        try {
+          folder = DriveApp.getFolderById(folderId);
+        } catch (fErr) {
+          folder = DriveApp.getRootFolder();
+        }
+      } else {
+        folder = DriveApp.getRootFolder();
+      }
+
+      const jsonBlob = Utilities.newBlob(jsonString, "application/json", fileName);
+      const file = folder.createFile(jsonBlob);
+
+      try {
+        UrlFetchApp.fetch(FIREBASE_DB_URL + "/appConfig/googleDriveAutoBackup.json", {
+          method: "patch",
+          contentType: "application/json",
+          payload: JSON.stringify({
+            lastBackupTimestamp: Date.now(),
+            lastBackupDate: Utilities.formatDate(nowObj, "Asia/Kolkata", "dd/MM/yyyy, hh:mm:ss a"),
+            lastFileUrl: file.getUrl()
+          }),
+          muteHttpExceptions: true
+        });
+      } catch (fbErr) {}
+
+      return ContentService.createTextOutput(JSON.stringify({
+        ok: true,
+        fileId: file.getId(),
+        fileUrl: file.getUrl(),
+        fileName: fileName
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    return ContentService.createTextOutput(JSON.stringify({ status: "ok", service: "RPM Diesel Cloud Auto Backup Service" })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ ok: false, error: err.toString() })).setMimeType(ContentService.MimeType.JSON);
+  }
 }
 
 function sanitizeForBackup(obj) {
