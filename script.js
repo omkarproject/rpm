@@ -1592,6 +1592,10 @@ function toggleSidebarCollapse(forceCollapse = null) {
       }
       document.body.style.overflow = '';
     }
+    const topBar = document.getElementById('top-bar');
+    if (topBar && window.innerWidth < 768) {
+      topBar.style.left = '0px';
+    }
   } else {
     // Desktop logic: Toggle expanded/collapsed state
     const isCollapse = forceCollapse !== null ? forceCollapse : !sidebarCollapsed;
@@ -1612,6 +1616,11 @@ function toggleSidebarCollapse(forceCollapse = null) {
 
     if (mainContent) {
       mainContent.style.marginLeft = isCollapse ? "72px" : "260px";
+    }
+
+    const topBar = document.getElementById('top-bar');
+    if (topBar && window.innerWidth >= 768) {
+      topBar.style.left = isCollapse ? "72px" : "260px";
     }
 
     if (sidebarToggleIcon) {

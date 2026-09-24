@@ -414,11 +414,13 @@ body.cursor-hovering #custom-cursor-dot {
   }
 }
 
-/* STICKY HEADER POSITION FIX (Forced stickiness over relative panels) */
+/* FIXED LOCKED HEADER - PERMANENTLY LOCKED AT TOP OF SCREEN */
 #top-bar {
-  position: -webkit-sticky !important;
-  position: sticky !important;
+  position: fixed !important;
   top: 0 !important;
+  right: 0 !important;
+  left: 0 !important;
+  height: 64px !important;
   z-index: 40 !important;
   background: var(--header-bg) !important;
   backdrop-filter: blur(16px) saturate(160%) !important;
@@ -426,7 +428,29 @@ body.cursor-hovering #custom-cursor-dot {
   border-bottom: 1px solid var(--header-border) !important;
   box-shadow: var(--shadow-sm) !important;
   border-radius: 0 !important; /* Header spans full width */
-  transition: background-color 0.3s, border-color 0.3s, box-shadow 0.3s;
+  transition: left 0.35s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.3s, border-color 0.3s, box-shadow 0.3s !important;
+}
+
+@media (min-width: 768px) {
+  #top-bar {
+    left: var(--sidebar-width-expanded, 260px) !important;
+  }
+
+  #sidebar.sidebar-collapsed ~ #main-content #top-bar,
+  .sidebar-collapsed ~ #main-content #top-bar {
+    left: var(--sidebar-width-collapsed, 72px) !important;
+  }
+}
+
+/* Ensure main content starts cleanly below the fixed locked header */
+#main-content > main {
+  padding-top: calc(64px + 0.75rem) !important;
+}
+
+@media (min-width: 640px) {
+  #main-content > main {
+    padding-top: calc(64px + 1.5rem) !important;
+  }
 }
 
 /* Active sidebar navlinks */
