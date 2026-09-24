@@ -8922,15 +8922,52 @@ document.getElementById('dm-update-reset').onclick = () => {
 };
 
 /* ══════════════════════════════════════════════════════════
-   18.0 DATA OPERATIONS PROGRESS BAR CONTROLLER (1% to 100%)
+   18.0 DATA OPERATIONS PROGRESS BAR & LIVE TASK NOTIFICATION (1% to 100%)
    ══════════════════════════════════════════════════════════ */
 let dmProgressTimer = null;
 let dmProgressAnimInterval = null;
 let dmProgressStartTime = 0;
 let dmProgressCurrentPercent = 0;
+let dmActiveTaskName = "Operation";
+let dmNotificationDismissTimer = null;
+
+// Request Desktop/Browser notification permission if supported
+function requestTaskDesktopNotificationPermission() {
+  try {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'default') {
+        Notification.requestPermission().catch(() => {});
+      }
+    }
+  } catch (e) {}
+}
+
+function sendTaskDesktopNotification(title, body) {
+  try {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      new Notification(title, {
+        body: body,
+        icon: 'favicon.ico'
+      });
+    }
+  } catch (e) {
+    console.warn("Desktop notification failed:", e);
+  }
+}
+
+function dismissLiveTaskNotification() {
+  const container = document.getElementById('live-task-notification');
+  if (container) container.classList.add('hidden');
+  if (dmNotificationDismissTimer) {
+    clearTimeout(dmNotificationDismissTimer);
+    dmNotificationDismissTimer = null;
+  }
+}
+window.dismissLiveTaskNotification = dismissLiveTaskNotification;
 
 function showDmProgress({
   title = "Processing...",
+  taskName,
   subtitle = "Please wait...",
   icon = "fas fa-spinner fa-spin",
   color = "emerald",
@@ -8938,8 +8975,10 @@ function showDmProgress({
   percent = 5,
   detail = "Starting operation..."
 }) {
+  requestTaskDesktopNotificationPermission();
+
   const modal = document.getElementById('dm-progress-modal');
-  if (!modal) return;
+  const notifContainer = document.getElementById('live-task-notification');
 
   if (dmProgressAnimInterval) {
     clearInterval(dmProgressAnimInterval);
@@ -8949,9 +8988,16 @@ function showDmProgress({
     clearInterval(dmProgressTimer);
     dmProgressTimer = null;
   }
+  if (dmNotificationDismissTimer) {
+    clearTimeout(dmNotificationDismissTimer);
+    dmNotificationDismissTimer = null;
+  }
 
+  dmProgressStartTime = Date.now();
   dmProgressCurrentPercent = Math.max(0, Math.min(100, percent));
+  dmActiveTaskName = taskName || title || "Operation";
 
+  // 1. Center Modal updates
   const iconBox = document.getElementById('dm-progress-icon-box');
   const iconEl = document.getElementById('dm-progress-icon');
   const pingEl = document.getElementById('dm-progress-ping');
@@ -8978,16 +9024,56 @@ function showDmProgress({
   if (barEl) barEl.style.width = `${dmProgressCurrentPercent}%`;
   if (detailEl) detailEl.textContent = detail;
 
-  dmProgressStartTime = Date.now();
-  if (elapsedEl) {
-    elapsedEl.textContent = "0s";
-    dmProgressTimer = setInterval(() => {
-      const sec = Math.floor((Date.now() - dmProgressStartTime) / 1000);
-      elapsedEl.textContent = `${sec}s`;
-    }, 1000);
+  // 2. Floating Live Task Notification Card updates
+  const notifCard = document.getElementById('live-task-card');
+  const notifAccent = document.getElementById('live-task-accent-bar');
+  const notifIconBox = document.getElementById('live-task-icon-box');
+  const notifIcon = document.getElementById('live-task-icon');
+  const notifStatusBadge = document.getElementById('live-task-status-badge');
+  const notifElapsed = document.getElementById('live-task-elapsed');
+  const notifName = document.getElementById('live-task-name');
+  const notifStepLabel = document.getElementById('live-task-step-label');
+  const notifPercent = document.getElementById('live-task-percent');
+  const notifBar = document.getElementById('live-task-progress-bar');
+  const notifDesc = document.getElementById('live-task-desc');
+  const notifCompleteTime = document.getElementById('live-task-complete-time');
+
+  if (notifCard) notifCard.className = `glass-panel p-4 rounded-2xl border border-${color}-500/40 bg-slate-900/95 dark:bg-slate-950/95 shadow-2xl backdrop-blur-xl text-white space-y-2.5 relative overflow-hidden transition-all duration-300`;
+  if (notifAccent) notifAccent.className = `absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-${color}-500 to-indigo-500 transition-all duration-300`;
+  if (notifIconBox) notifIconBox.className = `w-8 h-8 rounded-xl bg-${color}-500/20 text-${color}-400 flex items-center justify-center shrink-0 text-sm shadow-sm transition-all duration-300`;
+  if (notifIcon) notifIcon.className = icon;
+  if (notifStatusBadge) {
+    notifStatusBadge.textContent = "RUNNING";
+    notifStatusBadge.className = `px-1.5 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wider bg-${color}-500/20 text-${color}-300 border border-${color}-500/30 transition-all duration-300`;
+  }
+  if (notifName) notifName.textContent = dmActiveTaskName;
+  if (notifStepLabel) notifStepLabel.textContent = step;
+  if (notifPercent) {
+    notifPercent.textContent = `${dmProgressCurrentPercent}%`;
+    notifPercent.className = `font-extrabold text-${color}-400 text-sm`;
+  }
+  if (notifBar) {
+    notifBar.style.width = `${dmProgressCurrentPercent}%`;
+    notifBar.className = `h-full rounded-full bg-gradient-to-r from-${color}-500 to-${color}-400 transition-all duration-300 shadow-md shadow-${color}-500/50`;
+  }
+  if (notifDesc) notifDesc.textContent = detail;
+  if (notifCompleteTime) {
+    notifCompleteTime.classList.add('hidden');
+    notifCompleteTime.textContent = "";
   }
 
-  modal.classList.remove('hidden');
+  // Timer updater
+  if (elapsedEl) elapsedEl.textContent = "0s";
+  if (notifElapsed) notifElapsed.textContent = "0s";
+
+  dmProgressTimer = setInterval(() => {
+    const sec = ((Date.now() - dmProgressStartTime) / 1000).toFixed(1);
+    if (elapsedEl) elapsedEl.textContent = `${Math.floor(sec)}s`;
+    if (notifElapsed) notifElapsed.textContent = `${sec}s`;
+  }, 200);
+
+  if (modal) modal.classList.remove('hidden');
+  if (notifContainer) notifContainer.classList.remove('hidden');
 }
 
 function updateDmProgress(targetPercent, {
@@ -8997,9 +9083,16 @@ function updateDmProgress(targetPercent, {
   icon,
   color,
   animate = true,
-  duration = 400
+  duration = 400,
+  isComplete = false,
+  isFail = false,
+  taskName,
+  errorMessage
 } = {}) {
   const boundedTarget = Math.min(100, Math.max(0, Math.round(targetPercent)));
+  if (taskName) dmActiveTaskName = taskName;
+
+  // Modal elements
   const iconEl = document.getElementById('dm-progress-icon');
   const subtitleEl = document.getElementById('dm-progress-subtitle');
   const stepEl = document.getElementById('dm-progress-step');
@@ -9009,62 +9102,160 @@ function updateDmProgress(targetPercent, {
   const iconBox = document.getElementById('dm-progress-icon-box');
   const pingEl = document.getElementById('dm-progress-ping');
 
-  if (subtitle && subtitleEl) subtitleEl.textContent = subtitle;
-  if (step && stepEl) stepEl.textContent = step;
-  if (detail && detailEl) detailEl.textContent = detail;
-  if (icon && iconEl) iconEl.className = icon;
+  // Floating Notification elements
+  const notifCard = document.getElementById('live-task-card');
+  const notifAccent = document.getElementById('live-task-accent-bar');
+  const notifIconBox = document.getElementById('live-task-icon-box');
+  const notifIcon = document.getElementById('live-task-icon');
+  const notifStatusBadge = document.getElementById('live-task-status-badge');
+  const notifStepLabel = document.getElementById('live-task-step-label');
+  const notifPercent = document.getElementById('live-task-percent');
+  const notifBar = document.getElementById('live-task-progress-bar');
+  const notifDesc = document.getElementById('live-task-desc');
+  const notifCompleteTime = document.getElementById('live-task-complete-time');
 
-  if (color && iconBox && pingEl && barEl && percentEl) {
-    iconBox.className = `w-16 h-16 rounded-2xl bg-${color}-500/20 text-${color}-400 flex items-center justify-center text-2xl relative shadow-lg shadow-${color}-500/20 transition-all duration-300`;
-    pingEl.className = `animate-ping absolute inline-flex h-full w-full rounded-2xl bg-${color}-400 opacity-20`;
-    barEl.className = `h-full rounded-full bg-gradient-to-r from-${color}-500 to-${color}-400 transition-all duration-300 shadow-md shadow-${color}-500/50`;
-    percentEl.className = `text-xl font-black text-${color}-400 font-mono tracking-tight`;
+  if (subtitle && subtitleEl) subtitleEl.textContent = subtitle;
+  if (step) {
+    if (stepEl) stepEl.textContent = step;
+    if (notifStepLabel) notifStepLabel.textContent = step;
+  }
+  if (detail) {
+    if (detailEl) detailEl.textContent = detail;
+    if (notifDesc) notifDesc.textContent = detail;
+  }
+  if (icon) {
+    if (iconEl) iconEl.className = icon;
+    if (notifIcon) notifIcon.className = icon;
   }
 
+  if (color) {
+    if (iconBox && pingEl && barEl && percentEl) {
+      iconBox.className = `w-16 h-16 rounded-2xl bg-${color}-500/20 text-${color}-400 flex items-center justify-center text-2xl relative shadow-lg shadow-${color}-500/20 transition-all duration-300`;
+      pingEl.className = `animate-ping absolute inline-flex h-full w-full rounded-2xl bg-${color}-400 opacity-20`;
+      barEl.className = `h-full rounded-full bg-gradient-to-r from-${color}-500 to-${color}-400 transition-all duration-300 shadow-md shadow-${color}-500/50`;
+      percentEl.className = `text-xl font-black text-${color}-400 font-mono tracking-tight`;
+    }
+    if (notifCard) notifCard.className = `glass-panel p-4 rounded-2xl border border-${color}-500/40 bg-slate-900/95 dark:bg-slate-950/95 shadow-2xl backdrop-blur-xl text-white space-y-2.5 relative overflow-hidden transition-all duration-300`;
+    if (notifAccent) notifAccent.className = `absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-${color}-500 to-indigo-500 transition-all duration-300`;
+    if (notifIconBox) notifIconBox.className = `w-8 h-8 rounded-xl bg-${color}-500/20 text-${color}-400 flex items-center justify-center shrink-0 text-sm shadow-sm transition-all duration-300`;
+    if (notifPercent) notifPercent.className = `font-extrabold text-${color}-400 text-sm`;
+    if (notifBar) notifBar.className = `h-full rounded-full bg-gradient-to-r from-${color}-500 to-${color}-400 transition-all duration-300 shadow-md shadow-${color}-500/50`;
+  }
+
+  // Animation handling
   if (dmProgressAnimInterval) {
     clearInterval(dmProgressAnimInterval);
     dmProgressAnimInterval = null;
   }
+
+  const applyPercent = (p) => {
+    if (percentEl) percentEl.textContent = `${p}%`;
+    if (barEl) barEl.style.width = `${p}%`;
+    if (notifPercent) notifPercent.textContent = `${p}%`;
+    if (notifBar) notifBar.style.width = `${p}%`;
+  };
 
   if (!animate || duration <= 0 || boundedTarget === dmProgressCurrentPercent) {
     dmProgressCurrentPercent = boundedTarget;
-    if (percentEl) percentEl.textContent = `${dmProgressCurrentPercent}%`;
-    if (barEl) barEl.style.width = `${dmProgressCurrentPercent}%`;
-    return;
+    applyPercent(dmProgressCurrentPercent);
+  } else {
+    const startPercent = dmProgressCurrentPercent;
+    const diff = boundedTarget - startPercent;
+    const startTime = Date.now();
+
+    dmProgressAnimInterval = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const progressRatio = Math.min(1, elapsed / duration);
+      const easeProgress = 1 - (1 - progressRatio) * (1 - progressRatio);
+      dmProgressCurrentPercent = Math.round(startPercent + diff * easeProgress);
+      applyPercent(dmProgressCurrentPercent);
+
+      if (progressRatio >= 1) {
+        clearInterval(dmProgressAnimInterval);
+        dmProgressAnimInterval = null;
+        dmProgressCurrentPercent = boundedTarget;
+        applyPercent(boundedTarget);
+      }
+    }, 25);
   }
 
-  const startPercent = dmProgressCurrentPercent;
-  const diff = boundedTarget - startPercent;
-  const startTime = Date.now();
-
-  dmProgressAnimInterval = setInterval(() => {
-    const elapsed = Date.now() - startTime;
-    const progressRatio = Math.min(1, elapsed / duration);
-    const easeProgress = 1 - (1 - progressRatio) * (1 - progressRatio);
-    dmProgressCurrentPercent = Math.round(startPercent + diff * easeProgress);
-
-    if (percentEl) percentEl.textContent = `${dmProgressCurrentPercent}%`;
-    if (barEl) barEl.style.width = `${dmProgressCurrentPercent}%`;
-
-    if (progressRatio >= 1) {
-      clearInterval(dmProgressAnimInterval);
-      dmProgressAnimInterval = null;
-      dmProgressCurrentPercent = boundedTarget;
-      if (percentEl) percentEl.textContent = `${boundedTarget}%`;
-      if (barEl) barEl.style.width = `${boundedTarget}%`;
+  // Check Completion or Failure State
+  if (isComplete || (boundedTarget === 100 && !isFail)) {
+    if (dmProgressTimer) {
+      clearInterval(dmProgressTimer);
+      dmProgressTimer = null;
     }
-  }, 25);
+    const finalSec = ((Date.now() - (dmProgressStartTime || Date.now())) / 1000).toFixed(1);
+    const finishTimeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+
+    if (notifCard) notifCard.className = `glass-panel p-4 rounded-2xl border border-emerald-500/50 bg-slate-900/95 dark:bg-slate-950/95 shadow-2xl backdrop-blur-xl text-white space-y-2.5 relative overflow-hidden transition-all duration-300`;
+    if (notifAccent) notifAccent.className = `absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300`;
+    if (notifIconBox) notifIconBox.className = `w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 text-sm shadow-sm transition-all duration-300`;
+    if (notifIcon) notifIcon.className = `fas fa-check-circle text-emerald-400`;
+    if (notifStatusBadge) {
+      notifStatusBadge.textContent = "COMPLETED";
+      notifStatusBadge.className = `px-1.5 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/40`;
+    }
+    if (notifStepLabel) notifStepLabel.textContent = "Completed (100%)";
+    if (notifPercent) {
+      notifPercent.textContent = "100%";
+      notifPercent.className = "font-extrabold text-emerald-400 text-sm";
+    }
+    if (notifBar) {
+      notifBar.style.width = "100%";
+      notifBar.className = "h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-300 shadow-md shadow-emerald-500/50";
+    }
+    if (notifCompleteTime) {
+      notifCompleteTime.classList.remove('hidden');
+      notifCompleteTime.innerHTML = `<span class="text-emerald-400 font-semibold"><i class="fas fa-clock mr-1"></i> Completed at: <b>${finishTimeStr}</b> (Duration: ${finalSec}s)</span>`;
+    }
+
+    sendTaskDesktopNotification(`✅ ${dmActiveTaskName}: Completed`, `Finished in ${finalSec}s at ${finishTimeStr}\n${detail || 'Task completed successfully.'}`);
+
+    if (dmNotificationDismissTimer) clearTimeout(dmNotificationDismissTimer);
+    dmNotificationDismissTimer = setTimeout(() => {
+      dismissLiveTaskNotification();
+    }, 8000);
+  } else if (isFail) {
+    if (dmProgressTimer) {
+      clearInterval(dmProgressTimer);
+      dmProgressTimer = null;
+    }
+    const finalSec = ((Date.now() - (dmProgressStartTime || Date.now())) / 1000).toFixed(1);
+    const failTimeStr = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true });
+
+    if (notifCard) notifCard.className = `glass-panel p-4 rounded-2xl border border-rose-500/50 bg-slate-900/95 dark:bg-slate-950/95 shadow-2xl backdrop-blur-xl text-white space-y-2.5 relative overflow-hidden transition-all duration-300`;
+    if (notifAccent) notifAccent.className = `absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-rose-500 to-red-500 transition-all duration-300`;
+    if (notifIconBox) notifIconBox.className = `w-8 h-8 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0 text-sm shadow-sm transition-all duration-300`;
+    if (notifIcon) notifIcon.className = `fas fa-times-circle text-rose-400`;
+    if (notifStatusBadge) {
+      notifStatusBadge.textContent = "FAILED";
+      notifStatusBadge.className = `px-1.5 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wider bg-rose-500/20 text-rose-300 border border-rose-500/40`;
+    }
+    if (notifStepLabel) notifStepLabel.textContent = "Failed";
+    if (notifPercent) {
+      notifPercent.textContent = "Error";
+      notifPercent.className = "font-extrabold text-rose-400 text-sm";
+    }
+    if (notifBar) {
+      notifBar.style.width = "100%";
+      notifBar.className = "h-full rounded-full bg-gradient-to-r from-rose-500 to-red-500 transition-all duration-300 shadow-md shadow-rose-500/50";
+    }
+    if (notifCompleteTime) {
+      notifCompleteTime.classList.remove('hidden');
+      notifCompleteTime.innerHTML = `<span class="text-rose-400 font-semibold"><i class="fas fa-exclamation-triangle mr-1"></i> Failed at: <b>${failTimeStr}</b> (Duration: ${finalSec}s)</span>`;
+    }
+
+    sendTaskDesktopNotification(`❌ ${dmActiveTaskName}: Failed`, `Failed at ${failTimeStr} (${finalSec}s)\n${errorMessage || detail}`);
+
+    if (dmNotificationDismissTimer) clearTimeout(dmNotificationDismissTimer);
+    dmNotificationDismissTimer = setTimeout(() => {
+      dismissLiveTaskNotification();
+    }, 10000);
+  }
 }
 
 function closeDmProgress(delayMs = 900) {
-  if (dmProgressTimer) {
-    clearInterval(dmProgressTimer);
-    dmProgressTimer = null;
-  }
-  if (dmProgressAnimInterval) {
-    clearInterval(dmProgressAnimInterval);
-    dmProgressAnimInterval = null;
-  }
   setTimeout(() => {
     const modal = document.getElementById('dm-progress-modal');
     if (modal) modal.classList.add('hidden');
@@ -9076,21 +9267,23 @@ window.closeDmProgress = closeDmProgress;
 
 // JSON database full backup download with 1% - 100% Progress Bar
 function backupDatabase() {
+  const taskTitle = 'Backup Data ("Download all cloud data as JSON")';
   showDmProgress({
-    title: "Download Cloud Backup",
-    subtitle: "Connecting to Firebase Database...",
+    title: taskTitle,
+    taskName: taskTitle,
+    subtitle: "Cloud database connection establish ho raha hai...",
     icon: "fas fa-file-arrow-down animate-bounce",
     color: "emerald",
     step: "Step 1 of 4",
-    percent: 12,
-    detail: "Initializing database query..."
+    percent: 15,
+    detail: "Step 1 of 4 (15%): Cloud database connection establish."
   });
 
   setTimeout(() => {
-    updateDmProgress(38, {
-      subtitle: "Reading cloud records from Firebase...",
+    updateDmProgress(45, {
+      subtitle: "Entries, driver requests aur config tables read ho rahe hain...",
       step: "Step 2 of 4",
-      detail: "Fetching entries, requests & master data...",
+      detail: "Step 2 of 4 (45%): Entries, driver requests aur config tables read.",
       duration: 450
     });
   }, 200);
@@ -9104,24 +9297,26 @@ function backupDatabase() {
           step: "Warning",
           icon: "fas fa-exclamation-triangle text-amber-400",
           color: "amber",
-          detail: "No records found to backup."
+          detail: "Database empty hai, backup karne ke liye koi record nahi mila.",
+          isFail: true,
+          taskName: taskTitle
         });
         closeDmProgress(1500);
         return toast.err("Database is empty.");
       }
 
-      updateDmProgress(72, {
-        subtitle: "Formatting & compressing JSON data...",
+      updateDmProgress(75, {
+        subtitle: "Sanitized JSON snapshot build ho raha hai...",
         step: "Step 3 of 4",
-        detail: "Generating structured JSON export...",
-        duration: 400
+        detail: "Step 3 of 4 (75%): Sanitized JSON snapshot build.",
+        duration: 350
       });
 
       setTimeout(() => {
         updateDmProgress(92, {
-          subtitle: "Preparing download stream...",
+          subtitle: "Browser download trigger ho raha hai...",
           step: "Step 4 of 4",
-          detail: "Creating browser download file...",
+          detail: "Step 4 of 4 (92%): Browser download trigger.",
           duration: 350
         });
 
@@ -9135,12 +9330,14 @@ function backupDatabase() {
         dlAnchor.remove();
 
         updateDmProgress(100, {
-          subtitle: "Backup Downloaded Successfully!",
+          subtitle: "Download Complete & Ready!",
           step: "Completed (100%)",
           icon: "fas fa-check-circle text-emerald-400",
           color: "emerald",
-          detail: `Saved rpm_diesel_cloud_backup_${date}.json to device.`,
-          duration: 300
+          detail: "Completed (100%): Download complete & ready.",
+          duration: 300,
+          isComplete: true,
+          taskName: taskTitle
         });
         closeDmProgress(1200);
         toast.ok("JSON backup download initiated.");
@@ -9152,7 +9349,9 @@ function backupDatabase() {
         step: "Error",
         icon: "fas fa-times-circle text-rose-400",
         color: "rose",
-        detail: (err && err.message) || "Failed to read database."
+        detail: (err && err.message) || "Failed to read database.",
+        isFail: true,
+        taskName: taskTitle
       });
       closeDmProgress(2000);
       toast.err("Backup operation failed.");
@@ -9171,25 +9370,27 @@ document.getElementById('db-restore-submit-btn').onclick = async () => {
     return;
   }
 
+  const taskTitle = 'Import Data ("Overwrite database from a JSON backup")';
   showDmProgress({
-    title: "Database Restore & Import",
-    subtitle: "Reading backup file...",
-    icon: "fas fa-file-arrow-up animate-bounce",
+    title: taskTitle,
+    taskName: taskTitle,
+    subtitle: "Uploaded JSON/GZ file decode & read...",
+    icon: "fas fa-file-import animate-pulse",
     color: "blue",
     step: "Step 1 of 4",
     percent: 15,
-    detail: `Reading file: ${file.name} (${(file.size / 1024).toFixed(1)} KB)...`
+    detail: "Step 1 of 4 (15%): Uploaded JSON/GZ file decode & read."
   });
 
   try {
     let jsonText = '';
     if (file.name.endsWith('.gz') || file.type.includes('gzip')) {
       if (typeof DecompressionStream === 'function') {
-        updateDmProgress(32, {
+        updateDmProgress(25, {
           subtitle: "Decompressing GZIP archive...",
-          step: "Step 2 of 4",
+          step: "Step 1 of 4",
           detail: "Streaming through DecompressionStream...",
-          duration: 350
+          duration: 300
         });
         const ds = new DecompressionStream('gzip');
         const stream = file.stream().pipeThrough(ds);
@@ -9199,20 +9400,14 @@ document.getElementById('db-restore-submit-btn').onclick = async () => {
         return toast.err("Your browser does not support decompressing .gz files.");
       }
     } else {
-      updateDmProgress(32, {
-        subtitle: "Reading file contents...",
-        step: "Step 2 of 4",
-        detail: "Loading text into memory...",
-        duration: 350
-      });
       jsonText = await file.text();
     }
 
-    updateDmProgress(58, {
-      subtitle: "Parsing & validating JSON database...",
-      step: "Step 3 of 4",
-      detail: "Checking keys, schema, and nodes...",
-      duration: 400
+    updateDmProgress(30, {
+      subtitle: "Database schema aur root keys validate ho rahe hain...",
+      step: "Step 2 of 4",
+      detail: "Step 2 of 4 (30%): Database schema aur root keys validate.",
+      duration: 350
     });
 
     const parsed = JSON.parse(jsonText);
@@ -9220,11 +9415,18 @@ document.getElementById('db-restore-submit-btn').onclick = async () => {
       throw new Error("Invalid JSON structure in backup file.");
     }
 
-    updateDmProgress(82, {
-      subtitle: "Overwriting Firebase Realtime Database...",
+    updateDmProgress(50, {
+      subtitle: "Data cleaning aur records prepare ho rahe hain...",
+      step: "Step 3 of 4",
+      detail: "Step 3 of 4 (50%): Data cleaning aur records prepare.",
+      duration: 400
+    });
+
+    updateDmProgress(80, {
+      subtitle: "Firebase Realtime Database me write/overwrite chal raha hai...",
       step: "Step 4 of 4",
       icon: "fas fa-database animate-pulse",
-      detail: "Writing records to cloud database...",
+      detail: "Step 4 of 4 (80%): Firebase Realtime Database me write/overwrite.",
       duration: 500
     });
 
@@ -9233,10 +9435,12 @@ document.getElementById('db-restore-submit-btn').onclick = async () => {
     updateDmProgress(100, {
       subtitle: "Database Restored Successfully!",
       step: "Completed (100%)",
-      icon: "fas fa-check-circle text-blue-400",
-      color: "blue",
-      detail: "All records imported. Reloading application...",
-      duration: 300
+      icon: "fas fa-check-circle text-emerald-400",
+      color: "emerald",
+      detail: "Completed (100%): Database successfully restore & UI refresh.",
+      duration: 300,
+      isComplete: true,
+      taskName: taskTitle
     });
 
     fileInput.value = '';
@@ -9249,7 +9453,9 @@ document.getElementById('db-restore-submit-btn').onclick = async () => {
       step: "Error",
       icon: "fas fa-times-circle text-rose-400",
       color: "rose",
-      detail: err.message
+      detail: err.message,
+      isFail: true,
+      taskName: taskTitle
     });
     closeDmProgress(2500);
     toast.err("Failed to restore backup: " + err.message);
@@ -10391,21 +10597,24 @@ async function sendTelegramBackup(isManual = false) {
     testBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>Generating & Uploading JSON to Telegram...</span>`;
   }
 
+  const taskTitle = "Send Backup to Telegram Now (Test)";
+
   if (isManual) {
     showDmProgress({
-      title: "Telegram Cloud Backup",
-      subtitle: "Connecting to Telegram service...",
-      icon: "fab fa-telegram-plane animate-bounce",
+      title: taskTitle,
+      taskName: taskTitle,
+      subtitle: "Bot Token & Chat ID validation...",
+      icon: "fab fa-telegram-plane animate-pulse",
       color: "sky",
       step: "Step 1 of 4",
       percent: 12,
-      detail: "Validating Bot Key & Chat ID..."
+      detail: "Step 1 of 4 (12%): Bot Token & Chat ID validation."
     });
     setTimeout(() => {
       updateDmProgress(35, {
-        subtitle: "Fetching records from Firebase...",
+        subtitle: "Cloud database records fetch...",
         step: "Step 2 of 4",
-        detail: "Downloading cloud database snapshot...",
+        detail: "Step 2 of 4 (35%): Cloud database records fetch.",
         duration: 400
       });
     }, 200);
@@ -10421,7 +10630,9 @@ async function sendTelegramBackup(isManual = false) {
           step: "Warning",
           icon: "fas fa-exclamation-triangle text-amber-400",
           color: "amber",
-          detail: "No records found to backup."
+          detail: "Database empty hai, backup karne ke liye koi record nahi mila.",
+          isFail: true,
+          taskName: taskTitle
         });
         closeDmProgress(1500);
         toast.err("Database is empty, nothing to backup.");
@@ -10457,9 +10668,9 @@ async function sendTelegramBackup(isManual = false) {
 
     if (isManual) {
       updateDmProgress(68, {
-        subtitle: "Packaging & compressing JSON document...",
+        subtitle: "Snapshot packaging & gzip compression...",
         step: "Step 3 of 4",
-        detail: `Preparing ${totalRecords} entries (${sizeMb >= 1 ? sizeMb + ' MB' : sizeKb + ' KB'})...`,
+        detail: "Step 3 of 4 (68%): Snapshot packaging & gzip compression (agar zarurat ho).",
         duration: 350
       });
     }
@@ -10483,10 +10694,10 @@ async function sendTelegramBackup(isManual = false) {
 
     if (isManual) {
       updateDmProgress(86, {
-        subtitle: "Transmitting document to Telegram API...",
+        subtitle: "Telegram Bot API par document transmit...",
         step: "Step 4 of 4",
         icon: "fas fa-paper-plane animate-pulse",
-        detail: "Uploading payload to api.telegram.org...",
+        detail: "Step 4 of 4 (86%): Telegram Bot API par document transmit.",
         duration: 400
       });
     }
@@ -10532,8 +10743,10 @@ async function sendTelegramBackup(isManual = false) {
           step: "Completed (100%)",
           icon: "fas fa-check-circle text-sky-400",
           color: "sky",
-          detail: `Document ${fileName} delivered to chat.`,
-          duration: 300
+          detail: "Completed (100%): Telegram chat me document deliver hone ka checkmark.",
+          duration: 300,
+          isComplete: true,
+          taskName: taskTitle
         });
         closeDmProgress(1200);
       }
@@ -10548,7 +10761,9 @@ async function sendTelegramBackup(isManual = false) {
           step: "Error",
           icon: "fas fa-times-circle text-rose-400",
           color: "rose",
-          detail: resData.description || 'Unknown Telegram error'
+          detail: resData.description || 'Unknown Telegram error',
+          isFail: true,
+          taskName: taskTitle
         });
         closeDmProgress(2500);
       }
@@ -10562,7 +10777,9 @@ async function sendTelegramBackup(isManual = false) {
         step: "Error",
         icon: "fas fa-times-circle text-rose-400",
         color: "rose",
-        detail: err.message
+        detail: err.message,
+        isFail: true,
+        taskName: taskTitle
       });
       closeDmProgress(2500);
     }
@@ -10601,21 +10818,24 @@ async function sendDriveBackup(isManual = false) {
     testBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>Saving directly to Google Drive...</span>`;
   }
 
+  const taskTitle = "Save Backup to Google Drive Now (Test)";
+
   if (isManual) {
     showDmProgress({
-      title: "Saving to Google Drive",
-      subtitle: "Connecting to Google Drive service...",
-      icon: "fab fa-google-drive text-amber-400",
+      title: taskTitle,
+      taskName: taskTitle,
+      subtitle: "Google Drive folder ID aur Web App endpoint validation...",
+      icon: "fab fa-google-drive text-amber-400 animate-spin",
       color: "amber",
       step: "Step 1 of 4",
       percent: 10,
-      detail: "Validating Folder ID & Web App Endpoint..."
+      detail: "Step 1 of 4 (10%): Google Drive folder ID aur Web App endpoint validation."
     });
     setTimeout(() => {
       updateDmProgress(35, {
-        subtitle: "Fetching cloud database records...",
+        subtitle: "Firebase Cloud Database se snapshot download...",
         step: "Step 2 of 4",
-        detail: "Downloading database snapshot from Firebase...",
+        detail: "Step 2 of 4 (35%): Firebase Cloud Database se snapshot download.",
         duration: 400
       });
     }, 200);
@@ -10632,7 +10852,9 @@ async function sendDriveBackup(isManual = false) {
           step: "Warning",
           icon: "fas fa-exclamation-triangle text-amber-400",
           color: "amber",
-          detail: "No records found to backup."
+          detail: "Database empty hai, backup karne ke liye koi record nahi mila.",
+          isFail: true,
+          taskName: taskTitle
         });
         closeDmProgress(1500);
         toast.err("Database is empty, nothing to backup.");
@@ -10653,9 +10875,9 @@ async function sendDriveBackup(isManual = false) {
 
     if (isManual) {
       updateDmProgress(65, {
-        subtitle: "Packaging database snapshot...",
+        subtitle: "JSON packaging & file size calculation...",
         step: "Step 3 of 4",
-        detail: `Preparing ${totalRecords} entries (${sizeKb} KB JSON payload)...`,
+        detail: "Step 3 of 4 (65%): JSON packaging & file size calculation.",
         duration: 350
       });
     }
@@ -10664,10 +10886,10 @@ async function sendDriveBackup(isManual = false) {
 
     if (isManual) {
       updateDmProgress(85, {
-        subtitle: "Saving file directly to Google Drive folder...",
+        subtitle: "Google Apps Script Web App ke zariye upload...",
         step: "Step 4 of 4",
         icon: "fas fa-cloud-upload-alt text-amber-400 animate-pulse",
-        detail: "Uploading payload to Google Apps Script Web App...",
+        detail: "Step 4 of 4 (85%): Google Apps Script Web App ke zariye seedhe Drive folder me upload.",
         duration: 400
       });
     }
@@ -10736,8 +10958,10 @@ async function sendDriveBackup(isManual = false) {
         step: "Completed (100%)",
         icon: "fas fa-check-circle text-emerald-400",
         color: "emerald",
-        detail: `File '${fileName}' successfully saved into Drive folder!`,
-        duration: 300
+        detail: "Completed (100%): Success confirmation & Drive folder me file save hone ka message.",
+        duration: 300,
+        isComplete: true,
+        taskName: taskTitle
       });
       closeDmProgress(1200);
     }
@@ -10753,7 +10977,9 @@ async function sendDriveBackup(isManual = false) {
         step: "Error",
         icon: "fas fa-times-circle text-rose-400",
         color: "rose",
-        detail: err.message
+        detail: err.message,
+        isFail: true,
+        taskName: taskTitle
       });
       closeDmProgress(2500);
     }

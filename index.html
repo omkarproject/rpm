@@ -5728,10 +5728,63 @@
     </div>
   </div>
 
+  <!-- FLOATING LIVE TASK PROGRESS & COMPLETION NOTIFICATION -->
+  <div id="live-task-notification" class="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-6 sm:bottom-6 sm:w-96 max-w-md z-[99999] hidden transition-all duration-300">
+    <div id="live-task-card" class="glass-panel p-4 rounded-2xl border border-blue-500/40 bg-slate-900/95 dark:bg-slate-950/95 shadow-2xl backdrop-blur-xl text-white space-y-2.5 relative overflow-hidden transition-all duration-300">
+      
+      <!-- Top Glow Accent Line -->
+      <div id="live-task-accent-bar" class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-300"></div>
+
+      <!-- Header: Icon, Task Name, Status Badge, Elapsed Time, Close Btn -->
+      <div class="flex items-start justify-between gap-2 pt-0.5">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div id="live-task-icon-box" class="w-8 h-8 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center shrink-0 text-sm shadow-sm transition-all duration-300">
+            <i id="live-task-icon" class="fas fa-spinner fa-spin"></i>
+          </div>
+          <div class="min-w-0">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span id="live-task-status-badge" class="px-1.5 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wider bg-blue-500/20 text-blue-300 border border-blue-500/30 transition-all duration-300">
+                RUNNING
+              </span>
+              <span id="live-task-time-badge" class="text-[10px] text-slate-400 font-mono">
+                ⏱️ <span id="live-task-elapsed">0s</span>
+              </span>
+            </div>
+            <h4 id="live-task-name" class="text-xs font-bold text-slate-100 truncate mt-0.5" title="Task Name">
+              Task Notification
+            </h4>
+          </div>
+        </div>
+        <button onclick="dismissLiveTaskNotification()" class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors shrink-0 text-xs" title="Dismiss">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <!-- Percentage & Progress Bar Track -->
+      <div class="space-y-1.5 pt-0.5">
+        <div class="flex justify-between items-center text-[11px] font-mono">
+          <span id="live-task-step-label" class="text-[10px] font-bold text-slate-400">Step 1 of 4</span>
+          <span id="live-task-percent" class="font-extrabold text-blue-400 text-sm">0%</span>
+        </div>
+        <div class="w-full h-2 rounded-full bg-slate-950/80 overflow-hidden p-0.5 border border-slate-800 shadow-inner">
+          <div id="live-task-progress-bar" class="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-400 transition-all duration-300 shadow-md shadow-blue-500/50" style="width: 0%;"></div>
+        </div>
+      </div>
+
+      <!-- Exact Step Description (shown right under percentage as requested by user) -->
+      <div id="live-task-description-box" class="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80 text-[11px] text-slate-300 leading-snug">
+        <p id="live-task-desc" class="font-medium text-slate-200">
+          Preparing task...
+        </p>
+        <p id="live-task-complete-time" class="text-[10px] font-mono text-emerald-400 mt-1.5 hidden"></p>
+      </div>
+    </div>
+  </div>
+
   <div id="toasts-container"></div>
 
   <!-- Core JavaScript Core App Logic File -->
-  <script src="script.js?v=90" defer></script>
+  <script src="script.js?v=91" defer></script>
   <script src="broadcast.js" defer></script>
 
   <!-- Re-add transition after page load for smooth theme toggles -->
