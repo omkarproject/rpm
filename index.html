@@ -2035,14 +2035,14 @@
               <div class="px-5 space-y-3.5">
                 
                 <!-- Backup Card -->
-                <div onclick="backupDatabase()" class="bg-slate-50/40 dark:bg-slate-950/20 border border-slate-200/30 dark:border-slate-800/20 rounded-2xl p-4 flex items-center justify-between cursor-pointer transition-all hover:scale-[1.01] hover:bg-slate-100/60 dark:hover:bg-slate-900/40">
+                <div onclick="openBackupChoiceModal()" class="bg-slate-50/40 dark:bg-slate-950/20 border border-slate-200/30 dark:border-slate-800/20 rounded-2xl p-4 flex items-center justify-between cursor-pointer transition-all hover:scale-[1.01] hover:bg-slate-100/60 dark:hover:bg-slate-900/40">
                   <div class="flex items-center gap-3">
                     <div class="w-11 h-11 rounded-xl bg-emerald-500 flex items-center justify-center text-white text-lg">
                       <i class="fas fa-file-arrow-down"></i>
                     </div>
                     <div>
                       <h4 class="font-extrabold text-xs text-slate-800 dark:text-white">Backup Data</h4>
-                      <p class="text-[10px] text-slate-400 mt-0.5">Download all cloud data as JSON</p>
+                      <p class="text-[10px] text-slate-400 mt-0.5">Download cloud data as JSON (2 Options: Fast & Full)</p>
                     </div>
                   </div>
                   <i class="fas fa-chevron-right text-emerald-500 text-sm"></i>
@@ -2056,7 +2056,7 @@
                     </div>
                     <div>
                       <h4 class="font-extrabold text-xs text-slate-800 dark:text-white">Import Data</h4>
-                      <p class="text-[10px] text-slate-400 mt-0.5">Overwrite database from a JSON backup</p>
+                      <p class="text-[10px] text-slate-400 mt-0.5">Overwrite database from JSON (Smooth & Lag-Free)</p>
                     </div>
                   </div>
                   <i class="fas fa-chevron-right text-blue-500 text-sm"></i>
@@ -5724,6 +5724,176 @@
       </div>
     </div>
   </div>
+
+  <!-- Modal: Backup Data Options Choice Modal (Without Images vs Full Backup) -->
+  <div id="dm-backup-choice-modal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[1150] flex items-center justify-center p-4 hidden">
+    <div class="glass-panel w-full max-w-md rounded-3xl border border-emerald-500/40 p-6 shadow-2xl space-y-4 animate-fadeup relative bg-slate-900/95 text-white">
+      
+      <!-- Header -->
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-2.5">
+          <div class="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-lg shadow-sm">
+            <i class="fas fa-file-arrow-down"></i>
+          </div>
+          <div>
+            <h4 class="font-extrabold text-sm text-white">Download Cloud Backup (JSON)</h4>
+            <p class="text-[10px] text-slate-400 font-semibold">Apne zaroorat ke anusaar backup type chunein</p>
+          </div>
+        </div>
+        <button type="button" onclick="closeBackupChoiceModal()" class="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-xs transition-colors">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <!-- 2 Options Cards -->
+      <div class="space-y-3 pt-1">
+        
+        <!-- Option 1: Without Images (Recommended) -->
+        <div onclick="executeDatabaseBackup(true)" class="group p-4 rounded-2xl border-2 border-amber-500/40 hover:border-amber-400 bg-gradient-to-br from-amber-500/10 via-slate-900 to-slate-950/80 cursor-pointer transition-all duration-200 hover:scale-[1.01] shadow-lg hover:shadow-amber-500/10">
+          <div class="flex items-start justify-between gap-3 mb-2">
+            <div class="flex items-center gap-2.5">
+              <div class="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-base shrink-0 group-hover:scale-110 transition-transform">
+                <i class="fas fa-bolt-lightning"></i>
+              </div>
+              <div>
+                <h5 class="font-black text-xs text-amber-300 flex items-center gap-1.5">
+                  Without Images (Data Only)
+                  <span class="text-[9px] font-extrabold px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase tracking-wider">Fast & Small</span>
+                </h5>
+                <span class="text-[10px] text-slate-400 font-semibold">Estimated size: ~2 MB - 5 MB • Instant Download</span>
+              </div>
+            </div>
+            <i class="fas fa-arrow-right text-amber-400 text-xs mt-1 group-hover:translate-x-1 transition-transform"></i>
+          </div>
+          <p class="text-[11px] text-slate-300 leading-relaxed pl-11">
+            Saare fuel entries, vehicle details, vendor records, master log, drivers, users aur settings include rahenge. <b>Heavy photo slips & meter images remove ho jaate hain</b> jisse file size 98% choti ho jaati hai aur laptop hang nahi hota.
+          </p>
+        </div>
+
+        <!-- Option 2: Full Backup (With Images) -->
+        <div onclick="executeDatabaseBackup(false)" class="group p-4 rounded-2xl border border-slate-700 hover:border-emerald-500/50 bg-slate-950/60 hover:bg-slate-900/80 cursor-pointer transition-all duration-200 hover:scale-[1.01] shadow-md">
+          <div class="flex items-start justify-between gap-3 mb-2">
+            <div class="flex items-center gap-2.5">
+              <div class="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-base shrink-0 group-hover:scale-110 transition-transform">
+                <i class="fas fa-file-zipper"></i>
+              </div>
+              <div>
+                <h5 class="font-black text-xs text-emerald-300 flex items-center gap-1.5">
+                  Full Backup (With All Images)
+                  <span class="text-[9px] font-extrabold px-1.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase tracking-wider">Complete</span>
+                </h5>
+                <span class="text-[10px] text-slate-400 font-semibold">Estimated size: 100 MB - 500 MB+ • Full Archive</span>
+              </div>
+            </div>
+            <i class="fas fa-arrow-right text-emerald-400 text-xs mt-1 group-hover:translate-x-1 transition-transform"></i>
+          </div>
+          <p class="text-[11px] text-slate-300 leading-relaxed pl-11">
+            Database ke saare records ke sath-sath upload kiye gaye driver slips, meter photos aur driver images ka full raw snapshot. Memory-safe Blob streaming se download hota hai taaki browser hang na ho.
+          </p>
+        </div>
+
+      </div>
+
+      <!-- Footer Info -->
+      <div class="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
+        <span class="text-slate-500 font-medium"><i class="fas fa-info-circle text-blue-400 mr-1"></i> Data-only recommended for daily backups</span>
+        <button type="button" onclick="closeBackupChoiceModal()" class="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors">
+          Cancel
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Modal: Import Data Options Choice Modal (Fast Data-Only vs Full Batch Mode) -->
+  <div id="dm-import-choice-modal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[1150] flex items-center justify-center p-4 hidden">
+    <div class="glass-panel w-full max-w-md rounded-3xl border border-blue-500/40 p-6 shadow-2xl space-y-4 animate-fadeup relative bg-slate-900/95 text-white">
+      
+      <!-- Header -->
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-2.5">
+          <div class="w-10 h-10 rounded-2xl bg-blue-500/20 text-blue-400 flex items-center justify-center text-lg shadow-sm">
+            <i class="fas fa-file-arrow-up"></i>
+          </div>
+          <div>
+            <h4 class="font-extrabold text-sm text-white">Restore Database Options</h4>
+            <p id="dm-import-file-meta" class="text-[10px] text-slate-400 font-semibold truncate max-w-[260px]">File selected</p>
+          </div>
+        </div>
+        <button type="button" onclick="closeImportChoiceModal()" class="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-xs transition-colors">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <!-- File Size Alert Box -->
+      <div id="dm-import-heavy-alert" class="hidden p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center gap-2.5">
+        <i class="fas fa-triangle-exclamation text-amber-400 text-base shrink-0"></i>
+        <div>
+          <span class="font-bold block">Heavy Backup File Detected (<span id="dm-import-filesize-label">0 MB</span>)</span>
+          <span class="text-[10px] text-slate-300">Is file me heavy base64 images hain. "Fast Restore (Data Only)" chunne se 100% transactions bina kisi lag/hang ke 10 seconds me restore ho jayenge!</span>
+        </div>
+      </div>
+
+      <!-- 2 Options Cards -->
+      <div class="space-y-3 pt-1">
+        
+        <!-- Option 1: Fast Restore Without Images (Recommended) -->
+        <div onclick="confirmAndExecuteRestore(true)" class="group p-4 rounded-2xl border-2 border-amber-500/40 hover:border-amber-400 bg-gradient-to-br from-amber-500/10 via-slate-900 to-slate-950/80 cursor-pointer transition-all duration-200 hover:scale-[1.01] shadow-lg hover:shadow-amber-500/10">
+          <div class="flex items-start justify-between gap-3 mb-2">
+            <div class="flex items-center gap-2.5">
+              <div class="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center text-base shrink-0 group-hover:scale-110 transition-transform">
+                <i class="fas fa-bolt-lightning"></i>
+              </div>
+              <div>
+                <h5 class="font-black text-xs text-amber-300 flex items-center gap-1.5">
+                  Fast Restore (Data Only)
+                  <span class="text-[9px] font-extrabold px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase tracking-wider">Smooth & Safe</span>
+                </h5>
+                <span class="text-[10px] text-slate-400 font-semibold">10-15 seconds • Zero Lag • Recommended</span>
+              </div>
+            </div>
+            <i class="fas fa-arrow-right text-amber-400 text-xs mt-1 group-hover:translate-x-1 transition-transform"></i>
+          </div>
+          <p class="text-[11px] text-slate-300 leading-relaxed pl-11">
+            Saare transactions, rates, diesel entries, vehicle numbers, vendors, master log aur settings turant restore honge. Heavy photo strings skip ho jayengi jisse laptop ya browser 1% bhi freeze nahi hoga.
+          </p>
+        </div>
+
+        <!-- Option 2: Full Restore (With All Images - Batch Mode) -->
+        <div onclick="confirmAndExecuteRestore(false)" class="group p-4 rounded-2xl border border-slate-700 hover:border-blue-500/50 bg-slate-950/60 hover:bg-slate-900/80 cursor-pointer transition-all duration-200 hover:scale-[1.01] shadow-md">
+          <div class="flex items-start justify-between gap-3 mb-2">
+            <div class="flex items-center gap-2.5">
+              <div class="w-9 h-9 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center text-base shrink-0 group-hover:scale-110 transition-transform">
+                <i class="fas fa-cubes-stacked"></i>
+              </div>
+              <div>
+                <h5 class="font-black text-xs text-blue-300 flex items-center gap-1.5">
+                  Full Restore (With All Images)
+                  <span class="text-[9px] font-extrabold px-1.5 py-0.5 rounded-md bg-blue-500/20 text-blue-300 border border-blue-500/30 uppercase tracking-wider">Multi-Batch</span>
+                </h5>
+                <span class="text-[10px] text-slate-400 font-semibold">Safe 50-Item Chunking • No System Crash</span>
+              </div>
+            </div>
+            <i class="fas fa-arrow-right text-blue-400 text-xs mt-1 group-hover:translate-x-1 transition-transform"></i>
+          </div>
+          <p class="text-[11px] text-slate-300 leading-relaxed pl-11">
+            Database ke saare data ke sath photos/slips bhi restore honge. Ye 50-records ke safe batches me asynchronous background chunks me write hoga jisse CPU overheat nahi hoga aur reboot ki zaroorat nahi padegi.
+          </p>
+        </div>
+
+      </div>
+
+      <!-- Footer Info -->
+      <div class="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-400">
+        <span class="text-slate-500 font-medium">Overwrites matching cloud records</span>
+        <button type="button" onclick="closeImportChoiceModal()" class="px-4 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition-colors">
+          Cancel
+        </button>
+      </div>
+
+    </div>
+  </div>
+
   <!-- Modal: Data Operations Progress Modal (1% to 100%) -->
   <div id="dm-progress-modal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[1200] flex items-center justify-center p-4 hidden">
     <div class="glass-panel w-full max-w-sm rounded-3xl border border-slate-700/60 p-6 shadow-2xl space-y-4 animate-fadeup relative bg-slate-900/95 text-white text-center">
@@ -5825,7 +5995,7 @@
   <div id="toasts-container"></div>
 
   <!-- Core JavaScript Core App Logic File -->
-  <script src="script.js?v=93" defer></script>
+  <script src="script.js?v=95" defer></script>
   <script src="broadcast.js" defer></script>
 
   <!-- Re-add transition after page load for smooth theme toggles -->

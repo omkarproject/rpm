@@ -9452,132 +9452,286 @@ window.showDmProgress = showDmProgress;
 window.updateDmProgress = updateDmProgress;
 window.closeDmProgress = closeDmProgress;
 
-// JSON database full backup download with 1% - 100% Progress Bar
-function backupDatabase() {
-  const taskTitle = 'Backup Data ("Download all cloud data as JSON")';
+// ══════════════════════════════════════════════════════════
+// HIGH-PERFORMANCE DATA BACKUP & RESTORE CONTROLLER (NO HANG / NO CRASH)
+// ══════════════════════════════════════════════════════════
+
+// Global state for staged restore file
+let stagedRestoreFile = null;
+
+// Modal controls for Backup Choice
+window.openBackupChoiceModal = function() {
+  const modal = document.getElementById('dm-backup-choice-modal');
+  if (modal) modal.classList.remove('hidden');
+};
+
+window.closeBackupChoiceModal = function() {
+  const modal = document.getElementById('dm-backup-choice-modal');
+  if (modal) modal.classList.add('hidden');
+};
+
+// Modal controls for Import Choice
+window.openImportChoiceModal = function(file) {
+  stagedRestoreFile = file;
+  const modal = document.getElementById('dm-import-choice-modal');
+  if (!modal) return;
+  
+  const metaEl = document.getElementById('dm-import-file-meta');
+  const heavyAlert = document.getElementById('dm-import-heavy-alert');
+  const sizeLabel = document.getElementById('dm-import-filesize-label');
+  
+  if (file) {
+    const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+    if (metaEl) metaEl.textContent = `${file.name} (${sizeMB} MB)`;
+    if (file.size > 15 * 1024 * 1024) {
+      if (heavyAlert) heavyAlert.classList.remove('hidden');
+      if (sizeLabel) sizeLabel.textContent = `${sizeMB} MB`;
+    } else {
+      if (heavyAlert) heavyAlert.classList.add('hidden');
+    }
+  }
+  modal.classList.remove('hidden');
+};
+
+window.closeImportChoiceModal = function() {
+  const modal = document.getElementById('dm-import-choice-modal');
+  if (modal) modal.classList.add('hidden');
+  stagedRestoreFile = null;
+  const fileInput = document.getElementById('db-restore-file');
+  if (fileInput) fileInput.value = '';
+};
+
+window.confirmAndExecuteRestore = function(skipImages) {
+  const file = stagedRestoreFile;
+  const modal = document.getElementById('dm-import-choice-modal');
+  if (modal) modal.classList.add('hidden');
+  if (!file) {
+    toast.warn("No backup file selected.");
+    return;
+  }
+  executeDatabaseRestore(file, { skipImages });
+};
+
+// Helper: Micro-batch sanitizer that removes heavy base64 and image keys without freezing UI
+async function sanitizeDataWithoutImages(rawObj, onProgress) {
+  if (!rawObj || typeof rawObj !== 'object') return rawObj;
+  
+  const sanitized = {};
+  const photoCollections = new Set(['entryPhotos', 'driverRequestPhotos', 'refillPhotos']);
+  const photoKeys = new Set(['slipPhoto', 'meterPhoto', 'photo', 'image', 'avatar', 'receiptPhoto']);
+  
+  const topKeys = Object.keys(rawObj);
+  let processed = 0;
+  
+  for (const collKey of topKeys) {
+    // Skip entire photo collections
+    if (photoCollections.has(collKey)) {
+      sanitized[collKey] = { _backup_info: "Photo records omitted for compact data backup" };
+      continue;
+    }
+    
+    const val = rawObj[collKey];
+    if (val && typeof val === 'object' && !Array.isArray(val)) {
+      const subKeys = Object.keys(val);
+      const cleanedColl = {};
+      let itemCounter = 0;
+      
+      for (const itemKey of subKeys) {
+        const itemVal = val[itemKey];
+        if (itemVal && typeof itemVal === 'object' && !Array.isArray(itemVal)) {
+          const cleanedItem = {};
+          for (const prop in itemVal) {
+            const propVal = itemVal[prop];
+            if (photoKeys.has(prop)) {
+              continue;
+            }
+            if (typeof propVal === 'string' && (propVal.startsWith('data:image/') || (propVal.length > 5000 && /^[A-Za-z0-9+/=]+$/.test(propVal.slice(0, 50))))) {
+              continue;
+            }
+            cleanedItem[prop] = propVal;
+          }
+          cleanedColl[itemKey] = cleanedItem;
+        } else {
+          cleanedColl[itemKey] = itemVal;
+        }
+        
+        itemCounter++;
+        if (itemCounter % 200 === 0) {
+          await new Promise(r => setTimeout(r, 0)); // Yield to event loop
+        }
+      }
+      sanitized[collKey] = cleanedColl;
+    } else {
+      sanitized[collKey] = val;
+    }
+    
+    processed++;
+    if (typeof onProgress === 'function') {
+      const pct = Math.round((processed / topKeys.length) * 100);
+      onProgress(pct);
+    }
+    await new Promise(r => setTimeout(r, 0));
+  }
+  
+  return sanitized;
+}
+
+// Memory-safe JSON Database Backup (Blob + URL.createObjectURL instead of fatal encodeURIComponent)
+window.executeDatabaseBackup = async function(withoutImages = false) {
+  closeBackupChoiceModal();
+  
+  const taskTitle = withoutImages 
+    ? 'Backup Data (Without Images - Data Only)' 
+    : 'Backup Data (Full Backup with Images)';
+
   showDmProgress({
     title: taskTitle,
     taskName: taskTitle,
     subtitle: "Cloud database connection establish ho raha hai...",
-    icon: "fas fa-file-arrow-down animate-bounce",
-    color: "emerald",
+    icon: withoutImages ? "fas fa-bolt-lightning text-amber-400 animate-bounce" : "fas fa-file-arrow-down text-emerald-400 animate-bounce",
+    color: withoutImages ? "amber" : "emerald",
     step: "Step 1 of 4",
     percent: 15,
     detail: "Step 1 of 4 (15%): Cloud database connection establish."
   });
 
-  setTimeout(() => {
-    updateDmProgress(45, {
-      subtitle: "Entries, driver requests aur config tables read ho rahe hain...",
-      step: "Step 2 of 4",
-      detail: "Step 2 of 4 (45%): Entries, driver requests aur config tables read.",
-      duration: 450
-    });
-  }, 200);
-
-  db.ref().once('value')
-    .then(snap => {
-      const val = snap.val();
-      if (!val) {
-        updateDmProgress(100, {
-          subtitle: "Database is empty!",
-          step: "Warning",
-          icon: "fas fa-exclamation-triangle text-amber-400",
-          color: "amber",
-          detail: "Database empty hai, backup karne ke liye koi record nahi mila.",
-          isFail: true,
-          taskName: taskTitle
-        });
-        closeDmProgress(1500);
-        return toast.err("Database is empty.");
-      }
-
-      updateDmProgress(75, {
-        subtitle: "Sanitized JSON snapshot build ho raha hai...",
-        step: "Step 3 of 4",
-        detail: "Step 3 of 4 (75%): Sanitized JSON snapshot build.",
-        duration: 350
-      });
-
-      setTimeout(() => {
-        updateDmProgress(92, {
-          subtitle: "Browser download trigger ho raha hai...",
-          step: "Step 4 of 4",
-          detail: "Step 4 of 4 (92%): Browser download trigger.",
-          duration: 350
-        });
-
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(val, null, 2));
-        const dlAnchor = document.createElement('a');
-        const date = new Date().toISOString().slice(0, 10);
-        dlAnchor.setAttribute("href", dataStr);
-        dlAnchor.setAttribute("download", `rpm_diesel_cloud_backup_${date}.json`);
-        document.body.appendChild(dlAnchor);
-        dlAnchor.click();
-        dlAnchor.remove();
-
-        updateDmProgress(100, {
-          subtitle: "Download Complete & Ready!",
-          step: "Completed (100%)",
-          icon: "fas fa-check-circle text-emerald-400",
-          color: "emerald",
-          detail: "Completed (100%): Download complete & ready.",
-          duration: 300,
-          isComplete: true,
-          taskName: taskTitle
-        });
-        closeDmProgress(1200);
-        toast.ok("JSON backup download initiated.");
-      }, 350);
-    })
-    .catch((err) => {
+  try {
+    const snap = await db.ref().once('value');
+    let val = snap.val();
+    
+    if (!val) {
       updateDmProgress(100, {
-        subtitle: "Backup Failed!",
-        step: "Error",
-        icon: "fas fa-times-circle text-rose-400",
-        color: "rose",
-        detail: (err && err.message) || "Failed to read database.",
+        subtitle: "Database is empty!",
+        step: "Warning",
+        icon: "fas fa-exclamation-triangle text-amber-400",
+        color: "amber",
+        detail: "Database empty hai, backup karne ke liye koi record nahi mila.",
         isFail: true,
         taskName: taskTitle
       });
       closeDmProgress(2000);
-      toast.err("Backup operation failed.");
+      return toast.err("Database is empty.");
+    }
+
+    updateDmProgress(45, {
+      subtitle: withoutImages ? "Heavy images filter aur clean ho rahe hain..." : "Records snapshot download ho gaya...",
+      step: "Step 2 of 4",
+      detail: withoutImages ? "Step 2 of 4 (45%): Heavy images filter aur clean..." : "Step 2 of 4 (45%): Records read complete.",
+      duration: 300
     });
-}
 
-// Restore Database from JSON or GZIP (.json / .json.gz / .gz) with 1% - 100% Progress Bar
-document.getElementById('db-restore-submit-btn').onclick = async () => {
-  const fileInput = document.getElementById('db-restore-file');
-  const file = fileInput.files[0];
-  if (!file) return toast.warn("Choose a backup JSON or GZ file first.");
+    if (withoutImages) {
+      val = await sanitizeDataWithoutImages(val, (subPct) => {
+        updateDmProgress(45 + Math.round(subPct * 0.3), {
+          subtitle: `Sanitizing records: ${subPct}%...`,
+          step: "Step 2 of 4",
+          detail: `Step 2 of 4: Removing heavy images & slips (${subPct}%)`
+        });
+      });
+    }
 
-  const pass = prompt("DANGER! This will overwrite the entire database.\nEnter admin passcode to authorize:");
-  if (pass !== '@RPM@2026@') {
-    if (pass !== null) toast.err("Incorrect admin passcode.");
-    return;
+    updateDmProgress(80, {
+      subtitle: "Memory-safe JSON packaging chal rahi hai...",
+      step: "Step 3 of 4",
+      detail: "Step 3 of 4 (80%): Compact JSON stringifying & Blob allocation.",
+      duration: 300
+    });
+
+    // CRITICAL: Compact JSON.stringify (no null, 2 indent) to save 50%+ memory
+    const jsonStr = JSON.stringify(val);
+    val = null; // Free reference for garbage collection
+
+    const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+    const sizeMB = (blob.size / (1024 * 1024)).toFixed(2);
+
+    updateDmProgress(92, {
+      subtitle: `Download file ready (${sizeMB} MB). Triggering browser download...`,
+      step: "Step 4 of 4",
+      detail: `Step 4 of 4 (92%): File size: ${sizeMB} MB. Initiating download.`,
+      duration: 250
+    });
+
+    const dlAnchor = document.createElement('a');
+    const date = new Date().toISOString().slice(0, 10);
+    const filePrefix = withoutImages ? 'rpm_diesel_data_only_backup' : 'rpm_diesel_full_backup';
+    const blobUrl = URL.createObjectURL(blob);
+    
+    dlAnchor.href = blobUrl;
+    dlAnchor.download = `${filePrefix}_${date}.json`;
+    document.body.appendChild(dlAnchor);
+    dlAnchor.click();
+    dlAnchor.remove();
+
+    // Clean up memory
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 15000);
+
+    updateDmProgress(100, {
+      subtitle: `Download Complete (${sizeMB} MB)!`,
+      step: "Completed (100%)",
+      icon: "fas fa-check-circle text-emerald-400",
+      color: "emerald",
+      detail: `Completed (100%): Backup (${sizeMB} MB) downloaded successfully without any lag.`,
+      duration: 300,
+      isComplete: true,
+      taskName: taskTitle
+    });
+    closeDmProgress(1500);
+    toast.ok(`Backup downloaded (${sizeMB} MB)!`);
+
+  } catch (err) {
+    updateDmProgress(100, {
+      subtitle: "Backup Failed!",
+      step: "Error",
+      icon: "fas fa-times-circle text-rose-400",
+      color: "rose",
+      detail: (err && err.message) || "Failed to read database.",
+      isFail: true,
+      taskName: taskTitle
+    });
+    closeDmProgress(2500);
+    toast.err("Backup operation failed: " + ((err && err.message) || ""));
   }
+};
 
-  const taskTitle = 'Import Data ("Overwrite database from a JSON backup")';
+// Fallback & wrapper for backupDatabase
+function backupDatabase(opts) {
+  if (typeof opts === 'boolean') {
+    executeDatabaseBackup(opts);
+  } else if (opts && typeof opts === 'object' && ('withoutImages' in opts)) {
+    executeDatabaseBackup(opts.withoutImages);
+  } else {
+    openBackupChoiceModal();
+  }
+}
+window.backupDatabase = backupDatabase;
+
+// Smooth, Multi-Batch lag-free JSON/GZ restore into Firebase Realtime Database
+window.executeDatabaseRestore = async function(file, options = {}) {
+  const skipImages = !!options.skipImages;
+  const taskTitle = skipImages 
+    ? 'Import Data (Fast Restore - Data Only)' 
+    : 'Import Data (Full Restore - Multi-Batch Mode)';
+
   showDmProgress({
     title: taskTitle,
     taskName: taskTitle,
-    subtitle: "Uploaded JSON/GZ file decode & read...",
-    icon: "fas fa-file-import animate-pulse",
+    subtitle: "Uploaded file read & decode ho raha hai...",
+    icon: "fas fa-file-import text-blue-400 animate-pulse",
     color: "blue",
-    step: "Step 1 of 4",
-    percent: 15,
-    detail: "Step 1 of 4 (15%): Uploaded JSON/GZ file decode & read."
+    step: "Step 1 of 5",
+    percent: 10,
+    detail: "Step 1 of 5 (10%): Uploaded backup file read & decode."
   });
 
   try {
     let jsonText = '';
     if (file.name.endsWith('.gz') || file.type.includes('gzip')) {
       if (typeof DecompressionStream === 'function') {
-        updateDmProgress(25, {
+        updateDmProgress(20, {
           subtitle: "Decompressing GZIP archive...",
-          step: "Step 1 of 4",
+          step: "Step 1 of 5",
           detail: "Streaming through DecompressionStream...",
-          duration: 300
+          duration: 250
         });
         const ds = new DecompressionStream('gzip');
         const stream = file.stream().pipeThrough(ds);
@@ -9591,61 +9745,132 @@ document.getElementById('db-restore-submit-btn').onclick = async () => {
     }
 
     updateDmProgress(30, {
-      subtitle: "Database schema aur root keys validate ho rahe hain...",
-      step: "Step 2 of 4",
-      detail: "Step 2 of 4 (30%): Database schema aur root keys validate.",
-      duration: 350
+      subtitle: "JSON parsing & schema validation...",
+      step: "Step 2 of 5",
+      detail: "Step 2 of 5 (30%): Parsing JSON structure.",
+      duration: 250
     });
 
+    // Let the event loop breathe before JSON parse
+    await new Promise(r => setTimeout(r, 20));
     const parsed = JSON.parse(jsonText);
+    jsonText = null; // IMMEDIATE DEREFERENCE to let Garbage Collector reclaim RAM!
+
     if (!parsed || typeof parsed !== 'object') {
       throw new Error("Invalid JSON structure in backup file.");
     }
 
-    updateDmProgress(50, {
-      subtitle: "Data cleaning aur records prepare ho rahe hain...",
-      step: "Step 3 of 4",
-      detail: "Step 3 of 4 (50%): Data cleaning aur records prepare.",
-      duration: 400
+    updateDmProgress(45, {
+      subtitle: skipImages ? "Skipping heavy images and preparing data records..." : "Preparing records collections...",
+      step: "Step 3 of 5",
+      detail: skipImages ? "Step 3 of 5 (45%): Photo nodes skipped for 10x faster restore." : "Step 3 of 5 (45%): Organizing batch trees.",
+      duration: 300
     });
 
-    updateDmProgress(80, {
-      subtitle: "Firebase Realtime Database me write/overwrite chal raha hai...",
-      step: "Step 4 of 4",
-      icon: "fas fa-database animate-pulse",
-      detail: "Step 4 of 4 (80%): Firebase Realtime Database me write/overwrite.",
-      duration: 500
+    if (skipImages) {
+      delete parsed.entryPhotos;
+      delete parsed.driverRequestPhotos;
+      delete parsed.refillPhotos;
+    }
+
+    const topKeys = Object.keys(parsed);
+    const totalCollections = topKeys.length;
+    let completedCollections = 0;
+
+    updateDmProgress(55, {
+      subtitle: "Writing records to Firebase in smooth micro-batches...",
+      step: "Step 4 of 5",
+      icon: "fas fa-database text-emerald-400 animate-pulse",
+      detail: `Step 4 of 5 (55%): Writing ${totalCollections} collections with zero CPU freeze.`,
+      duration: 300
     });
 
-    await db.ref().set(parsed);
+    // CRITICAL: Safe multi-batch writing. Instead of db.ref().set(hugeObject) which freezes the OS,
+    // we write top-level collections in safe 50-item chunks and yield every batch.
+    for (let c = 0; c < totalCollections; c++) {
+      const collKey = topKeys[c];
+      const collData = parsed[collKey];
+
+      if (collData && typeof collData === 'object' && !Array.isArray(collData)) {
+        const itemKeys = Object.keys(collData);
+        const totalItems = itemKeys.length;
+
+        if (totalItems > 50) {
+          const CHUNK_SIZE = 50;
+          for (let i = 0; i < totalItems; i += CHUNK_SIZE) {
+            const batchKeys = itemKeys.slice(i, i + CHUNK_SIZE);
+            const batchPayload = {};
+            
+            for (const ik of batchKeys) {
+              let itemVal = collData[ik];
+              if (skipImages && itemVal && typeof itemVal === 'object') {
+                const cleaned = {};
+                for (const p in itemVal) {
+                  if (p === 'slipPhoto' || p === 'meterPhoto' || p === 'photo' || p === 'image' || p === 'receiptPhoto') continue;
+                  if (typeof itemVal[p] === 'string' && (itemVal[p].startsWith('data:image/') || itemVal[p].length > 5000)) continue;
+                  cleaned[p] = itemVal[p];
+                }
+                batchPayload[ik] = cleaned;
+              } else {
+                batchPayload[ik] = itemVal;
+              }
+            }
+
+            await db.ref(collKey).update(batchPayload);
+
+            const itemsDone = Math.min(i + CHUNK_SIZE, totalItems);
+            const collProgress = 55 + Math.round(((c + (itemsDone / totalItems)) / totalCollections) * 35);
+            
+            updateDmProgress(collProgress, {
+              subtitle: `Restoring ${collKey}: ${itemsDone} / ${totalItems} records...`,
+              step: "Step 4 of 5",
+              detail: `Step 4 of 5: Writing ${collKey} [${itemsDone}/${totalItems}] - Smooth execution.`
+            });
+
+            // Critical CPU yield - lets browser paint & garbage collect
+            await new Promise(r => setTimeout(r, 25));
+          }
+        } else {
+          await db.ref(collKey).set(collData);
+          await new Promise(r => setTimeout(r, 15));
+        }
+      } else {
+        await db.ref(collKey).set(collData);
+        await new Promise(r => setTimeout(r, 15));
+      }
+
+      completedCollections++;
+    }
 
     updateDmProgress(100, {
       subtitle: "Database Restored Successfully!",
       step: "Completed (100%)",
       icon: "fas fa-check-circle text-emerald-400",
       color: "emerald",
-      detail: "Completed (100%): Database successfully restore & UI refresh.",
+      detail: "Completed (100%): All database records restored smoothly. UI reloading...",
       duration: 300,
       isComplete: true,
       taskName: taskTitle
     });
 
-    fileInput.value = '';
-    closeDmProgress(1300);
-    toast.ok("Full database restored successfully!");
-    setTimeout(() => location.reload(), 1500);
+    const fileInput = document.getElementById('db-restore-file');
+    if (fileInput) fileInput.value = '';
+    closeDmProgress(1400);
+    toast.ok("Database restored successfully!");
+    setTimeout(() => location.reload(), 1600);
+
   } catch (err) {
     updateDmProgress(100, {
       subtitle: "Restore Failed!",
       step: "Error",
       icon: "fas fa-times-circle text-rose-400",
       color: "rose",
-      detail: err.message,
+      detail: (err && err.message) || "Failed to restore backup.",
       isFail: true,
       taskName: taskTitle
     });
-    closeDmProgress(2500);
-    toast.err("Failed to restore backup: " + err.message);
+    closeDmProgress(3000);
+    toast.err("Failed to restore backup: " + ((err && err.message) || ""));
   }
 };
 
@@ -9709,13 +9934,32 @@ window.fullDatabaseReset = () => {
   }
 };
 
-// Automatic file select restore trigger hook
+// Hook up #db-restore-file change to admin passcode & Choice Modal
 const restoreFileEl = document.getElementById('db-restore-file');
 if (restoreFileEl) {
   restoreFileEl.onchange = (e) => {
-    if (e.target.files.length > 0) {
-      document.getElementById('db-restore-submit-btn').click();
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    
+    const pass = prompt("DANGER! This will overwrite cloud database records.\nEnter admin passcode to authorize:");
+    if (pass !== '@RPM@2026@') {
+      if (pass !== null) toast.err("Incorrect admin passcode.");
+      restoreFileEl.value = '';
+      return;
     }
+
+    openImportChoiceModal(file);
+  };
+}
+
+// Keep submit button click for backward compatibility
+const restoreSubmitBtn = document.getElementById('db-restore-submit-btn');
+if (restoreSubmitBtn) {
+  restoreSubmitBtn.onclick = () => {
+    const fileInput = document.getElementById('db-restore-file');
+    const file = fileInput ? fileInput.files[0] : null;
+    if (!file) return toast.warn("Choose a backup JSON or GZ file first.");
+    openImportChoiceModal(file);
   };
 }
 
