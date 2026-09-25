@@ -9980,6 +9980,7 @@ let telegramAutoBackupConfig = {
 
 let googleDriveAutoBackupConfig = {
   enabled: false,
+  includeImages: false,
   folderLink: '',
   folderId: '',
   webAppUrl: '',
@@ -10242,21 +10243,69 @@ function updateAutoBackupUI() {
   }
 }
 
+function updateDriveBackupImagesToggleUI() {
+  const imagesToggle = document.getElementById('dm-drivebackup-images-enable');
+  const statusText = document.getElementById('dm-drivebackup-images-status-text');
+  const contentLabel = document.getElementById('dm-drivebackup-content-label');
+  const isWithImages = imagesToggle ? imagesToggle.checked : false;
+
+  if (statusText) {
+    if (isWithImages) {
+      statusText.innerHTML = '<span class="text-emerald-500 font-bold">ON: With Images (Full backup snapshot with all photos/slips)</span>';
+    } else {
+      statusText.innerHTML = '<span class="text-teal-400 font-bold">OFF: Without Images (Data Only ~2-5 MB, Fast & small)</span>';
+    }
+  }
+  if (contentLabel) {
+    if (isWithImages) {
+      contentLabel.textContent = "Full Snapshot (With Images)";
+      contentLabel.className = "font-semibold text-sky-400";
+    } else {
+      contentLabel.textContent = "Without Images (Data Only)";
+      contentLabel.className = "font-semibold text-emerald-400";
+    }
+  }
+  googleDriveAutoBackupConfig.includeImages = isWithImages;
+}
+window.updateDriveBackupImagesToggleUI = updateDriveBackupImagesToggleUI;
+
+function updateDriveConnectionBadge() {
+  const webAppInput = document.getElementById('dm-drivebackup-webapp-url');
+  const badge = document.getElementById('dm-drivebackup-connection-badge');
+  if (!badge) return;
+  const val = webAppInput ? webAppInput.value.trim() : '';
+  if (val && /^https?:\/\//i.test(val)) {
+    badge.className = "text-[9px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold flex items-center gap-1";
+    badge.innerHTML = '<i class="fas fa-circle-check"></i> Connected & Ready';
+  } else {
+    badge.className = "text-[9px] px-2 py-0.5 rounded-full bg-slate-700/60 text-slate-400 border border-slate-600/40 font-bold flex items-center gap-1";
+    badge.innerHTML = '<i class="fas fa-circle-notch"></i> Not Connected';
+  }
+}
+window.updateDriveConnectionBadge = updateDriveConnectionBadge;
+
 function updateDriveBackupUI() {
   const enableInput = document.getElementById('dm-drivebackup-enable');
+  const imagesInput = document.getElementById('dm-drivebackup-images-enable');
   const folderInput = document.getElementById('dm-drivebackup-folder');
   const webAppInput = document.getElementById('dm-drivebackup-webapp-url');
   const daysInput = document.getElementById('dm-drivebackup-days');
   const daysPreview = document.getElementById('dm-drivebackup-days-preview');
   const lastTimeSpan = document.getElementById('dm-drivebackup-last-time');
   const nextTimeSpan = document.getElementById('dm-drivebackup-next-time');
+  const lastFileLink = document.getElementById('dm-drivebackup-last-file-link');
 
   if (enableInput) enableInput.checked = !!googleDriveAutoBackupConfig.enabled;
+  if (imagesInput) imagesInput.checked = !!googleDriveAutoBackupConfig.includeImages;
+  updateDriveBackupImagesToggleUI();
+
   if (folderInput) {
     folderInput.value = googleDriveAutoBackupConfig.folderLink || googleDriveAutoBackupConfig.folderId || '';
     onDriveFolderInputChanged(folderInput.value);
   }
   if (webAppInput) webAppInput.value = googleDriveAutoBackupConfig.webAppUrl || '';
+  updateDriveConnectionBadge();
+
   if (daysInput) daysInput.value = googleDriveAutoBackupConfig.intervalDays || 1;
   if (daysPreview) daysPreview.textContent = googleDriveAutoBackupConfig.intervalDays || 1;
 
@@ -10266,6 +10315,15 @@ function updateDriveBackupUI() {
       lastTimeSpan.textContent = d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
     } else {
       lastTimeSpan.textContent = "Never";
+    }
+  }
+
+  if (lastFileLink) {
+    if (googleDriveAutoBackupConfig.lastFileUrl) {
+      lastFileLink.href = googleDriveAutoBackupConfig.lastFileUrl;
+      lastFileLink.classList.remove('hidden');
+    } else {
+      lastFileLink.classList.add('hidden');
     }
   }
 
@@ -10375,6 +10433,8 @@ async function saveDriveBackupSettings() {
   const saveBtn = document.getElementById('dm-drivebackup-save-btn');
 
   const enabled = enableInput ? enableInput.checked : false;
+  const imagesInput = document.getElementById('dm-drivebackup-images-enable');
+  const includeImages = imagesInput ? imagesInput.checked : false;
   const folderLink = folderInput ? folderInput.value.trim() : '';
   let webAppUrl = webAppInput ? webAppInput.value.trim() : '';
   if (webAppUrl && !/^https?:\/\//i.test(webAppUrl)) {
@@ -10385,11 +10445,12 @@ async function saveDriveBackupSettings() {
 
   const folderId = extractDriveFolderId(folderLink);
 
-  if (enabled && !folderLink) {
-    return toast.err("Please enter Google Drive Folder Link or Folder ID to enable Drive Auto Backup.");
+  if (enabled && !webAppUrl && !folderId) {
+    return toast.err("Please enter Google Drive Web App Sync URL to enable Drive Backup.");
   }
 
   googleDriveAutoBackupConfig.enabled = enabled;
+  googleDriveAutoBackupConfig.includeImages = includeImages;
   googleDriveAutoBackupConfig.folderLink = folderLink;
   googleDriveAutoBackupConfig.folderId = folderId;
   googleDriveAutoBackupConfig.webAppUrl = webAppUrl;
@@ -10677,32 +10738,65 @@ window.closeGoogleCloudSetupModal = closeGoogleCloudSetupModal;
 
 const GOOGLE_APPS_SCRIPT_CODE = `/**
  * =========================================================================
- * RPM DIESEL - 24/7 CLOUD AUTO BACKUP (TELEGRAM & GOOGLE DRIVE)
+ * RPM DIESEL - 24/7 CLOUD AUTO BACKUP (WHATSAPP-STYLE GOOGLE DRIVE & TELEGRAM)
  * =========================================================================
- * Runs completely in Google Cloud (100% Free on script.google.com).
- * Automatically delivers backup to Telegram AND/OR saves to Google Drive
- * folder even if the website is closed or computer/mobile is powered off!
- *
- * SETUP INSTRUCTIONS:
- * 1. Open https://script.google.com -> Click "New project"
- * 2. Replace all code with this script and Save (Ctrl+S).
- * 3. Click "Run" button once to test (grant Google permissions).
- * 4. To enable 24/7 background timer:
- *    - Click Clock icon ("Triggers") -> "+ Add Trigger"
+ * Google Cloud par 100% Free run karta hai (script.google.com).
+ * WhatsApp ki tarah Google Drive me single backup file ko auto-overwrite/update
+ * karta rahega - Drive me hazaron duplicate files jama nahi hongi!
+ * 
+ * SETUP INSTRUCTIONS (Sirf 1-2 Minute):
+ * 1. https://script.google.com kholein -> Click "+ New project"
+ * 2. Purana code hata kar ye pura script paste karein aur Save (Ctrl+S) karein.
+ * 3. Top-right me "Deploy" -> "New deployment" par click karein:
+ *    - Type (Gear icon): "Web app"
+ *    - Description: "RPM WhatsApp Style Drive Backup"
+ *    - Execute as: "Me"
+ *    - Who has access: "Anyone" (Zaroori hai)
+ *    - Click "Deploy" -> Authorize Access (Review Permissions -> Advanced -> Allow)
+ * 4. Deploy hone par "Web App URL" ko copy karke RPM Settings me paste kar dein!
+ * 5. (Optional) 24/7 Cloud Background Timer Trigger:
+ *    - Left menu me Clock icon ("Triggers") par click karein -> "+ Add Trigger"
  *    - Function: checkAndRunCloudAutoBackup
  *    - Event source: Time-driven -> Minutes timer -> Every 10 or 15 minutes
- * 5. To enable direct upload from browser:
- *    - Click "Deploy" (top right) -> "New deployment"
- *    - Select type: "Web app"
- *    - Execute as: "Me"
- *    - Who has access: "Anyone"
- *    - Click Deploy -> Copy Web App URL -> Paste in RPM Settings!
  * =========================================================================
  */
 
 const FIREBASE_DB_URL = "https://rpm-diesel-default-rtdb.firebaseio.com";
 const DEFAULT_BOT_TOKEN = "8880618363:AAEGp8ReJEcB563j9_2XiaVvwaPHMigt1PM";
 const DEFAULT_CHAT_ID = "7927138678";
+
+// Helper: Folder find karein ya auto "RPM Diesel Backups" create karein
+function getOrCreateDriveFolder(folderId) {
+  if (folderId && folderId.trim()) {
+    try {
+      return DriveApp.getFolderById(folderId.trim());
+    } catch (e) {
+      Logger.log("Folder ID se folder nahi mila (" + folderId + "), RPM Diesel Backups folder use hoga: " + e);
+    }
+  }
+  const folderName = "RPM Diesel Backups";
+  const existingFolders = DriveApp.getFoldersByName(folderName);
+  if (existingFolders.hasNext()) {
+    return existingFolders.next();
+  }
+  return DriveApp.createFolder(folderName);
+}
+
+// Helper: WhatsApp Style Single File Save / Overwrite
+function saveOrUpdateDriveFile(folder, fileName, content) {
+  const existingFiles = folder.getFilesByName(fileName);
+  if (existingFiles.hasNext()) {
+    const file = existingFiles.next();
+    file.setContent(content);
+    Logger.log("Existing backup file updated (WhatsApp Overwrite): " + fileName + " (ID: " + file.getId() + ")");
+    return { file: file, isUpdated: true };
+  } else {
+    const jsonBlob = Utilities.newBlob(content, "application/json", fileName);
+    const file = folder.createFile(jsonBlob);
+    Logger.log("New backup file created in Drive: " + fileName + " (ID: " + file.getId() + ")");
+    return { file: file, isUpdated: false };
+  }
+}
 
 function checkAndRunCloudAutoBackup() {
   Logger.log("Starting cloud auto-backup check...");
@@ -10726,7 +10820,7 @@ function checkAndRunCloudAutoBackup() {
 
   const now = Date.now();
   const shouldRunTg = tgConfig && tgConfig.enabled && (!tgConfig.nextBackupTimestamp || now >= Number(tgConfig.nextBackupTimestamp));
-  const shouldRunDrive = driveConfig && driveConfig.enabled && driveConfig.folderId && (!driveConfig.nextBackupTimestamp || now >= Number(driveConfig.nextBackupTimestamp));
+  const shouldRunDrive = driveConfig && driveConfig.enabled && (!driveConfig.nextBackupTimestamp || now >= Number(driveConfig.nextBackupTimestamp));
 
   if (!shouldRunTg && !shouldRunDrive) {
     Logger.log("Neither Telegram nor Google Drive backup is due at this time.");
@@ -10740,22 +10834,23 @@ function checkAndRunCloudAutoBackup() {
   const rawData = JSON.parse(dbDataRes.getContentText());
   if (!rawData) return;
 
-  const tgWithImages = tgConfig && tgConfig.includeImages === true;
-  const cleanData = tgWithImages ? rawData : sanitizeForBackup(rawData);
-  const jsonString = JSON.stringify(cleanData, null, 2);
-  const jsonBlob = Utilities.newBlob(jsonString, "application/json");
-
   const nowObj = new Date();
   const dateStr = Utilities.formatDate(nowObj, "Asia/Kolkata", "yyyy-MM-dd");
   const timeStr = Utilities.formatDate(nowObj, "Asia/Kolkata", "HH-mm-ss");
-  const filePrefix = tgWithImages ? "RPM_Diesel_FullBackup_" : "RPM_Diesel_AutoBackup_";
-  const fileName = filePrefix + dateStr + "_" + timeStr + ".json";
-  jsonBlob.setName(fileName);
-  const sizeMb = (jsonBlob.getBytes().length / (1024 * 1024)).toFixed(2);
 
-  // Process Telegram Backup if due
+  // 1. Process Telegram Backup if due
   if (shouldRunTg) {
     try {
+      const tgWithImages = tgConfig && tgConfig.includeImages === true;
+      const cleanDataTg = tgWithImages ? rawData : sanitizeForBackup(rawData);
+      const jsonStringTg = JSON.stringify(cleanDataTg, null, 2);
+      const jsonBlobTg = Utilities.newBlob(jsonStringTg, "application/json");
+
+      const filePrefix = tgWithImages ? "RPM_Diesel_FullBackup_" : "RPM_Diesel_AutoBackup_";
+      const fileNameTg = filePrefix + dateStr + "_" + timeStr + ".json";
+      jsonBlobTg.setName(fileNameTg);
+      const sizeMb = (jsonBlobTg.getBytes().length / (1024 * 1024)).toFixed(2);
+
       const botToken = (tgConfig.botToken || DEFAULT_BOT_TOKEN).trim();
       const chatId = (tgConfig.chatId || DEFAULT_CHAT_ID).trim();
       const totalEntries = rawData.entries ? Object.keys(rawData.entries).length : 0;
@@ -10766,7 +10861,7 @@ function checkAndRunCloudAutoBackup() {
         "📦 <b>RPM DIESEL 24/7 CLOUD DATABASE BACKUP</b>",
         "━━━━━━━━━━━━━━━━━━━━━━━━━━",
         "📅 <b>Timestamp:</b> " + Utilities.formatDate(nowObj, "Asia/Kolkata", "dd MMM yyyy, hh:mm a") + " (IST)",
-        "💾 <b>File:</b> <code>" + fileName + "</code>",
+        "💾 <b>File:</b> <code>" + fileNameTg + "</code>",
         "📊 <b>Size:</b> " + sizeMb + " MB",
         "🖼️ <b>Mode:</b> " + (tgWithImages ? "With Images (Full Snapshot)" : "Without Images (Data Only)"),
         "📝 <b>Data:</b> " + totalEntries + " Entries | " + totalRequests + " Requests",
@@ -10779,7 +10874,7 @@ function checkAndRunCloudAutoBackup() {
       const telegramUrl = "https://api.telegram.org/bot" + botToken + "/sendDocument";
       const payload = {
         chat_id: chatId,
-        document: jsonBlob,
+        document: jsonBlobTg,
         caption: caption,
         parse_mode: "HTML"
       };
@@ -10811,20 +10906,18 @@ function checkAndRunCloudAutoBackup() {
     }
   }
 
-  // Process Google Drive Backup if due
+  // 2. Process Google Drive Backup if due (WhatsApp Single-File Overwrite)
   if (shouldRunDrive) {
     try {
-      const folderId = driveConfig.folderId.trim();
-      let folder;
-      try {
-        folder = DriveApp.getFolderById(folderId);
-      } catch (fErr) {
-        Logger.log("Folder not found by ID (" + folderId + "), saving to root: " + fErr);
-        folder = DriveApp.getRootFolder();
-      }
+      const driveWithImages = driveConfig && driveConfig.includeImages === true;
+      const cleanDataDrive = driveWithImages ? rawData : sanitizeForBackup(rawData);
+      const jsonStringDrive = JSON.stringify(cleanDataDrive, null, 2);
+      const fileNameDrive = driveWithImages ? "RPM_Diesel_FullBackup.json" : "RPM_Diesel_AutoBackup.json";
 
-      const driveFile = folder.createFile(jsonBlob);
-      Logger.log("Google Drive backup saved! File ID: " + driveFile.getId() + " URL: " + driveFile.getUrl());
+      const folder = getOrCreateDriveFolder(driveConfig.folderId);
+      const result = saveOrUpdateDriveFile(folder, fileNameDrive, jsonStringDrive);
+
+      Logger.log("Google Drive backup completed! Updated: " + result.isUpdated + " File URL: " + result.file.getUrl());
 
       const intervalDays = Number(driveConfig.intervalDays) || 1;
       let nextDate = new Date(now);
@@ -10839,7 +10932,7 @@ function checkAndRunCloudAutoBackup() {
         lastBackupTimestamp: now,
         lastBackupDate: Utilities.formatDate(nowObj, "Asia/Kolkata", "dd/MM/yyyy, hh:mm:ss a"),
         nextBackupTimestamp: nextDate.getTime(),
-        lastFileUrl: driveFile.getUrl()
+        lastFileUrl: result.file.getUrl()
       };
       UrlFetchApp.fetch(FIREBASE_DB_URL + "/appConfig/googleDriveAutoBackup.json", {
         method: "patch", contentType: "application/json", payload: JSON.stringify(updates), muteHttpExceptions: true
@@ -10866,10 +10959,9 @@ function doPost(e) {
     }
 
     const folderId = (body.folderId || "").trim();
-    const nowObj = new Date();
-    const dateStr = Utilities.formatDate(nowObj, "Asia/Kolkata", "yyyy-MM-dd");
-    const timeStr = Utilities.formatDate(nowObj, "Asia/Kolkata", "HH-mm-ss");
-    const fileName = (body.fileName || ("RPM_Diesel_AutoBackup_" + dateStr + "_" + timeStr + ".json")).trim();
+    const isWithImages = body.includeImages === true || body.includeImages === "true";
+    const defaultFileName = isWithImages ? "RPM_Diesel_FullBackup.json" : "RPM_Diesel_AutoBackup.json";
+    const fileName = (body.fileName || defaultFileName).trim();
 
     let content = "";
     if (body.data) {
@@ -10877,24 +10969,16 @@ function doPost(e) {
     } else {
       const dbDataRes = UrlFetchApp.fetch(FIREBASE_DB_URL + "/.json", { muteHttpExceptions: true });
       const rawData = JSON.parse(dbDataRes.getContentText());
-      const cleanData = sanitizeForBackup(rawData);
+      const cleanData = isWithImages ? rawData : sanitizeForBackup(rawData);
       content = JSON.stringify(cleanData, null, 2);
     }
 
-    let folder;
-    if (folderId) {
-      try {
-        folder = DriveApp.getFolderById(folderId);
-      } catch (err) {
-        folder = DriveApp.getRootFolder();
-      }
-    } else {
-      folder = DriveApp.getRootFolder();
-    }
+    const folder = getOrCreateDriveFolder(folderId);
+    const saveResult = saveOrUpdateDriveFile(folder, fileName, content);
+    const file = saveResult.file;
+    const isUpdated = saveResult.isUpdated;
 
-    const jsonBlob = Utilities.newBlob(content, "application/json", fileName);
-    const file = folder.createFile(jsonBlob);
-
+    const nowObj = new Date();
     try {
       UrlFetchApp.fetch(FIREBASE_DB_URL + "/appConfig/googleDriveAutoBackup.json", {
         method: "patch",
@@ -10910,6 +10994,7 @@ function doPost(e) {
 
     const output = {
       ok: true,
+      updated: isUpdated,
       fileId: file.getId(),
       fileUrl: file.getUrl(),
       fileName: fileName
@@ -10925,6 +11010,7 @@ function doGet(e) {
     const params = (e && e.parameter) ? e.parameter : {};
     const action = params.action;
     const folderId = (params.folderId || "").trim();
+    const isWithImages = params.includeImages === "true" || params.includeImages === true;
 
     if (action === "saveBackup" || action === "backupNow" || action === "test") {
       const dbDataRes = UrlFetchApp.fetch(FIREBASE_DB_URL + "/.json", { muteHttpExceptions: true });
@@ -10932,28 +11018,18 @@ function doGet(e) {
         return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Firebase read failed: " + dbDataRes.getResponseCode() })).setMimeType(ContentService.MimeType.JSON);
       }
       const rawData = JSON.parse(dbDataRes.getContentText());
-      const cleanData = sanitizeForBackup(rawData);
+      const cleanData = isWithImages ? rawData : sanitizeForBackup(rawData);
       const jsonString = JSON.stringify(cleanData, null, 2);
 
+      const defaultFileName = isWithImages ? "RPM_Diesel_FullBackup.json" : "RPM_Diesel_AutoBackup.json";
+      const fileName = (params.fileName || defaultFileName).trim();
+
+      const folder = getOrCreateDriveFolder(folderId);
+      const saveResult = saveOrUpdateDriveFile(folder, fileName, jsonString);
+      const file = saveResult.file;
+      const isUpdated = saveResult.isUpdated;
+
       const nowObj = new Date();
-      const dateStr = Utilities.formatDate(nowObj, "Asia/Kolkata", "yyyy-MM-dd");
-      const timeStr = Utilities.formatDate(nowObj, "Asia/Kolkata", "HH-mm-ss");
-      const fileName = (params.fileName || ("RPM_Diesel_AutoBackup_" + dateStr + "_" + timeStr + ".json")).trim();
-
-      let folder;
-      if (folderId) {
-        try {
-          folder = DriveApp.getFolderById(folderId);
-        } catch (fErr) {
-          folder = DriveApp.getRootFolder();
-        }
-      } else {
-        folder = DriveApp.getRootFolder();
-      }
-
-      const jsonBlob = Utilities.newBlob(jsonString, "application/json", fileName);
-      const file = folder.createFile(jsonBlob);
-
       try {
         UrlFetchApp.fetch(FIREBASE_DB_URL + "/appConfig/googleDriveAutoBackup.json", {
           method: "patch",
@@ -10969,13 +11045,14 @@ function doGet(e) {
 
       return ContentService.createTextOutput(JSON.stringify({
         ok: true,
+        updated: isUpdated,
         fileId: file.getId(),
         fileUrl: file.getUrl(),
         fileName: fileName
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    return ContentService.createTextOutput(JSON.stringify({ status: "ok", service: "RPM Diesel Cloud Auto Backup Service" })).setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({ status: "ok", service: "RPM Diesel Cloud Auto Backup Service (WhatsApp Style)" })).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ ok: false, error: err.toString() })).setMimeType(ContentService.MimeType.JSON);
   }
@@ -11294,14 +11371,11 @@ async function sendDriveBackup(isManual = false) {
     webAppUrl = 'https://' + webAppUrl;
   }
 
-  const folderId = extractDriveFolderId(folderInputVal);
-  if (!folderId) {
-    return toast.err("Please enter a valid Google Drive Folder Link or Folder ID.");
-  }
+  const folderId = extractDriveFolderId(folderInputVal) || '';
 
   if (!webAppUrl) {
     if (isManual) {
-      toast.warn("Google Drive me direct save karne ke liye Google Apps Script ka 'Web App URL' paste karein.");
+      toast.warn("Google Drive me direct auto-sync ke liye 'Google Drive Web App Sync URL' paste karein.");
       openGoogleDriveSetupModal();
     }
     return;
@@ -11310,21 +11384,21 @@ async function sendDriveBackup(isManual = false) {
   const testBtn = document.getElementById('dm-drivebackup-test-btn');
   if (testBtn && isManual) {
     testBtn.disabled = true;
-    testBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>Saving directly to Google Drive...</span>`;
+    testBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>Syncing single file to Google Drive...</span>`;
   }
 
-  const taskTitle = "Save Backup to Google Drive Now (Test)";
+  const taskTitle = "Sync Backup to Google Drive (WhatsApp Mode)";
 
   if (isManual) {
     showDmProgress({
       title: taskTitle,
       taskName: taskTitle,
-      subtitle: "Google Drive folder ID aur Web App endpoint validation...",
-      icon: "fab fa-google-drive text-amber-400 animate-spin",
-      color: "amber",
+      subtitle: "Google Drive sync endpoint validation...",
+      icon: "fab fa-google-drive text-emerald-400 animate-spin",
+      color: "emerald",
       step: "Step 1 of 4",
       percent: 10,
-      detail: "Step 1 of 4 (10%): Google Drive folder ID aur Web App endpoint validation."
+      detail: "Step 1 of 4 (10%): Google Drive Web App sync endpoint validation."
     });
     setTimeout(() => {
       updateDmProgress(35, {
@@ -11334,7 +11408,7 @@ async function sendDriveBackup(isManual = false) {
         duration: 400
       });
     }, 200);
-    toast.info("Database JSON backup Google Drive me bheja ja raha hai...");
+    toast.info("Database JSON backup Google Drive me sync ho raha hai...");
   }
 
   try {
@@ -11357,47 +11431,43 @@ async function sendDriveBackup(isManual = false) {
       return;
     }
 
-    const cleanVal = sanitizeDbForBackup(val);
-    const jsonStr = JSON.stringify(cleanVal, null, 2);
+    const imagesToggle = document.getElementById('dm-drivebackup-images-enable');
+    const includeImages = imagesToggle ? imagesToggle.checked : (googleDriveAutoBackupConfig.includeImages === true);
 
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10);
-    const timeStr = now.toTimeString().slice(0, 8).replace(/:/g, '-');
-    const fileName = `RPM_Diesel_AutoBackup_${dateStr}_${timeStr}.json`;
-
-    const totalRecords = (cleanVal.entries ? Object.keys(cleanVal.entries).length : 0);
-    const sizeKb = (new Blob([jsonStr]).size / 1024).toFixed(1);
+    const cleanVal = includeImages ? val : sanitizeDbForBackup(val);
+    const fileName = includeImages ? "RPM_Diesel_FullBackup.json" : "RPM_Diesel_AutoBackup.json";
+    const totalRecords = (val.entries ? Object.keys(val.entries).length : 0);
 
     if (isManual) {
       updateDmProgress(65, {
-        subtitle: "JSON packaging & file size calculation...",
+        subtitle: "WhatsApp-style JSON snapshot packaging...",
         step: "Step 3 of 4",
-        detail: "Step 3 of 4 (65%): JSON packaging & file size calculation.",
+        detail: `Step 3 of 4 (65%): Target: ${fileName} (${includeImages ? 'With Images' : 'Without Images'}).`,
         duration: 350
       });
     }
 
-    let uploadSuccess = false;
-
     if (isManual) {
       updateDmProgress(85, {
-        subtitle: "Google Apps Script Web App ke zariye upload...",
+        subtitle: "Google Drive me single file update/overwrite...",
         step: "Step 4 of 4",
-        icon: "fas fa-cloud-upload-alt text-amber-400 animate-pulse",
-        detail: "Step 4 of 4 (85%): Google Apps Script Web App ke zariye seedhe Drive folder me upload.",
+        icon: "fas fa-arrows-rotate text-emerald-400 animate-spin",
+        detail: `Step 4 of 4 (85%): ${fileName} ko Google Drive me update/overwrite kiya ja raha hai.`,
         duration: 400
       });
     }
 
     // Send payload directly to Google Apps Script Web App
-    try {
-      const postPayload = {
-        action: 'saveBackup',
-        folderId: folderId,
-        fileName: fileName,
-        data: cleanVal
-      };
+    const postPayload = {
+      action: 'saveBackup',
+      folderId: folderId,
+      fileName: fileName,
+      includeImages: includeImages,
+      data: cleanVal
+    };
 
+    let uploadSuccess = false;
+    try {
       await fetch(webAppUrl, {
         method: 'POST',
         mode: 'no-cors',
@@ -11408,7 +11478,7 @@ async function sendDriveBackup(isManual = false) {
     } catch (postErr) {
       console.warn("POST to Web App failed, attempting GET trigger:", postErr);
       try {
-        const getUrl = `${webAppUrl}${webAppUrl.includes('?') ? '&' : '?'}action=saveBackup&folderId=${encodeURIComponent(folderId)}&fileName=${encodeURIComponent(fileName)}&t=${Date.now()}`;
+        const getUrl = `${webAppUrl}${webAppUrl.includes('?') ? '&' : '?'}action=saveBackup&folderId=${encodeURIComponent(folderId)}&fileName=${encodeURIComponent(fileName)}&includeImages=${includeImages}&t=${Date.now()}`;
         await fetch(getUrl, { method: 'GET', mode: 'no-cors' });
         uploadSuccess = true;
       } catch (getErr) {
@@ -11418,6 +11488,7 @@ async function sendDriveBackup(isManual = false) {
     }
 
     const backupTimeNow = Date.now();
+    const now = new Date();
     googleDriveAutoBackupConfig.lastBackupTimestamp = backupTimeNow;
     googleDriveAutoBackupConfig.lastBackupDate = now.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
     googleDriveAutoBackupConfig.webAppUrl = webAppUrl;
@@ -11449,19 +11520,19 @@ async function sendDriveBackup(isManual = false) {
 
     if (isManual) {
       updateDmProgress(100, {
-        subtitle: "Saved to Google Drive Successfully!",
+        subtitle: "Single Backup File Updated in Google Drive!",
         step: "Completed (100%)",
         icon: "fas fa-check-circle text-emerald-400",
         color: "emerald",
-        detail: "Completed (100%): Success confirmation & Drive folder me file save hone ka message.",
+        detail: `Completed (100%): ${fileName} aapke Google Drive me successfully update & overwrite ho gayi hai!`,
         duration: 300,
         isComplete: true,
         taskName: taskTitle
       });
-      closeDmProgress(1200);
+      closeDmProgress(1400);
     }
 
-    toast.ok("✅ Backup file aapke Google Drive folder me successfully save ho gayi hai!");
+    toast.ok(`✅ WhatsApp-Style Sync: ${fileName} Google Drive me successfully update ho gayi!`);
     updateAutoBackupBadge();
     updateDriveBackupUI();
   } catch (err) {

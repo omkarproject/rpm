@@ -2390,7 +2390,7 @@
                     <i class="fab fa-google-drive"></i>
                   </div>
                   <h4 class="font-extrabold text-sm text-slate-800 dark:text-white">Google Drive Cloud Auto Backup</h4>
-                  <p class="text-[10px] text-slate-400">Automatically upload full database JSON backup to your Google Drive folder</p>
+                  <p class="text-[10px] text-slate-400">WhatsApp-Style Single File Auto-Update (Drive me ek hi backup file hamesha update hoti rahegi)</p>
                 </div>
 
                 <div class="px-5 space-y-3.5 text-left">
@@ -2408,34 +2408,72 @@
                     </label>
                   </div>
 
-                  <!-- Google Drive Folder Link or ID -->
+                  <!-- Include Images Toggle Switch (ON: With Images, OFF: Without Images) -->
+                  <div class="p-3.5 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 flex items-center justify-between">
+                    <div>
+                      <h5 class="text-xs font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
+                        <i class="fas fa-images text-emerald-500"></i> Backup With Images
+                      </h5>
+                      <p id="dm-drivebackup-images-status-text" class="text-[10px] text-slate-400">
+                        OFF: Without Images (~2-5 MB, Fast) • ON: With Images (Full Snapshot)
+                      </p>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" id="dm-drivebackup-images-enable" class="sr-only peer" onchange="updateDriveBackupImagesToggleUI()">
+                      <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                    </label>
+                  </div>
+
+                  <!-- WhatsApp Single-File Overwrite Mode Banner -->
+                  <div class="p-3 rounded-2xl bg-gradient-to-r from-emerald-500/15 to-teal-500/10 border border-emerald-500/30 flex items-center justify-between">
+                    <div class="flex items-center gap-2.5">
+                      <div class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-sm shrink-0">
+                        <i class="fas fa-arrows-rotate"></i>
+                      </div>
+                      <div>
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                          <h6 class="text-xs font-black text-emerald-400">WhatsApp-Style Single File Sync</h6>
+                          <span class="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Auto Overwrite</span>
+                        </div>
+                        <p class="text-[10px] text-slate-300 mt-0.5">Hamesha ek hi file <code class="text-emerald-300 font-bold bg-slate-900/60 px-1 py-0.5 rounded">RPM_Diesel_AutoBackup.json</code> update & overwrite hoti rahegi.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Google Apps Script Web App URL (Direct Drive Save) -->
+                  <div>
+                    <div class="flex items-center justify-between mb-1">
+                      <label class="calc-label text-[10px] text-emerald-400 font-extrabold flex items-center gap-1.5" for="dm-drivebackup-webapp-url">
+                        <i class="fas fa-bolt-lightning text-emerald-400"></i> GOOGLE DRIVE WEB APP SYNC URL
+                      </label>
+                      <span id="dm-drivebackup-connection-badge" class="text-[9px] px-2 py-0.5 rounded-full bg-slate-700/60 text-slate-400 border border-slate-600/40 font-bold flex items-center gap-1">
+                        <i class="fas fa-circle-notch"></i> Not Connected
+                      </span>
+                    </div>
+                    <input type="text" id="dm-drivebackup-webapp-url" class="calc-input font-mono text-[11px] py-2" placeholder="https://script.google.com/macros/s/.../exec (Yahan Web App URL paste karein)" oninput="updateDriveConnectionBadge()">
+                    <div class="flex items-center justify-between mt-1 text-[9px]">
+                      <p class="text-slate-400">Drive me direct auto-save ke liye Web App URL yahan paste karein.</p>
+                      <button type="button" onclick="openGoogleDriveSetupModal()" class="text-emerald-400 hover:text-emerald-300 underline font-bold flex items-center gap-1">
+                        <i class="fas fa-book-open"></i> 1-Min Setup Guide
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Google Drive Folder Link or ID (Optional) -->
                   <div>
                     <div class="flex items-center justify-between">
-                      <label class="calc-label text-[10px]" for="dm-drivebackup-folder">📁 GOOGLE DRIVE FOLDER LINK OR ID</label>
+                      <label class="calc-label text-[10px]" for="dm-drivebackup-folder">📁 GOOGLE DRIVE FOLDER LINK OR ID (OPTIONAL)</label>
                       <a id="dm-drivebackup-folder-external-link" href="#" target="_blank" class="hidden text-[10px] text-emerald-500 font-bold hover:underline flex items-center gap-1">
                         <span>Open Folder</span> <i class="fas fa-external-link-alt text-[9px]"></i>
                       </a>
                     </div>
-                    <input type="text" id="dm-drivebackup-folder" class="calc-input font-mono text-[11px] py-2" placeholder="e.g. https://drive.google.com/drive/folders/1ABCxyz... or Folder ID" oninput="onDriveFolderInputChanged(this.value)">
+                    <input type="text" id="dm-drivebackup-folder" class="calc-input font-mono text-[11px] py-2" placeholder="e.g. https://drive.google.com/drive/folders/... (Khali chhodne par 'RPM Diesel Backups' folder auto banega)" oninput="onDriveFolderInputChanged(this.value)">
                     <div id="dm-drivebackup-folder-preview-container" class="hidden mt-1.5 p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-600 dark:text-emerald-400 flex items-center justify-between">
                       <span class="flex items-center gap-1.5 font-mono truncate">
                         <i class="fas fa-folder-open text-emerald-500"></i> Folder ID: <b id="dm-drivebackup-folder-id-preview">-</b>
                       </span>
                       <span class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 font-bold uppercase shrink-0">Valid ID</span>
                     </div>
-                    <p class="text-[9px] text-slate-400 mt-1">Google Drive me folder banayein -> Share -> <b>Anyone with link (Viewer/Editor)</b> karke link yahan paste karein.</p>
-                  </div>
-
-                  <!-- Google Apps Script Web App URL (Direct Drive Save) -->
-                  <div>
-                    <label class="calc-label text-[10px] text-emerald-400 font-extrabold flex items-center justify-between" for="dm-drivebackup-webapp-url">
-                      <span>⚡ GOOGLE APPS SCRIPT WEB APP URL (Drive me Direct Save ke liye)</span>
-                      <button type="button" onclick="openGoogleDriveSetupModal()" class="text-[9px] text-emerald-400 hover:text-emerald-300 underline font-bold lowercase normal-case tracking-normal">
-                        <i class="fas fa-magic"></i> 1-Min me Banayein
-                      </button>
-                    </label>
-                    <input type="text" id="dm-drivebackup-webapp-url" class="calc-input font-mono text-[11px] py-2" placeholder="https://script.google.com/macros/s/.../exec (Yahan Web App URL paste karein)">
-                    <p class="text-[9px] text-slate-400 mt-1">Google Drive me bina device download kiye file direct save karne ke liye Google Apps Script ka Web App URL yahan paste karein.</p>
                   </div>
 
                   <!-- Days Interval Input & Preset Chips -->
@@ -2454,14 +2492,17 @@
                       <button type="button" onclick="setDriveBackupDays(30)" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all">30 Days (Monthly)</button>
                       <button type="button" onclick="setDriveBackupDays(100)" class="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-all">100 Days</button>
                     </div>
-                    <p class="text-[9px] text-slate-400 mt-1.5">Har <span id="dm-drivebackup-days-preview" class="font-bold text-emerald-500">1</span> din me auto backup JSON file Google Drive me save ho jayegi.</p>
+                    <p class="text-[9px] text-slate-400 mt-1.5">Har <span id="dm-drivebackup-days-preview" class="font-bold text-emerald-500">1</span> din me auto backup JSON file Google Drive me update ho jayegi.</p>
                   </div>
 
                   <!-- Status & Timing Card -->
                   <div class="p-3.5 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-slate-50/50 dark:bg-slate-900/30 space-y-1.5 text-[11px]">
                     <div class="flex items-center justify-between text-slate-600 dark:text-slate-300">
-                      <span class="font-bold flex items-center gap-1.5"><i class="fas fa-history text-slate-400"></i> Last Drive Backup:</span>
-                      <span id="dm-drivebackup-last-time" class="font-semibold text-slate-700 dark:text-slate-200">Never</span>
+                      <span class="font-bold flex items-center gap-1.5"><i class="fas fa-history text-slate-400"></i> Last Drive Sync:</span>
+                      <div class="flex items-center gap-1.5">
+                        <span id="dm-drivebackup-last-time" class="font-semibold text-slate-700 dark:text-slate-200">Never</span>
+                        <a id="dm-drivebackup-last-file-link" href="#" target="_blank" class="hidden text-emerald-400 hover:text-emerald-300 font-bold underline text-[10px] ml-1">View File</a>
+                      </div>
                     </div>
                     <div class="flex items-center justify-between text-slate-600 dark:text-slate-300">
                       <span class="font-bold flex items-center gap-1.5"><i class="fas fa-calendar-check text-emerald-500"></i> Next Scheduled:</span>
@@ -2474,14 +2515,14 @@
                     </div>
                     <div class="flex items-center justify-between text-slate-600 dark:text-slate-300 pt-1 border-t border-slate-200/40 dark:border-slate-800/40">
                       <span class="font-bold flex items-center gap-1.5"><i class="fas fa-shield-halved text-emerald-500"></i> Backup Content:</span>
-                      <span class="font-semibold text-emerald-600 dark:text-emerald-400">Full Cloud RTDB (.json)</span>
+                      <span id="dm-drivebackup-content-label" class="font-semibold text-emerald-600 dark:text-emerald-400">Without Images (Data Only)</span>
                     </div>
                   </div>
 
                   <!-- Test / Send Now Button -->
                   <div class="pt-1">
                     <button onclick="testDriveBackupNow()" id="dm-drivebackup-test-btn" type="button" class="w-full py-2.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all">
-                      <i class="fab fa-google-drive"></i> <span>Save Backup to Google Drive Now (Test)</span>
+                      <i class="fab fa-google-drive"></i> <span>Sync Backup to Google Drive Now (Test)</span>
                     </button>
                   </div>
 
@@ -2496,7 +2537,7 @@
                           <h5 class="text-xs font-black text-slate-800 dark:text-white">24/7 Cloud Auto Backup</h5>
                           <span class="text-[8px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Google Cloud Run</span>
                         </div>
-                        <p class="text-[9px] text-slate-400">Website band hone par bhi Google Cloud automatically JSON backup aapke Google Drive folder me save kar dega.</p>
+                        <p class="text-[9px] text-slate-400">Website & PC band hone par bhi Google Cloud automatically JSON backup aapke Google Drive folder me update kar dega.</p>
                       </div>
                     </div>
                     
@@ -5658,8 +5699,8 @@
             <i class="fab fa-google-drive"></i>
           </div>
           <div>
-            <h4 class="font-extrabold text-sm text-white">Google Drive Auto Backup Setup</h4>
-            <p class="text-[10px] text-emerald-300 font-semibold">Folder Link & 24/7 Cloud Setup (1-Min Guide)</p>
+            <h4 class="font-extrabold text-sm text-white">WhatsApp-Style Google Drive Backup</h4>
+            <p class="text-[10px] text-emerald-300 font-semibold">Single File Auto-Update Setup (1-Min Guide)</p>
           </div>
         </div>
         <button type="button" onclick="closeGoogleDriveSetupModal()" class="w-7 h-7 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-xs transition-colors">
@@ -5670,8 +5711,8 @@
       <div class="space-y-3 text-left text-xs leading-relaxed">
         <div class="bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-2xl">
           <p class="text-[11px] text-emerald-200">
-            📁 <b>Google Drive Backup Kaise Kaam Karta Hai?</b><br>
-            Aap apne Google Drive me ek folder banakar uska link yahan paste karte hain. Google Apps Script 24/7 background me bina website khole har din aapki full JSON database backup file usi folder me save karti rahegi!
+            ⚡ <b>WhatsApp-Style Single File Auto-Update:</b><br>
+            Google Drive me hazaron alag-alag files nahi banengi! WhatsApp backup ki tarah aapki ek hi master backup file (<code class="bg-black/40 px-1 py-0.5 rounded text-emerald-300">RPM_Diesel_AutoBackup.json</code>) automatically overwrite/update hoti rahegi!
           </p>
         </div>
 
@@ -5679,10 +5720,10 @@
           <div class="flex items-start gap-2.5 bg-slate-950/60 p-3 rounded-xl border border-slate-800">
             <span class="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0">1</span>
             <div class="flex-1">
-              <p class="font-bold text-slate-200">Google Drive me Folder Banayein</p>
-              <p class="text-[11px] text-slate-400 mt-0.5">Apne Google Drive me jaayein aur ek naya folder banayein (jaise: <b>RPM Backups</b>).</p>
-              <a href="https://drive.google.com" target="_blank" class="inline-flex items-center gap-1 mt-1.5 px-3 py-1 bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-emerald-300 rounded-lg text-[10px] font-bold transition-all">
-                Open drive.google.com <i class="fas fa-external-link-alt text-[9px]"></i>
+              <p class="font-bold text-slate-200">Google Apps Script Kholein</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Apne Google account se open karein aur <b>"+ New project"</b> par click karein.</p>
+              <a href="https://script.google.com" target="_blank" class="inline-flex items-center gap-1 mt-1.5 px-3 py-1 bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-emerald-300 rounded-lg text-[10px] font-bold transition-all">
+                Open script.google.com <i class="fas fa-external-link-alt text-[9px]"></i>
               </a>
             </div>
           </div>
@@ -5690,16 +5731,8 @@
           <div class="flex items-start gap-2.5 bg-slate-950/60 p-3 rounded-xl border border-slate-800">
             <span class="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0">2</span>
             <div class="flex-1">
-              <p class="font-bold text-slate-200">Folder Share karein (Anyone with link)</p>
-              <p class="text-[11px] text-slate-400 mt-0.5">Folder par right-click karein -> <b>Share</b> -> General access me <b>"Anyone with the link"</b> chunein aur <b>Copy Link</b> karke RPM Portal me paste karein.</p>
-            </div>
-          </div>
-
-          <div class="flex items-start gap-2.5 bg-slate-950/60 p-3 rounded-xl border border-slate-800">
-            <span class="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0">3</span>
-            <div class="flex-1">
-              <p class="font-bold text-slate-200">Cloud Script Code Paste karein</p>
-              <p class="text-[11px] text-slate-400 mt-0.5"><a href="https://script.google.com" target="_blank" class="text-emerald-400 underline font-bold">script.google.com</a> par New project banakar script code paste karein aur Save (Ctrl+S) karein.</p>
+              <p class="font-bold text-slate-200">Script Code Paste & Save Karein</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Neeche button se code copy karke wahan pura code replace kar dein aur <b>Save (Ctrl+S)</b> karein.</p>
               <button type="button" onclick="copyGoogleCloudBackupScript()" class="inline-flex items-center gap-1.5 mt-1.5 px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-bold shadow-md transition-all">
                 <i class="fas fa-copy"></i> Copy Cloud Script Code
               </button>
@@ -5707,29 +5740,43 @@
           </div>
 
           <div class="flex items-start gap-2.5 bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+            <span class="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0">3</span>
+            <div class="flex-1">
+              <p class="font-bold text-slate-200">Deploy Web App (Zaroori)</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Top-right me <b>Deploy -> New deployment</b> par click karein:</p>
+              <ul class="list-disc list-inside text-[10px] text-slate-300 mt-1 space-y-0.5">
+                <li>Gear icon se select karein: <b>Web app</b></li>
+                <li>Execute as: <b>Me</b></li>
+                <li>Who has access: <b class="text-emerald-300">Anyone</b> (Zaroori hai)</li>
+              </ul>
+              <p class="text-[10px] text-slate-400 mt-1">Deploy dabakar permissions Allow kar dein, fir <b>Web app URL</b> copy karke RPM Portal me paste karein!</p>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-2.5 bg-slate-950/60 p-3 rounded-xl border border-slate-800">
             <span class="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0">4</span>
             <div class="flex-1">
-              <p class="font-bold text-slate-200">Deploy Web App (Direct Upload ke liye)</p>
-              <p class="text-[11px] text-slate-400 mt-0.5">Google Script me top-right me <b>Deploy -> New deployment</b> -> Type: <b>Web app</b> -> Who has access: <b>Anyone</b> -> Deploy karein. Web App URL ko RPM Settings me paste karein.</p>
+              <p class="font-bold text-slate-200">Drive Folder (Bilkul Aasan)</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Folder Link daalna bilkul optional hai! Agar aap khali chhodenge to script khud aapke Drive me <b>"RPM Diesel Backups"</b> folder banakar usme file update karegi.</p>
             </div>
           </div>
 
           <div class="flex items-start gap-2.5 bg-slate-950/60 p-3 rounded-xl border border-slate-800">
             <span class="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0">5</span>
             <div class="flex-1">
-              <p class="font-bold text-slate-200">24/7 Cloud Background Trigger Lagayein</p>
-              <p class="text-[11px] text-slate-400 mt-0.5">Left side clock icon (<b>Triggers</b>) par click karein -> <b>+ Add Trigger</b>:</p>
+              <p class="font-bold text-slate-200">24/7 Cloud Background Trigger (Optional)</p>
+              <p class="text-[11px] text-slate-400 mt-0.5">Agar aap chahte hain ki laptop/mobile band hone par bhi cloud par backup update hota rahe:</p>
               <ul class="list-disc list-inside text-[10px] text-emerald-300 mt-1 space-y-0.5 font-mono">
+                <li>Left menu Clock icon (Triggers) -> + Add Trigger</li>
                 <li>Function: checkAndRunCloudAutoBackup</li>
-                <li>Event source: Time-driven</li>
-                <li>Timer type: Minutes timer -> Every 10 or 15 minutes</li>
+                <li>Event source: Time-driven -> Minutes timer -> Every 10 or 15 mins</li>
               </ul>
             </div>
           </div>
         </div>
 
         <p class="text-[10px] text-emerald-400 bg-emerald-500/10 p-2.5 rounded-xl border border-emerald-500/20 font-medium">
-          ✅ <b>Sab Set Hai!</b> Ab phone/computer band hone par bhi Google Cloud automatically aapke folder me JSON backup save karega!
+          ✅ <b>Badhai ho!</b> Ab aapka Google Drive backup WhatsApp ki tarah bina kisi dikkat ke smoothly single file update karta rahega!
         </p>
       </div>
 
@@ -6011,7 +6058,7 @@
   <div id="toasts-container"></div>
 
   <!-- Core JavaScript Core App Logic File -->
-  <script src="script.js?v=96" defer></script>
+  <script src="script.js?v=97" defer></script>
   <script src="broadcast.js" defer></script>
 
   <!-- Re-add transition after page load for smooth theme toggles -->
