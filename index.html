@@ -5999,6 +5999,16 @@
         <span class="truncate text-left" id="dm-progress-detail">Initializing snapshot...</span>
         <span id="dm-progress-elapsed" class="shrink-0 text-slate-500 pl-2">0s</span>
       </div>
+
+      <!-- Action Buttons: Cancel Task & Hide -->
+      <div class="pt-1 flex items-center justify-between gap-2 border-t border-slate-800/80">
+        <button type="button" onclick="cancelActiveLiveTask()" id="dm-progress-cancel-btn" class="px-3.5 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer">
+          <i class="fas fa-ban"></i> Cancel Task
+        </button>
+        <button type="button" onclick="minimizeDmProgressModal()" class="px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold transition-all flex items-center gap-1 active:scale-95 cursor-pointer">
+          <i class="fas fa-eye-slash"></i> Hide to Background
+        </button>
+      </div>
     </div>
   </div>
 
@@ -6046,11 +6056,19 @@
       </div>
 
       <!-- Exact Step Description (shown right under percentage as requested by user) -->
-      <div id="live-task-description-box" class="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80 text-[11px] text-slate-300 leading-snug">
+      <div id="live-task-description-box" class="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80 text-[11px] text-slate-300 leading-snug space-y-2">
         <p id="live-task-desc" class="font-medium text-slate-200">
           Preparing task...
         </p>
         <p id="live-task-complete-time" class="text-[10px] font-mono text-emerald-400 mt-1.5 hidden"></p>
+        
+        <!-- Live Task Cancel Action Row -->
+        <div id="live-task-cancel-row" class="pt-1.5 flex items-center justify-between border-t border-slate-800/70">
+          <button type="button" onclick="cancelActiveLiveTask()" id="live-task-cancel-btn" class="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 text-[10px] font-bold transition-all flex items-center gap-1 active:scale-95 cursor-pointer">
+            <i class="fas fa-ban"></i> Cancel Task
+          </button>
+          <span class="text-[9px] text-slate-400 font-mono">Tap Cancel to abort</span>
+        </div>
       </div>
     </div>
   </div>
@@ -6058,7 +6076,7 @@
   <div id="toasts-container"></div>
 
   <!-- Core JavaScript Core App Logic File -->
-  <script src="script.js?v=98" defer></script>
+  <script src="script.js?v=100" defer></script>
   <script src="broadcast.js" defer></script>
 
   <!-- Re-add transition after page load for smooth theme toggles -->
