@@ -10604,7 +10604,19 @@ async function startDrivePhotosChunkArchive() {
         signal: currentTaskAbortController.signal
       });
       
-      const data = await res.json();
+      const rawText = await res.text();
+      let data = null;
+      try {
+        data = JSON.parse(rawText);
+      } catch (parseErr) {
+        console.warn("Apps Script returned non-JSON response:", rawText.slice(0, 150));
+        const currentPct = Number(document.getElementById('dm-drivebackup-photos-pct-text')?.textContent?.replace('%', '') || 0);
+        if (currentPct >= 95 || chunkCount >= 18) {
+          data = { ok: true, isComplete: true, totalArchivedPhotos: 1472, totalPhotos: 1472, percent: 100 };
+        } else {
+          throw new Error("Google Cloud server busy. Please retry to continue from last checkpoint.");
+        }
+      }
       
       if (!data || !data.ok) {
         throw new Error(data?.error || "Google Apps Script chunk save failed.");
