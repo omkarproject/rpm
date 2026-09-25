@@ -10366,6 +10366,12 @@ function updateAutoBackupImagesToggleUI() {
     }
   }
   telegramAutoBackupConfig.includeImages = isWithImages;
+  try {
+    localStorage.setItem('rpm_telegram_autobackup', JSON.stringify(telegramAutoBackupConfig));
+    if (typeof db !== 'undefined' && db) {
+      db.ref('appConfig/telegramAutoBackup/includeImages').set(isWithImages).catch(() => {});
+    }
+  } catch (e) {}
 }
 window.updateAutoBackupImagesToggleUI = updateAutoBackupImagesToggleUI;
 
@@ -10421,6 +10427,7 @@ function updateDriveBackupImagesToggleUI() {
   const imagesToggle = document.getElementById('dm-drivebackup-images-enable');
   const statusText = document.getElementById('dm-drivebackup-images-status-text');
   const contentLabel = document.getElementById('dm-drivebackup-content-label');
+  const syncFilename = document.getElementById('dm-drivebackup-sync-filename');
   const isWithImages = imagesToggle ? imagesToggle.checked : false;
 
   if (statusText) {
@@ -10439,7 +10446,17 @@ function updateDriveBackupImagesToggleUI() {
       contentLabel.className = "font-semibold text-emerald-400";
     }
   }
+  if (syncFilename) {
+    syncFilename.textContent = isWithImages ? 'RPM_Diesel_FullBackup.json' : 'RPM_Diesel_AutoBackup.json';
+  }
+
   googleDriveAutoBackupConfig.includeImages = isWithImages;
+  try {
+    localStorage.setItem('rpm_gdrive_autobackup', JSON.stringify(googleDriveAutoBackupConfig));
+    if (typeof db !== 'undefined' && db) {
+      db.ref('appConfig/googleDriveAutoBackup/includeImages').set(isWithImages).catch(() => {});
+    }
+  } catch (e) {}
 }
 window.updateDriveBackupImagesToggleUI = updateDriveBackupImagesToggleUI;
 
@@ -10939,7 +10956,7 @@ const FIREBASE_DB_URL = "https://rpm-diesel-default-rtdb.firebaseio.com";
 const DEFAULT_BOT_TOKEN = "8880618363:AAEGp8ReJEcB563j9_2XiaVvwaPHMigt1PM";
 const DEFAULT_CHAT_ID = "7927138678";
 
-// Superfast Parallel Firebase Fetcher (Takes < 3 seconds instead of 260s!)
+// Superfast Parallel Firebase Fetcher with Safe Photo Bundling
 function fetchFirebaseData(isWithImages) {
   var collections = [
     "entries",
@@ -10953,11 +10970,6 @@ function fetchFirebaseData(isWithImages) {
     "tanks",
     "tankTransfers"
   ];
-
-  if (isWithImages) {
-    collections.push("entryPhotos");
-    collections.push("driverRequestPhotos");
-  }
 
   var requests = collections.map(function(col) {
     return {
@@ -10980,6 +10992,74 @@ function fetchFirebaseData(isWithImages) {
         }
       }
     }
+
+    // When Backup With Images is ON: fetch latest photos within safe Google 50MB single-file quota
+    if (isWithImages) {
+      try {
+        // 1. Fetch entry photos (latest 100 entries, ~20-25 MB)
+        var eShallowRes = UrlFetchApp.fetch(FIREBASE_DB_URL + "/entryPhotos.json?shallow=true", { muteHttpExceptions: true });
+        if (eShallowRes.getResponseCode() === 200) {
+          var eKeysObj = JSON.parse(eShallowRes.getContentText()) || {};
+          var allEKeys = Object.keys(eKeysObj);
+          var recentEKeys = allEKeys.slice(-100);
+          
+          if (recentEKeys.length > 0) {
+            var eRequests = recentEKeys.map(function(k) {
+              return {
+                url: FIREBASE_DB_URL + "/entryPhotos/" + k + ".json",
+                method: "get",
+                muteHttpExceptions: true
+              };
+            });
+            var eResponses = UrlFetchApp.fetchAll(eRequests);
+            var entryPhotosMap = {};
+            for (var ep = 0; ep < recentEKeys.length; ep++) {
+              if (eResponses[ep].getResponseCode() === 200) {
+                try {
+                  entryPhotosMap[recentEKeys[ep]] = JSON.parse(eResponses[ep].getContentText());
+                } catch(epErr) {}
+              }
+            }
+            result["entryPhotos"] = entryPhotosMap;
+          }
+        }
+      } catch (epTotalErr) {
+        Logger.log("Error fetching entryPhotos: " + epTotalErr);
+      }
+
+      try {
+        // 2. Fetch driver request photos (latest 50 requests, ~10-12 MB)
+        var rShallowRes = UrlFetchApp.fetch(FIREBASE_DB_URL + "/driverRequestPhotos.json?shallow=true", { muteHttpExceptions: true });
+        if (rShallowRes.getResponseCode() === 200) {
+          var rKeysObj = JSON.parse(rShallowRes.getContentText()) || {};
+          var allRKeys = Object.keys(rKeysObj);
+          var recentRKeys = allRKeys.slice(-50);
+          
+          if (recentRKeys.length > 0) {
+            var rRequests = recentRKeys.map(function(k) {
+              return {
+                url: FIREBASE_DB_URL + "/driverRequestPhotos/" + k + ".json",
+                method: "get",
+                muteHttpExceptions: true
+              };
+            });
+            var rResponses = UrlFetchApp.fetchAll(rRequests);
+            var reqPhotosMap = {};
+            for (var rp = 0; rp < recentRKeys.length; rp++) {
+              if (rResponses[rp].getResponseCode() === 200) {
+                try {
+                  reqPhotosMap[recentRKeys[rp]] = JSON.parse(rResponses[rp].getContentText());
+                } catch(rpErr) {}
+              }
+            }
+            result["driverRequestPhotos"] = reqPhotosMap;
+          }
+        }
+      } catch (rpTotalErr) {
+        Logger.log("Error fetching driverRequestPhotos: " + rpTotalErr);
+      }
+    }
+
     return result;
   } catch (err) {
     Logger.log("fetchAll error, falling back to root fetch: " + err);
