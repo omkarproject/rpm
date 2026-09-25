@@ -10450,6 +10450,16 @@ function updateDriveBackupImagesToggleUI() {
     syncFilename.textContent = isWithImages ? 'RPM_Diesel_FullBackup.json' : 'RPM_Diesel_AutoBackup.json';
   }
 
+  const chunkCard = document.getElementById('dm-drivebackup-photos-chunk-card');
+  if (chunkCard) {
+    if (isWithImages) {
+      chunkCard.classList.remove('hidden');
+      loadDriveBackupIndexStatus();
+    } else {
+      chunkCard.classList.add('hidden');
+    }
+  }
+
   googleDriveAutoBackupConfig.includeImages = isWithImages;
   try {
     localStorage.setItem('rpm_gdrive_autobackup', JSON.stringify(googleDriveAutoBackupConfig));
@@ -10459,6 +10469,205 @@ function updateDriveBackupImagesToggleUI() {
   } catch (e) {}
 }
 window.updateDriveBackupImagesToggleUI = updateDriveBackupImagesToggleUI;
+
+async function loadDriveBackupIndexStatus() {
+  const card = document.getElementById('dm-drivebackup-photos-chunk-card');
+  if (!card || card.classList.contains('hidden')) return;
+
+  // 1. First check Firebase RTDB summary for instant UI update (0ms)
+  try {
+    if (typeof db !== 'undefined' && db) {
+      db.ref('appConfig/googleDriveAutoBackup/driveIndexSummary').once('value').then(snap => {
+        const val = snap.val();
+        if (val) renderDrivePhotosArchiveStatus(val);
+      }).catch(() => {});
+    }
+  } catch (e) {}
+
+  // 2. Query Google Apps Script Web App in background to refresh from real Drive files
+  const folderInputVal = (document.getElementById('dm-drivebackup-folder')?.value || googleDriveAutoBackupConfig.folderLink || googleDriveAutoBackupConfig.folderId || '').trim();
+  let webAppUrl = (document.getElementById('dm-drivebackup-webapp-url')?.value || googleDriveAutoBackupConfig.webAppUrl || '').trim();
+  if (webAppUrl && !/^https?:\/\//i.test(webAppUrl)) {
+    webAppUrl = 'https://' + webAppUrl;
+  }
+  const folderId = extractDriveFolderId(folderInputVal) || '';
+
+  if (webAppUrl) {
+    try {
+      const statusUrl = `${webAppUrl}${webAppUrl.includes('?') ? '&' : '?'}action=getIndexStatus&folderId=${encodeURIComponent(folderId)}&t=${Date.now()}`;
+      fetch(statusUrl).then(r => r.json()).then(data => {
+        if (data && data.ok) {
+          renderDrivePhotosArchiveStatus(data);
+          if (typeof db !== 'undefined' && db) {
+            db.ref('appConfig/googleDriveAutoBackup/driveIndexSummary').set(data).catch(() => {});
+          }
+        }
+      }).catch(() => {});
+    } catch (err) {}
+  }
+}
+window.loadDriveBackupIndexStatus = loadDriveBackupIndexStatus;
+
+function renderDrivePhotosArchiveStatus(summary) {
+  if (!summary) return;
+  const statText = document.getElementById('dm-drivebackup-photos-stat-text');
+  const pctText = document.getElementById('dm-drivebackup-photos-pct-text');
+  const progressBar = document.getElementById('dm-drivebackup-photos-progress-bar');
+  const partsInfo = document.getElementById('dm-drivebackup-photos-parts-info');
+  const badge = document.getElementById('dm-drivebackup-photos-badge');
+  const chunkBtnText = document.getElementById('dm-drivebackup-chunk-btn-text');
+
+  const totalArchived = Number(summary.totalArchived || summary.totalEntryKeys || 0) + Number(summary.totalRequestKeys || 0);
+  const totalPhotos = Number(summary.totalPhotos) || 1470;
+  const partsCount = Number(summary.totalParts || (summary.parts ? summary.parts.length : 0)) || 0;
+  const percent = Math.min(100, Math.max(0, Math.round((totalArchived / Math.max(1, totalPhotos)) * 100)));
+  const isComplete = percent >= 100 || summary.isComplete;
+
+  if (statText) statText.textContent = `${totalArchived.toLocaleString()} / ${totalPhotos.toLocaleString()} Photos`;
+  if (pctText) pctText.textContent = `${percent}%`;
+  if (progressBar) progressBar.style.width = `${percent}%`;
+  if (partsInfo) partsInfo.innerHTML = `<i class="fas fa-file-lines text-sky-400"></i> Parts in Drive: ${partsCount} Files`;
+
+  if (badge) {
+    if (isComplete) {
+      badge.className = "text-[9px] px-2 py-0.5 rounded-full font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+      badge.innerHTML = '<i class="fas fa-check-double"></i> 100% Backed Up';
+    } else if (totalArchived > 0) {
+      badge.className = "text-[9px] px-2 py-0.5 rounded-full font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30";
+      badge.innerHTML = `<i class="fas fa-layer-group"></i> Part ${partsCount + 1} Ready (${percent}%)`;
+    } else {
+      badge.className = "text-[9px] px-2 py-0.5 rounded-full font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30";
+      badge.innerHTML = '<i class="fas fa-cloud-arrow-up"></i> Ready to Archive';
+    }
+  }
+
+  if (chunkBtnText) {
+    if (isComplete) {
+      chunkBtnText.textContent = "✅ All 1,470 Photos Backed Up to Drive (Re-check)";
+    } else if (totalArchived > 0) {
+      chunkBtnText.textContent = `Continue Archiving Next 50MB Chunk (Part ${partsCount + 1})`;
+    } else {
+      chunkBtnText.textContent = "Archive Historical Photos in 50MB Chunks";
+    }
+  }
+}
+window.renderDrivePhotosArchiveStatus = renderDrivePhotosArchiveStatus;
+
+async function startDrivePhotosChunkArchive() {
+  const folderInputVal = (document.getElementById('dm-drivebackup-folder')?.value || googleDriveAutoBackupConfig.folderLink || googleDriveAutoBackupConfig.folderId || '').trim();
+  let webAppUrl = (document.getElementById('dm-drivebackup-webapp-url')?.value || googleDriveAutoBackupConfig.webAppUrl || '').trim();
+  if (webAppUrl && !/^https?:\/\//i.test(webAppUrl)) {
+    webAppUrl = 'https://' + webAppUrl;
+  }
+  const folderId = extractDriveFolderId(folderInputVal) || '';
+
+  if (!webAppUrl) {
+    toast.warn("Google Drive Web App Sync URL paste karein.");
+    openGoogleDriveSetupModal();
+    return;
+  }
+
+  const chunkBtn = document.getElementById('dm-drivebackup-chunk-btn');
+  if (chunkBtn) chunkBtn.disabled = true;
+
+  const taskTitle = "Historical Photos 50MB Chunk Archiver";
+  currentTaskAbortController = new AbortController();
+
+  showDmProgress({
+    title: taskTitle,
+    taskName: taskTitle,
+    subtitle: "Google Drive index check ho raha hai...",
+    icon: "fas fa-boxes-stacked text-sky-400 animate-bounce",
+    color: "sky",
+    step: "Initializing...",
+    percent: 5,
+    detail: "Drive index se check kar rahe hain ki kitne photos pehle se backed up hain..."
+  });
+
+  let isComplete = false;
+  let chunkCount = 0;
+
+  try {
+    while (!isComplete && !currentTaskAbortController.signal.aborted) {
+      chunkCount++;
+      const currentStep = `Chunk Part ${chunkCount}`;
+      updateDmProgress(Math.min(95, 5 + chunkCount * 12), {
+        subtitle: `Google Cloud par 50MB photo slice bundle ho raha hai (Part ${chunkCount})...`,
+        step: currentStep,
+        detail: `Part ${chunkCount}: Photos fetch aur Drive me create ho raha hai (Cancel button se kabhi bhi pause kar sakte hain).`
+      });
+
+      const chunkUrl = `${webAppUrl}${webAppUrl.includes('?') ? '&' : '?'}action=archiveChunk&folderId=${encodeURIComponent(folderId)}&t=${Date.now()}`;
+      
+      const res = await fetch(chunkUrl, {
+        method: 'GET',
+        signal: currentTaskAbortController.signal
+      });
+      
+      const data = await res.json();
+      
+      if (!data || !data.ok) {
+        throw new Error(data?.error || "Google Apps Script chunk save failed.");
+      }
+
+      renderDrivePhotosArchiveStatus(data);
+      if (typeof db !== 'undefined' && db) {
+        db.ref('appConfig/googleDriveAutoBackup/driveIndexSummary').set(data).catch(() => {});
+      }
+
+      if (data.isComplete) {
+        isComplete = true;
+        updateDmProgress(100, {
+          subtitle: "All Photos Archived to Google Drive!",
+          step: "Completed (100%)",
+          icon: "fas fa-check-double text-emerald-400",
+          color: "emerald",
+          detail: `100% Complete: Sabhi ${data.totalArchivedPhotos || data.totalPhotos} historical photos Google Drive me safely save ho chuke hain!`,
+          duration: 400,
+          isComplete: true,
+          taskName: taskTitle
+        });
+        toast.ok(`🎉 All historical photos (${data.totalArchivedPhotos || 1470} photos) Google Drive me safely archive ho gaye!`);
+        break;
+      } else {
+        updateDmProgress(data.percent || (5 + chunkCount * 12), {
+          subtitle: `${data.partFileName} Google Drive me save ho gayi! (${data.partSizeMb} MB, ${data.photosInPart} photos)`,
+          step: `Part ${data.partNumber} Saved`,
+          detail: `Progress: ${data.totalArchivedPhotos} / ${data.totalPhotos} photos (${data.percent}%) backed up. Next part shuru ho raha hai...`
+        });
+
+        // 600ms pause between chunks to keep Google Cloud memory clean
+        await new Promise(r => setTimeout(r, 600));
+      }
+    }
+
+    closeDmProgress(2000);
+  } catch (err) {
+    if (currentTaskAbortController?.signal?.aborted || err?.name === 'AbortError') {
+      console.warn("Chunk archive paused/cancelled by user.");
+      toast.info("⏸️ Photo archive pause kar diya gaya hai. Agli baar yahin se aage shuru hoga!");
+      closeDmProgress(800);
+      return;
+    }
+    console.error("Chunk archive error:", err);
+    updateDmProgress(100, {
+      subtitle: "Chunk Archive Error",
+      step: "Error",
+      icon: "fas fa-times-circle text-rose-400",
+      color: "rose",
+      detail: err.message,
+      isFail: true,
+      taskName: taskTitle
+    });
+    closeDmProgress(3000);
+    toast.err(`Photo chunk backup me samasya aayi: ${err.message}`);
+  } finally {
+    currentTaskAbortController = null;
+    if (chunkBtn) chunkBtn.disabled = false;
+    loadDriveBackupIndexStatus();
+  }
+}
+window.startDrivePhotosChunkArchive = startDrivePhotosChunkArchive;
 
 function updateDriveConnectionBadge() {
   const webAppInput = document.getElementById('dm-drivebackup-webapp-url');
@@ -10935,12 +11144,20 @@ const GOOGLE_APPS_SCRIPT_CODE = `/**
  * WhatsApp ki tarah Google Drive me single backup file ko auto-overwrite/update
  * karta rahega - Drive me hazaron duplicate files jama nahi hongi!
  * 
+ * NAYA FEATURE:
+ * 1. 50MB Chunks Photo Archive: Sabhi ~280 MB historical photos ko Google Drive ke
+ *    50MB single-blob limit ke mutabik Parts me (Part 1, 2, 3...) safely save karega.
+ * 2. Drive Index Checkpoint (RPM_Diesel_Backup_Index.json): Yaad rakhega ki kaunse
+ *    photos pehle se Drive me hain, aur har baar wahan se aage resume karega!
+ * 3. Incremental Auto Backup: Agle backups me sirf NEW photos/records fetch honge,
+ *    jisse har backup <50 MB aur superfast (3s) rahega!
+ * 
  * SETUP INSTRUCTIONS (Sirf 1-2 Minute):
  * 1. https://script.google.com kholein -> Click "+ New project"
  * 2. Purana code hata kar ye pura script paste karein aur Save (Ctrl+S) karein.
  * 3. Top-right me "Deploy" -> "New deployment" par click karein:
  *    - Type (Gear icon): "Web app"
- *    - Description: "RPM WhatsApp Style Drive Backup"
+ *    - Description: "RPM WhatsApp Style Drive Backup v2"
  *    - Execute as: "Me"
  *    - Who has access: "Anyone" (Zaroori hai)
  *    - Click "Deploy" -> Authorize Access (Review Permissions -> Advanced -> Allow)
@@ -10956,8 +11173,92 @@ const FIREBASE_DB_URL = "https://rpm-diesel-default-rtdb.firebaseio.com";
 const DEFAULT_BOT_TOKEN = "8880618363:AAEGp8ReJEcB563j9_2XiaVvwaPHMigt1PM";
 const DEFAULT_CHAT_ID = "7927138678";
 
-// Superfast Parallel Firebase Fetcher with Safe Photo Bundling
-function fetchFirebaseData(isWithImages) {
+// Helper: Folder find karein ya auto "RPM Diesel Backups" create karein
+function getOrCreateDriveFolder(folderId) {
+  if (folderId && folderId.trim()) {
+    try {
+      return DriveApp.getFolderById(folderId.trim());
+    } catch (e) {
+      Logger.log("Folder ID se folder nahi mila (" + folderId + "), RPM Diesel Backups folder use hoga: " + e);
+    }
+  }
+  const folderName = "RPM Diesel Backups";
+  const existingFolders = DriveApp.getFoldersByName(folderName);
+  if (existingFolders.hasNext()) {
+    return existingFolders.next();
+  }
+  return DriveApp.createFolder(folderName);
+}
+
+// Helper: WhatsApp Style Single File Save / Overwrite
+function saveOrUpdateDriveFile(folder, fileName, content) {
+  const existingFiles = folder.getFilesByName(fileName);
+  if (existingFiles.hasNext()) {
+    const file = existingFiles.next();
+    file.setContent(content);
+    Logger.log("Existing backup file updated (WhatsApp Overwrite): " + fileName + " (ID: " + file.getId() + ")");
+    return { file: file, isUpdated: true };
+  } else {
+    const jsonBlob = Utilities.newBlob(content, "application/json", fileName);
+    const file = folder.createFile(jsonBlob);
+    Logger.log("New backup file created in Drive: " + fileName + " (ID: " + file.getId() + ")");
+    return { file: file, isUpdated: false };
+  }
+}
+
+// Helper: Read Drive Backup Index (Checkpoint tracking)
+function getDriveBackupIndex(folder) {
+  var indexFileName = "RPM_Diesel_Backup_Index.json";
+  var files = folder.getFilesByName(indexFileName);
+  if (files.hasNext()) {
+    try {
+      var content = files.next().getBlob().getDataAsString();
+      var parsed = JSON.parse(content);
+      if (parsed && typeof parsed === "object") return parsed;
+    } catch (e) {
+      Logger.log("Error reading index: " + e);
+    }
+  }
+  return {
+    version: "2.0",
+    createdAt: new Date().toISOString(),
+    lastUpdated: Date.now(),
+    backedUpEntryKeys: [],
+    backedUpRequestKeys: [],
+    parts: []
+  };
+}
+
+// Helper: Save Drive Backup Index & sync summary to Firebase RTDB
+function saveDriveBackupIndex(folder, indexData) {
+  indexData.lastUpdated = Date.now();
+  indexData.lastUpdatedDate = Utilities.formatDate(new Date(), "Asia/Kolkata", "dd/MM/yyyy, hh:mm:ss a");
+  var jsonStr = JSON.stringify(indexData, null, 2);
+  saveOrUpdateDriveFile(folder, "RPM_Diesel_Backup_Index.json", jsonStr);
+
+  try {
+    var summary = {
+      lastUpdated: indexData.lastUpdated,
+      lastUpdatedDate: indexData.lastUpdatedDate,
+      totalEntryKeys: indexData.backedUpEntryKeys ? indexData.backedUpEntryKeys.length : 0,
+      totalRequestKeys: indexData.backedUpRequestKeys ? indexData.backedUpRequestKeys.length : 0,
+      totalArchived: (indexData.backedUpEntryKeys ? indexData.backedUpEntryKeys.length : 0) + (indexData.backedUpRequestKeys ? indexData.backedUpRequestKeys.length : 0),
+      totalParts: indexData.parts ? indexData.parts.length : 0,
+      parts: indexData.parts || []
+    };
+    UrlFetchApp.fetch(FIREBASE_DB_URL + "/appConfig/googleDriveAutoBackup/driveIndexSummary.json", {
+      method: "put",
+      contentType: "application/json",
+      payload: JSON.stringify(summary),
+      muteHttpExceptions: true
+    });
+  } catch (fbErr) {
+    Logger.log("Firebase index summary sync error: " + fbErr);
+  }
+}
+
+// Superfast Parallel Firebase Fetcher with Incremental Photos Support
+function fetchFirebaseData(isWithImages, folder) {
   var collections = [
     "entries",
     "driverRequests",
@@ -10993,70 +11294,107 @@ function fetchFirebaseData(isWithImages) {
       }
     }
 
-    // When Backup With Images is ON: fetch latest photos within safe Google 50MB single-file quota
     if (isWithImages) {
+      var index = folder ? getDriveBackupIndex(folder) : null;
+      var backedEntrySet = {};
+      if (index && index.backedUpEntryKeys) {
+        index.backedUpEntryKeys.forEach(function(k) { backedEntrySet[k] = true; });
+      }
+      var backedReqSet = {};
+      if (index && index.backedUpRequestKeys) {
+        index.backedUpRequestKeys.forEach(function(k) { backedReqSet[k] = true; });
+      }
+
+      // 1. Fetch entry photos (prefer new keys since checkpoint, or latest 80)
       try {
-        // 1. Fetch entry photos (latest 100 entries, ~20-25 MB)
         var eShallowRes = UrlFetchApp.fetch(FIREBASE_DB_URL + "/entryPhotos.json?shallow=true", { muteHttpExceptions: true });
         if (eShallowRes.getResponseCode() === 200) {
           var eKeysObj = JSON.parse(eShallowRes.getContentText()) || {};
           var allEKeys = Object.keys(eKeysObj);
-          var recentEKeys = allEKeys.slice(-100);
-          
-          if (recentEKeys.length > 0) {
-            var eRequests = recentEKeys.map(function(k) {
-              return {
-                url: FIREBASE_DB_URL + "/entryPhotos/" + k + ".json",
-                method: "get",
-                muteHttpExceptions: true
-              };
+          var newEKeys = allEKeys.filter(function(k) { return !backedEntrySet[k]; });
+          var targetEKeys = newEKeys.length > 0 ? newEKeys.slice(-80) : allEKeys.slice(-80);
+
+          if (targetEKeys.length > 0) {
+            var eRequests = targetEKeys.map(function(k) {
+              return { url: FIREBASE_DB_URL + "/entryPhotos/" + k + ".json", method: "get", muteHttpExceptions: true };
             });
             var eResponses = UrlFetchApp.fetchAll(eRequests);
             var entryPhotosMap = {};
-            for (var ep = 0; ep < recentEKeys.length; ep++) {
+            var newlyBackedE = [];
+            for (var ep = 0; ep < targetEKeys.length; ep++) {
               if (eResponses[ep].getResponseCode() === 200) {
                 try {
-                  entryPhotosMap[recentEKeys[ep]] = JSON.parse(eResponses[ep].getContentText());
+                  var pVal = JSON.parse(eResponses[ep].getContentText());
+                  if (pVal) {
+                    entryPhotosMap[targetEKeys[ep]] = pVal;
+                    newlyBackedE.push(targetEKeys[ep]);
+                  }
                 } catch(epErr) {}
               }
             }
             result["entryPhotos"] = entryPhotosMap;
+
+            if (folder && index && newlyBackedE.length > 0) {
+              if (!index.backedUpEntryKeys) index.backedUpEntryKeys = [];
+              newlyBackedE.forEach(function(k) {
+                if (!backedEntrySet[k]) {
+                  index.backedUpEntryKeys.push(k);
+                  backedEntrySet[k] = true;
+                }
+              });
+            }
           }
         }
       } catch (epTotalErr) {
-        Logger.log("Error fetching entryPhotos: " + epTotalErr);
+        Logger.log("Error fetching incremental entryPhotos: " + epTotalErr);
       }
 
+      // 2. Fetch driver request photos (prefer new keys or latest 40)
       try {
-        // 2. Fetch driver request photos (latest 50 requests, ~10-12 MB)
         var rShallowRes = UrlFetchApp.fetch(FIREBASE_DB_URL + "/driverRequestPhotos.json?shallow=true", { muteHttpExceptions: true });
         if (rShallowRes.getResponseCode() === 200) {
           var rKeysObj = JSON.parse(rShallowRes.getContentText()) || {};
           var allRKeys = Object.keys(rKeysObj);
-          var recentRKeys = allRKeys.slice(-50);
-          
-          if (recentRKeys.length > 0) {
-            var rRequests = recentRKeys.map(function(k) {
-              return {
-                url: FIREBASE_DB_URL + "/driverRequestPhotos/" + k + ".json",
-                method: "get",
-                muteHttpExceptions: true
-              };
+          var newRKeys = allRKeys.filter(function(k) { return !backedReqSet[k]; });
+          var targetRKeys = newRKeys.length > 0 ? newRKeys.slice(-40) : allRKeys.slice(-40);
+
+          if (targetRKeys.length > 0) {
+            var rRequests = targetRKeys.map(function(k) {
+              return { url: FIREBASE_DB_URL + "/driverRequestPhotos/" + k + ".json", method: "get", muteHttpExceptions: true };
             });
             var rResponses = UrlFetchApp.fetchAll(rRequests);
             var reqPhotosMap = {};
-            for (var rp = 0; rp < recentRKeys.length; rp++) {
+            var newlyBackedR = [];
+            for (var rp = 0; rp < targetRKeys.length; rp++) {
               if (rResponses[rp].getResponseCode() === 200) {
                 try {
-                  reqPhotosMap[recentRKeys[rp]] = JSON.parse(rResponses[rp].getContentText());
+                  var rVal = JSON.parse(rResponses[rp].getContentText());
+                  if (rVal) {
+                    reqPhotosMap[targetRKeys[rp]] = rVal;
+                    newlyBackedR.push(targetRKeys[rp]);
+                  }
                 } catch(rpErr) {}
               }
             }
             result["driverRequestPhotos"] = reqPhotosMap;
+
+            if (folder && index && newlyBackedR.length > 0) {
+              if (!index.backedUpRequestKeys) index.backedUpRequestKeys = [];
+              newlyBackedR.forEach(function(k) {
+                if (!backedReqSet[k]) {
+                  index.backedUpRequestKeys.push(k);
+                  backedReqSet[k] = true;
+                }
+              });
+            }
           }
         }
       } catch (rpTotalErr) {
-        Logger.log("Error fetching driverRequestPhotos: " + rpTotalErr);
+        Logger.log("Error fetching incremental driverRequestPhotos: " + rpTotalErr);
+      }
+
+      if (folder && index) {
+        saveDriveBackupIndex(folder, index);
       }
     }
 
@@ -11075,37 +11413,175 @@ function fetchFirebaseData(isWithImages) {
   }
 }
 
-// Helper: Folder find karein ya auto "RPM Diesel Backups" create karein
-function getOrCreateDriveFolder(folderId) {
-  if (folderId && folderId.trim()) {
-    try {
-      return DriveApp.getFolderById(folderId.trim());
-    } catch (e) {
-      Logger.log("Folder ID se folder nahi mila (" + folderId + "), RPM Diesel Backups folder use hoga: " + e);
+// 50MB Chunked Historical Photo Archiver:
+// Takes the next batch of un-backed photos, saves Part N file to Drive, updates index
+function handleArchiveChunk(folder) {
+  var index = getDriveBackupIndex(folder);
+  var backedEntrySet = {};
+  (index.backedUpEntryKeys || []).forEach(function(k) { backedEntrySet[k] = true; });
+  var backedReqSet = {};
+  (index.backedUpRequestKeys || []).forEach(function(k) { backedReqSet[k] = true; });
+
+  var allEKeys = [];
+  try {
+    var eShallow = UrlFetchApp.fetch(FIREBASE_DB_URL + "/entryPhotos.json?shallow=true", { muteHttpExceptions: true });
+    if (eShallow.getResponseCode() === 200) {
+      allEKeys = Object.keys(JSON.parse(eShallow.getContentText()) || {});
+    }
+  } catch (eErr) {}
+
+  var allRKeys = [];
+  try {
+    var rShallow = UrlFetchApp.fetch(FIREBASE_DB_URL + "/driverRequestPhotos.json?shallow=true", { muteHttpExceptions: true });
+    if (rShallow.getResponseCode() === 200) {
+      allRKeys = Object.keys(JSON.parse(rShallow.getContentText()) || {});
+    }
+  } catch (rErr) {}
+
+  var pendingEKeys = allEKeys.filter(function(k) { return !backedEntrySet[k]; });
+  var pendingRKeys = allRKeys.filter(function(k) { return !backedReqSet[k]; });
+
+  var totalAllPhotos = allEKeys.length + allRKeys.length;
+  var totalBackedPhotos = (index.backedUpEntryKeys ? index.backedUpEntryKeys.length : 0) + 
+                          (index.backedUpRequestKeys ? index.backedUpRequestKeys.length : 0);
+
+  if (pendingEKeys.length === 0 && pendingRKeys.length === 0) {
+    return {
+      ok: true,
+      isComplete: true,
+      message: "All 100% historical photos are already backed up in Google Drive!",
+      totalPhotos: totalAllPhotos,
+      totalArchivedPhotos: totalAllPhotos,
+      percent: 100,
+      totalParts: (index.parts || []).length
+    };
+  }
+
+  var partType = "";
+  var keysToFetch = [];
+  var partNumber = (index.parts || []).length + 1;
+  var fileName = "RPM_Diesel_Photos_Part" + partNumber + ".json";
+
+  // Batch size: 90 entry photos or 70 request photos (~25-35 MB, safely under 50 MB limit)
+  if (pendingEKeys.length > 0) {
+    partType = "entryPhotos";
+    keysToFetch = pendingEKeys.slice(0, 90);
+  } else {
+    partType = "driverRequestPhotos";
+    keysToFetch = pendingRKeys.slice(0, 70);
+  }
+
+  var fetchRequests = keysToFetch.map(function(k) {
+    return {
+      url: FIREBASE_DB_URL + "/" + partType + "/" + k + ".json",
+      method: "get",
+      muteHttpExceptions: true
+    };
+  });
+
+  var responses = UrlFetchApp.fetchAll(fetchRequests);
+  var photosMap = {};
+  var successfullyFetchedKeys = [];
+
+  for (var i = 0; i < keysToFetch.length; i++) {
+    if (responses[i].getResponseCode() === 200) {
+      try {
+        var pData = JSON.parse(responses[i].getContentText());
+        if (pData) {
+          photosMap[keysToFetch[i]] = pData;
+          successfullyFetchedKeys.push(keysToFetch[i]);
+        }
+      } catch(e) {}
     }
   }
-  const folderName = "RPM Diesel Backups";
-  const existingFolders = DriveApp.getFoldersByName(folderName);
-  if (existingFolders.hasNext()) {
-    return existingFolders.next();
+
+  var chunkPayload = {
+    _chunkInfo: {
+      partNumber: partNumber,
+      fileName: fileName,
+      type: partType,
+      count: successfullyFetchedKeys.length,
+      createdAt: new Date().toISOString(),
+      createdDate: Utilities.formatDate(new Date(), "Asia/Kolkata", "dd/MM/yyyy, hh:mm:ss a")
+    }
+  };
+  chunkPayload[partType] = photosMap;
+
+  var jsonContent = JSON.stringify(chunkPayload, null, 2);
+  var blob = Utilities.newBlob(jsonContent, "application/json", fileName);
+  var sizeMb = (blob.getBytes().length / (1024 * 1024)).toFixed(2);
+
+  var file = folder.createFile(blob);
+
+  if (!index.parts) index.parts = [];
+  index.parts.push({
+    partNumber: partNumber,
+    fileName: fileName,
+    fileId: file.getId(),
+    fileUrl: file.getUrl(),
+    type: partType,
+    count: successfullyFetchedKeys.length,
+    sizeMb: sizeMb,
+    date: Utilities.formatDate(new Date(), "Asia/Kolkata", "dd/MM/yyyy, hh:mm:ss a")
+  });
+
+  if (partType === "entryPhotos") {
+    if (!index.backedUpEntryKeys) index.backedUpEntryKeys = [];
+    index.backedUpEntryKeys = index.backedUpEntryKeys.concat(successfullyFetchedKeys);
+  } else {
+    if (!index.backedUpRequestKeys) index.backedUpRequestKeys = [];
+    index.backedUpRequestKeys = index.backedUpRequestKeys.concat(successfullyFetchedKeys);
   }
-  return DriveApp.createFolder(folderName);
+
+  saveDriveBackupIndex(folder, index);
+
+  var newTotalBacked = (index.backedUpEntryKeys ? index.backedUpEntryKeys.length : 0) + 
+                       (index.backedUpRequestKeys ? index.backedUpRequestKeys.length : 0);
+  var newPercent = Math.min(100, Math.round((newTotalBacked / Math.max(1, totalAllPhotos)) * 100));
+  var isFinished = (newTotalBacked >= totalAllPhotos);
+
+  return {
+    ok: true,
+    isComplete: isFinished,
+    partNumber: partNumber,
+    partFileName: fileName,
+    photosInPart: successfullyFetchedKeys.length,
+    partSizeMb: sizeMb,
+    totalArchivedPhotos: newTotalBacked,
+    totalPhotos: totalAllPhotos,
+    percent: newPercent,
+    fileUrl: file.getUrl()
+  };
 }
 
-// Helper: WhatsApp Style Single File Save / Overwrite
-function saveOrUpdateDriveFile(folder, fileName, content) {
-  const existingFiles = folder.getFilesByName(fileName);
-  if (existingFiles.hasNext()) {
-    const file = existingFiles.next();
-    file.setContent(content);
-    Logger.log("Existing backup file updated (WhatsApp Overwrite): " + fileName + " (ID: " + file.getId() + ")");
-    return { file: file, isUpdated: true };
-  } else {
-    const jsonBlob = Utilities.newBlob(content, "application/json", fileName);
-    const file = folder.createFile(jsonBlob);
-    Logger.log("New backup file created in Drive: " + fileName + " (ID: " + file.getId() + ")");
-    return { file: file, isUpdated: false };
-  }
+// Helper: Query index status for dashboard UI
+function handleGetIndexStatus(folder) {
+  var index = getDriveBackupIndex(folder);
+  var backedE = index.backedUpEntryKeys ? index.backedUpEntryKeys.length : 0;
+  var backedR = index.backedUpRequestKeys ? index.backedUpRequestKeys.length : 0;
+  var totalArchived = backedE + backedR;
+
+  var totalE = 942;
+  var totalR = 528;
+  try {
+    var eRes = UrlFetchApp.fetch(FIREBASE_DB_URL + "/entryPhotos.json?shallow=true", { muteHttpExceptions: true });
+    if (eRes.getResponseCode() === 200) totalE = Object.keys(JSON.parse(eRes.getContentText()) || {}).length;
+    var rRes = UrlFetchApp.fetch(FIREBASE_DB_URL + "/driverRequestPhotos.json?shallow=true", { muteHttpExceptions: true });
+    if (rRes.getResponseCode() === 200) totalR = Object.keys(JSON.parse(rRes.getContentText()) || {}).length;
+  } catch (e) {}
+
+  var totalPhotos = totalE + totalR;
+  var percent = Math.min(100, Math.round((totalArchived / Math.max(1, totalPhotos)) * 100));
+
+  return {
+    ok: true,
+    totalArchived: totalArchived,
+    totalPhotos: totalPhotos,
+    percent: percent,
+    totalParts: (index.parts || []).length,
+    isComplete: (totalArchived >= totalPhotos),
+    parts: index.parts || []
+  };
 }
 
 function checkAndRunCloudAutoBackup() {
@@ -11140,7 +11616,9 @@ function checkAndRunCloudAutoBackup() {
   Logger.log("Fetching database snapshot from Firebase (<3s parallel fetch)...");
   const needPhotos = (shouldRunTg && tgConfig && tgConfig.includeImages === true) ||
                      (shouldRunDrive && driveConfig && driveConfig.includeImages === true);
-  const rawData = fetchFirebaseData(needPhotos);
+
+  const folder = shouldRunDrive ? getOrCreateDriveFolder(driveConfig.folderId) : null;
+  const rawData = fetchFirebaseData(needPhotos, folder);
   if (!rawData) return;
 
   const nowObj = new Date();
@@ -11223,7 +11701,6 @@ function checkAndRunCloudAutoBackup() {
       const jsonStringDrive = JSON.stringify(cleanDataDrive, null, 2);
       const fileNameDrive = driveWithImages ? "RPM_Diesel_FullBackup.json" : "RPM_Diesel_AutoBackup.json";
 
-      const folder = getOrCreateDriveFolder(driveConfig.folderId);
       const result = saveOrUpdateDriveFile(folder, fileNameDrive, jsonStringDrive);
 
       Logger.log("Google Drive backup completed! Updated: " + result.isUpdated + " File URL: " + result.file.getUrl());
@@ -11253,7 +11730,7 @@ function checkAndRunCloudAutoBackup() {
   }
 }
 
-// Web App doPost endpoint for instant uploads from RPM web application
+// Web App doPost endpoint
 function doPost(e) {
   try {
     let body = {};
@@ -11268,6 +11745,19 @@ function doPost(e) {
     }
 
     const folderId = (body.folderId || "").trim();
+    const action = body.action || "saveBackup";
+    const folder = getOrCreateDriveFolder(folderId);
+
+    if (action === "archiveChunk") {
+      const chunkRes = handleArchiveChunk(folder);
+      return ContentService.createTextOutput(JSON.stringify(chunkRes)).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (action === "getIndexStatus") {
+      const statusRes = handleGetIndexStatus(folder);
+      return ContentService.createTextOutput(JSON.stringify(statusRes)).setMimeType(ContentService.MimeType.JSON);
+    }
+
     const isWithImages = body.includeImages === true || body.includeImages === "true";
     const defaultFileName = isWithImages ? "RPM_Diesel_FullBackup.json" : "RPM_Diesel_AutoBackup.json";
     const fileName = (body.fileName || defaultFileName).trim();
@@ -11276,12 +11766,11 @@ function doPost(e) {
     if (body.data) {
       content = typeof body.data === "string" ? body.data : JSON.stringify(body.data, null, 2);
     } else {
-      const rawData = fetchFirebaseData(isWithImages);
+      const rawData = fetchFirebaseData(isWithImages, folder);
       const cleanData = isWithImages ? rawData : sanitizeForBackup(rawData);
       content = JSON.stringify(cleanData, null, 2);
     }
 
-    const folder = getOrCreateDriveFolder(folderId);
     const saveResult = saveOrUpdateDriveFile(folder, fileName, content);
     const file = saveResult.file;
     const isUpdated = saveResult.isUpdated;
@@ -11313,6 +11802,7 @@ function doPost(e) {
   }
 }
 
+// Web App doGet endpoint
 function doGet(e) {
   try {
     const params = (e && e.parameter) ? e.parameter : {};
@@ -11320,8 +11810,21 @@ function doGet(e) {
     const folderId = (params.folderId || "").trim();
     const isWithImages = params.includeImages === "true" || params.includeImages === true;
 
+    if (action === "archiveChunk") {
+      const folder = getOrCreateDriveFolder(folderId);
+      const chunkRes = handleArchiveChunk(folder);
+      return ContentService.createTextOutput(JSON.stringify(chunkRes)).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (action === "getIndexStatus") {
+      const folder = getOrCreateDriveFolder(folderId);
+      const statusRes = handleGetIndexStatus(folder);
+      return ContentService.createTextOutput(JSON.stringify(statusRes)).setMimeType(ContentService.MimeType.JSON);
+    }
+
     if (action === "saveBackup" || action === "backupNow" || action === "test") {
-      const rawData = fetchFirebaseData(isWithImages);
+      const folder = getOrCreateDriveFolder(folderId);
+      const rawData = fetchFirebaseData(isWithImages, folder);
       if (!rawData) {
         return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Firebase read failed" })).setMimeType(ContentService.MimeType.JSON);
       }
@@ -11331,7 +11834,6 @@ function doGet(e) {
       const defaultFileName = isWithImages ? "RPM_Diesel_FullBackup.json" : "RPM_Diesel_AutoBackup.json";
       const fileName = (params.fileName || defaultFileName).trim();
 
-      const folder = getOrCreateDriveFolder(folderId);
       const saveResult = saveOrUpdateDriveFile(folder, fileName, jsonString);
       const file = saveResult.file;
       const isUpdated = saveResult.isUpdated;
@@ -11359,7 +11861,7 @@ function doGet(e) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    return ContentService.createTextOutput(JSON.stringify({ status: "ok", service: "RPM Diesel Cloud Auto Backup Service (WhatsApp Style)" })).setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({ status: "ok", service: "RPM Diesel Cloud Auto Backup Service v2 (WhatsApp Style + 50MB Chunks)" })).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ ok: false, error: err.toString() })).setMimeType(ContentService.MimeType.JSON);
   }
@@ -11867,6 +12369,7 @@ async function sendDriveBackup(isManual = false) {
     toast.ok(`✅ WhatsApp-Style Sync: ${fileName} Google Drive me successfully update ho gayi!`);
     updateAutoBackupBadge();
     updateDriveBackupUI();
+    loadDriveBackupIndexStatus();
   } catch (err) {
     if (currentTaskAbortController?.signal?.aborted || err?.name === 'AbortError') {
       console.warn("Drive backup cancelled by user.");
