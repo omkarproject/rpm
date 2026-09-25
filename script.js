@@ -9968,6 +9968,7 @@ if (restoreSubmitBtn) {
    ══════════════════════════════════════════════════════════ */
 let telegramAutoBackupConfig = {
   enabled: false,
+  includeImages: false,
   botToken: '8880618363:AAEGp8ReJEcB563j9_2XiaVvwaPHMigt1PM',
   chatId: '7927138678',
   intervalDays: 1,
@@ -10167,8 +10168,35 @@ function loadGoogleDriveAutoBackupSettings() {
   }
 }
 
+function updateAutoBackupImagesToggleUI() {
+  const imagesToggle = document.getElementById('dm-autobackup-images-enable');
+  const statusText = document.getElementById('dm-autobackup-images-status-text');
+  const contentLabel = document.getElementById('dm-autobackup-content-label');
+  const isWithImages = imagesToggle ? imagesToggle.checked : false;
+
+  if (statusText) {
+    if (isWithImages) {
+      statusText.innerHTML = '<span class="text-sky-500 font-bold">ON: With Images (Full backup snapshot with all photos/slips)</span>';
+    } else {
+      statusText.innerHTML = '<span class="text-emerald-500 font-bold">OFF: Without Images (Data Only ~2-5 MB, Fast & small)</span>';
+    }
+  }
+  if (contentLabel) {
+    if (isWithImages) {
+      contentLabel.textContent = "Full Snapshot (With Images)";
+      contentLabel.className = "font-semibold text-sky-500";
+    } else {
+      contentLabel.textContent = "Without Images (Data Only)";
+      contentLabel.className = "font-semibold text-emerald-500";
+    }
+  }
+  telegramAutoBackupConfig.includeImages = isWithImages;
+}
+window.updateAutoBackupImagesToggleUI = updateAutoBackupImagesToggleUI;
+
 function updateAutoBackupUI() {
   const enableInput = document.getElementById('dm-autobackup-enable');
+  const imagesInput = document.getElementById('dm-autobackup-images-enable');
   const tokenInput = document.getElementById('dm-autobackup-token');
   const chatInput = document.getElementById('dm-autobackup-chatid');
   const daysInput = document.getElementById('dm-autobackup-days');
@@ -10177,6 +10205,9 @@ function updateAutoBackupUI() {
   const nextTimeSpan = document.getElementById('dm-autobackup-next-time');
 
   if (enableInput) enableInput.checked = !!telegramAutoBackupConfig.enabled;
+  if (imagesInput) imagesInput.checked = !!telegramAutoBackupConfig.includeImages;
+  updateAutoBackupImagesToggleUI();
+
   if (tokenInput) tokenInput.value = telegramAutoBackupConfig.botToken || '';
   if (chatInput) chatInput.value = telegramAutoBackupConfig.chatId || '';
   if (daysInput) daysInput.value = telegramAutoBackupConfig.intervalDays || 1;
@@ -10292,6 +10323,8 @@ async function saveAutoBackupSettings() {
   const saveBtn = document.getElementById('dm-autobackup-save-btn');
 
   const enabled = enableInput ? enableInput.checked : false;
+  const imagesInput = document.getElementById('dm-autobackup-images-enable');
+  const includeImages = imagesInput ? imagesInput.checked : false;
   const botToken = tokenInput ? tokenInput.value.trim() : '';
   const chatId = chatInput ? chatInput.value.trim() : '';
   let intervalDays = daysInput ? parseInt(daysInput.value, 10) : 1;
@@ -10302,6 +10335,7 @@ async function saveAutoBackupSettings() {
   }
 
   telegramAutoBackupConfig.enabled = enabled;
+  telegramAutoBackupConfig.includeImages = includeImages;
   telegramAutoBackupConfig.botToken = botToken;
   telegramAutoBackupConfig.chatId = chatId;
   telegramAutoBackupConfig.intervalDays = intervalDays;
@@ -10706,14 +10740,16 @@ function checkAndRunCloudAutoBackup() {
   const rawData = JSON.parse(dbDataRes.getContentText());
   if (!rawData) return;
 
-  const cleanData = sanitizeForBackup(rawData);
+  const tgWithImages = tgConfig && tgConfig.includeImages === true;
+  const cleanData = tgWithImages ? rawData : sanitizeForBackup(rawData);
   const jsonString = JSON.stringify(cleanData, null, 2);
   const jsonBlob = Utilities.newBlob(jsonString, "application/json");
 
   const nowObj = new Date();
   const dateStr = Utilities.formatDate(nowObj, "Asia/Kolkata", "yyyy-MM-dd");
   const timeStr = Utilities.formatDate(nowObj, "Asia/Kolkata", "HH-mm-ss");
-  const fileName = "RPM_Diesel_AutoBackup_" + dateStr + "_" + timeStr + ".json";
+  const filePrefix = tgWithImages ? "RPM_Diesel_FullBackup_" : "RPM_Diesel_AutoBackup_";
+  const fileName = filePrefix + dateStr + "_" + timeStr + ".json";
   jsonBlob.setName(fileName);
   const sizeMb = (jsonBlob.getBytes().length / (1024 * 1024)).toFixed(2);
 
@@ -10732,6 +10768,7 @@ function checkAndRunCloudAutoBackup() {
         "📅 <b>Timestamp:</b> " + Utilities.formatDate(nowObj, "Asia/Kolkata", "dd MMM yyyy, hh:mm a") + " (IST)",
         "💾 <b>File:</b> <code>" + fileName + "</code>",
         "📊 <b>Size:</b> " + sizeMb + " MB",
+        "🖼️ <b>Mode:</b> " + (tgWithImages ? "With Images (Full Snapshot)" : "Without Images (Data Only)"),
         "📝 <b>Data:</b> " + totalEntries + " Entries | " + totalRequests + " Requests",
         "⏳ <b>Auto Schedule:</b> Every " + intervalDays + " Day(s)",
         "⚙️ <b>Trigger:</b> 24/7 Google Cloud Scheduler",
@@ -10999,12 +11036,15 @@ function sanitizeDbForBackup(obj) {
   if (Array.isArray(obj)) return obj.map(sanitizeDbForBackup);
   const out = {};
   for (const [k, v] of Object.entries(obj)) {
-    if (k === 'driverRequestPhotos') {
+    if (k === 'driverRequestPhotos' || k === 'entryPhotos' || k === 'refillPhotos') {
       out[k] = { _backup_info: `Omitted ${Object.keys(v || {}).length} base64 photo records for compact backup` };
       continue;
     }
+    if (k === 'slipPhoto' || k === 'meterPhoto' || k === 'photo' || k === 'image' || k === 'avatar' || k === 'receiptPhoto') {
+      continue;
+    }
     if (typeof v === 'string' && (v.startsWith('data:image') || (v.length > 2000 && /^[A-Za-z0-9+/=]+$/.test(v.slice(0, 80))))) {
-      out[k] = '[BASE64_IMAGE_OMITTED_FOR_BACKUP]';
+      continue;
     } else if (typeof v === 'object' && v !== null) {
       out[k] = sanitizeDbForBackup(v);
     } else {
@@ -11071,22 +11111,29 @@ async function sendTelegramBackup(isManual = false) {
       return;
     }
 
-    const cleanVal = sanitizeDbForBackup(val);
+    const imagesToggle = document.getElementById('dm-autobackup-images-enable');
+    const includeImages = imagesToggle ? imagesToggle.checked : (telegramAutoBackupConfig.includeImages === true);
+
+    const cleanVal = includeImages ? val : sanitizeDbForBackup(val);
     const jsonStr = JSON.stringify(cleanVal);
 
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10);
     const timeStr = now.toTimeString().slice(0, 8).replace(/:/g, '-');
-    let fileName = `RPM_Diesel_AutoBackup_${dateStr}_${timeStr}.json`;
+    const fileMode = includeImages ? 'FullBackup' : 'DataOnlyBackup';
+    let fileName = `RPM_Diesel_${fileMode}_${dateStr}_${timeStr}.json`;
     let uploadBlob = new Blob([jsonStr], { type: 'application/json' });
     let isCompressed = false;
 
-    if (uploadBlob.size > 30 * 1024 * 1024 && typeof CompressionStream === 'function') {
+    if ((uploadBlob.size > 15 * 1024 * 1024 || includeImages) && typeof CompressionStream === 'function') {
       try {
         const stream = uploadBlob.stream().pipeThrough(new CompressionStream('gzip'));
-        uploadBlob = await new Response(stream).blob();
-        fileName += '.gz';
-        isCompressed = true;
+        const compressedBlob = await new Response(stream).blob();
+        if (compressedBlob.size < uploadBlob.size) {
+          uploadBlob = compressedBlob;
+          fileName += '.gz';
+          isCompressed = true;
+        }
       } catch (e) {
         console.warn("Gzip compression fallback:", e);
       }
@@ -11097,11 +11144,27 @@ async function sendTelegramBackup(isManual = false) {
     const sizeMb = (uploadBlob.size / (1024 * 1024)).toFixed(2);
     const sizeKb = (uploadBlob.size / 1024).toFixed(1);
 
+    if (uploadBlob.size > 49.5 * 1024 * 1024) {
+      if (isManual) {
+        updateDmProgress(100, {
+          subtitle: "Telegram 50MB Limit Exceeded!",
+          step: "Error",
+          icon: "fas fa-exclamation-triangle text-amber-400",
+          color: "amber",
+          detail: `File size (${sizeMb} MB) Telegram bot limit (50 MB) se badi hai. "Backup With Images" switch OFF karein ya Google Drive backup use karein.`,
+          isFail: true,
+          taskName: taskTitle
+        });
+        closeDmProgress(4000);
+      }
+      return toast.err(`Telegram bot limit 50MB hai. File ${sizeMb} MB hai. Kripya 'Backup With Images' switch OFF karein.`);
+    }
+
     if (isManual) {
       updateDmProgress(68, {
-        subtitle: "Snapshot packaging & gzip compression...",
+        subtitle: isCompressed ? "Snapshot packaging & gzip compression (ready)..." : "Snapshot packaging complete...",
         step: "Step 3 of 4",
-        detail: "Step 3 of 4 (68%): Snapshot packaging & gzip compression (agar zarurat ho).",
+        detail: `Step 3 of 4 (68%): Packaging complete (${sizeMb} MB). Mode: ${includeImages ? 'With Images' : 'Without Images'}.`,
         duration: 350
       });
     }
@@ -11111,6 +11174,7 @@ async function sendTelegramBackup(isManual = false) {
       `📅 <b>Timestamp:</b> ${now.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} (IST)\n` +
       `💾 <b>File:</b> <code>${fileName}</code>${isCompressed ? ' <i>(GZIP Compressed)</i>' : ''}\n` +
       `📊 <b>Size:</b> ${sizeMb >= 1 ? sizeMb + ' MB' : sizeKb + ' KB'}\n` +
+      `🖼️ <b>Mode:</b> ${includeImages ? 'With Images (Full Snapshot)' : 'Without Images (Data Only)'}\n` +
       `📝 <b>Data:</b> ${totalRecords} Entries | ${totalRequests} Requests\n` +
       `⏳ <b>Auto Schedule:</b> Every ${telegramAutoBackupConfig.intervalDays || 1} Day(s)\n` +
       `⚙️ <b>Trigger:</b> ${isManual ? 'Manual Test' : 'Scheduled Auto Backup'}\n` +

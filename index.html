@@ -2270,6 +2270,22 @@
                     </label>
                   </div>
 
+                  <!-- Include Images Toggle Switch (ON: With Images, OFF: Without Images) -->
+                  <div class="p-3.5 rounded-2xl border border-sky-500/20 bg-sky-500/5 flex items-center justify-between">
+                    <div>
+                      <h5 class="text-xs font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
+                        <i class="fas fa-images text-sky-500"></i> Backup With Images
+                      </h5>
+                      <p id="dm-autobackup-images-status-text" class="text-[10px] text-slate-400">
+                        OFF: Without Images (~2-5 MB, Fast) • ON: With Images (Full Snapshot)
+                      </p>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" id="dm-autobackup-images-enable" class="sr-only peer" onchange="updateAutoBackupImagesToggleUI()">
+                      <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sky-500"></div>
+                    </label>
+                  </div>
+
                   <!-- Telegram Bot Token (Bot Key) -->
                   <div>
                     <label class="calc-label text-[10px]" for="dm-autobackup-token">🤖 TELEGRAM BOT KEY / TOKEN</label>
@@ -2320,7 +2336,7 @@
                     </div>
                     <div class="flex items-center justify-between text-slate-600 dark:text-slate-300 pt-1 border-t border-slate-200/40 dark:border-slate-800/40">
                       <span class="font-bold flex items-center gap-1.5"><i class="fas fa-shield-halved text-emerald-500"></i> Backup Content:</span>
-                      <span class="font-semibold text-emerald-600 dark:text-emerald-400">Full Cloud RTDB (.json)</span>
+                      <span id="dm-autobackup-content-label" class="font-semibold text-emerald-600 dark:text-emerald-400">Without Images (Data Only)</span>
                     </div>
                   </div>
 
@@ -5995,7 +6011,7 @@
   <div id="toasts-container"></div>
 
   <!-- Core JavaScript Core App Logic File -->
-  <script src="script.js?v=95" defer></script>
+  <script src="script.js?v=96" defer></script>
   <script src="broadcast.js" defer></script>
 
   <!-- Re-add transition after page load for smooth theme toggles -->
