@@ -21294,7 +21294,7 @@ function compressAndPreviewFillReceipt(img) {
 
   let width = img.naturalWidth || img.width;
   let height = img.naturalHeight || img.height;
-  const maxDim = 640;
+  const maxDim = 480;
   if (width > maxDim || height > maxDim) {
     if (width > height) {
       height = Math.round((height * maxDim) / width);
@@ -21308,7 +21308,7 @@ function compressAndPreviewFillReceipt(img) {
   canvas.height = height;
   ctx.drawImage(img, 0, 0, width, height);
 
-  capturedReceiptBase64 = canvas.toDataURL('image/jpeg', 0.50);
+  capturedReceiptBase64 = canvas.toDataURL('image/jpeg', 0.35);
 
   if (fillCameraStream) {
     fillCameraStream.getTracks().forEach(t => t.stop());
@@ -23104,7 +23104,7 @@ function nextReceiptPhoto() {
   resetReceiptImageTransform();
 }
 
-function compressReceiptImage(file, minTargetBytes = 10 * 1024, maxTargetBytes = 20 * 1024) {
+function compressReceiptImage(file, minTargetBytes = 6 * 1024, maxTargetBytes = 15 * 1024) {
   return new Promise((resolve, reject) => {
     if (!file) return resolve(null);
     const reader = new FileReader();
@@ -23118,8 +23118,8 @@ function compressReceiptImage(file, minTargetBytes = 10 * 1024, maxTargetBytes =
             return resolve(e.target.result);
           }
 
-          // Max dimension: 640px preserves clarity for numbers & slips while keeping file strictly 10KB - 20KB
-          const MAX_INIT_DIM = 640;
+          // Max dimension: 480px preserves clarity for numbers & slips while keeping file strictly 6KB - 15KB
+          const MAX_INIT_DIM = 480;
           let w = origW;
           let h = origH;
           if (w > MAX_INIT_DIM || h > MAX_INIT_DIM) {
@@ -23145,12 +23145,12 @@ function compressReceiptImage(file, minTargetBytes = 10 * 1024, maxTargetBytes =
             return Math.round((b64.length * 3) / 4);
           }
 
-          // Initial pass with quality 0.50 for lightweight 10KB - 20KB footprint
-          let q = 0.50;
+          // Initial pass with quality 0.35 for lightweight 6KB - 15KB footprint
+          let q = 0.35;
           let dataUrl = canvas.toDataURL('image/jpeg', q);
           let currentBytes = getBytes(dataUrl);
 
-          // If already in 10KB - 20KB range, perfect!
+          // If already in target range, perfect!
           if (currentBytes <= maxTargetBytes && currentBytes >= minTargetBytes) {
             return resolve(dataUrl);
           }
