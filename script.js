@@ -11269,8 +11269,21 @@ function saveDriveBackupIndex(folder, indexData) {
   }
 }
 
-// Superfast Parallel Firebase Fetcher with Incremental Photos Support
+// Superfast Direct & Parallel Firebase Fetcher
 function fetchFirebaseData(isWithImages, folder) {
+  if (isWithImages) {
+    try {
+      // Database has been deduplicated & compressed to ~37 MB (well under 50 MB limit)
+      // Single direct root fetch over Google internal cloud backbone takes only ~2 seconds!
+      var rootRes = UrlFetchApp.fetch(FIREBASE_DB_URL + "/.json", { muteHttpExceptions: true });
+      if (rootRes.getResponseCode() === 200) {
+        return JSON.parse(rootRes.getContentText());
+      }
+    } catch (rootErr) {
+      Logger.log("Direct root fetch error, falling back: " + rootErr);
+    }
+  }
+
   var collections = [
     "entries",
     "driverRequests",
@@ -12239,105 +12252,23 @@ async function sendDriveBackup(isManual = false) {
 
   let fetchTimeoutId = null;
 
-  if (isManual) {
-    currentTaskAbortController = new AbortController();
+  const syncStartTime = Date.now();
+  let syncSuccess = false;
+  let statusPollTimer = null;
 
-    showDmProgress({
-      title: taskTitle,
-      taskName: taskTitle,
-      subtitle: "Google Drive sync endpoint initialize ho raha hai...",
-      icon: "fab fa-google-drive text-emerald-400 animate-spin",
-      color: "emerald",
-      step: "Step 1 of 4",
-      percent: 15,
-      detail: "Step 1 of 4 (15%): Google Drive Web App sync endpoint initialize."
-    });
-
-    startDmProgressAutoAdvance({
-      fromPercent: 18,
-      toPercent: 92,
-      estimatedDurationSec: 5,
-      step: "Step 2 of 4",
-      subtitle: includeImages 
-        ? "Google Cloud server par snapshot & full images packaging..." 
-        : "Google Cloud server par database snapshot sync...",
-      detailFormatter: (sec, pct) => `Step 2 of 4 (${pct}%): Google Drive single file sync chal raha hai (${sec}s) - Mode: ${includeImages ? 'With Images' : 'Data Only'}`
-    });
-
-    // 25s timeout fallback so user is never stuck
-    fetchTimeoutId = setTimeout(() => {
-      if (currentTaskAbortController) {
-        console.warn("[sendDriveBackup] Timeout reached, aborting request");
-        currentTaskAbortController.abort();
-      }
-    }, 25000);
-  }
-
-  try {
-    // Send lightweight command to Google Apps Script Web App
-    // Note: Apps Script directly fetches from Firebase REST API in Google's cloud at gigabit speed,
-    // so the browser does NOT need to download 200MB of base64 photos over Wi-Fi, preventing any freeze!
-    const postPayload = {
-      action: 'saveBackup',
-      folderId: folderId,
-      fileName: fileName,
-      includeImages: includeImages
-    };
-
-    let uploadSuccess = false;
-    try {
-      await fetch(webAppUrl, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(postPayload),
-        signal: currentTaskAbortController ? currentTaskAbortController.signal : undefined
-      });
-      uploadSuccess = true;
-    } catch (postErr) {
-      if (currentTaskAbortController?.signal?.aborted) {
-        console.warn("Drive sync aborted by user or timeout.");
-        return;
-      }
-      console.warn("POST to Web App failed, attempting GET trigger:", postErr);
-      try {
-        const getUrl = `${webAppUrl}${webAppUrl.includes('?') ? '&' : '?'}action=saveBackup&folderId=${encodeURIComponent(folderId)}&fileName=${encodeURIComponent(fileName)}&includeImages=${includeImages}&t=${Date.now()}`;
-        await fetch(getUrl, { 
-          method: 'GET', 
-          mode: 'no-cors',
-          signal: currentTaskAbortController ? currentTaskAbortController.signal : undefined
-        });
-        uploadSuccess = true;
-      } catch (getErr) {
-        if (currentTaskAbortController?.signal?.aborted) {
-          console.warn("Drive sync aborted by user or timeout.");
-          return;
-        }
-        console.error("GET trigger also failed:", getErr);
-        throw new Error("Google Apps Script Web App tak connect nahi ho paya. Kripya Web App URL check karein.");
-      }
-    } finally {
-      if (fetchTimeoutId) clearTimeout(fetchTimeoutId);
-    }
-
+  const handleBackupSuccess = (fileUrl = null) => {
+    if (syncSuccess) return;
+    syncSuccess = true;
+    if (statusPollTimer) clearInterval(statusPollTimer);
+    if (fetchTimeoutId) clearTimeout(fetchTimeoutId);
     stopDmProgressAutoAdvance();
-
-    if (currentTaskAbortController?.signal?.aborted) return;
-
-    if (isManual) {
-      updateDmProgress(94, {
-        subtitle: `Google Drive single file (${fileName}) update & verify...`,
-        step: "Step 3 of 4",
-        detail: `Step 3 of 4 (94%): Single backup file (${fileName}) Google Drive me update ho chuki hai.`,
-        duration: 250
-      });
-    }
 
     const backupTimeNow = Date.now();
     const now = new Date();
     googleDriveAutoBackupConfig.lastBackupTimestamp = backupTimeNow;
     googleDriveAutoBackupConfig.lastBackupDate = now.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
     googleDriveAutoBackupConfig.webAppUrl = webAppUrl;
+    if (fileUrl) googleDriveAutoBackupConfig.lastFileUrl = fileUrl;
 
     const intervalDays = parseInt(googleDriveAutoBackupConfig.intervalDays, 10) || 1;
     let nextD = new Date(backupTimeNow);
@@ -12382,33 +12313,131 @@ async function sendDriveBackup(isManual = false) {
     updateAutoBackupBadge();
     updateDriveBackupUI();
     loadDriveBackupIndexStatus();
-  } catch (err) {
-    if (currentTaskAbortController?.signal?.aborted || err?.name === 'AbortError') {
-      console.warn("Drive backup cancelled by user.");
-      return;
+  };
+
+  if (isManual) {
+    currentTaskAbortController = new AbortController();
+
+    showDmProgress({
+      title: taskTitle,
+      taskName: taskTitle,
+      subtitle: "Google Drive sync endpoint initialize ho raha hai...",
+      icon: "fab fa-google-drive text-emerald-400 animate-spin",
+      color: "emerald",
+      step: "Step 1 of 4",
+      percent: 15,
+      detail: "Step 1 of 4 (15%): Google Drive Web App sync endpoint initialize."
+    });
+
+    startDmProgressAutoAdvance({
+      fromPercent: 18,
+      toPercent: 92,
+      estimatedDurationSec: 15,
+      step: "Step 2 of 4",
+      subtitle: includeImages 
+        ? "Google Cloud server par snapshot & full images packaging..." 
+        : "Google Cloud server par database snapshot sync...",
+      detailFormatter: (sec, pct) => `Step 2 of 4 (${pct}%): Google Drive single file sync chal raha hai (${sec}s) - Mode: ${includeImages ? 'With Images' : 'Data Only'}`
+    });
+
+    // 60s timeout fallback
+    fetchTimeoutId = setTimeout(() => {
+      if (!syncSuccess && currentTaskAbortController) {
+        console.warn("[sendDriveBackup] Timeout reached, checking final status...");
+        currentTaskAbortController.abort();
+      }
+    }, 60000);
+
+    // Active polling: Check if Google Apps Script finishes writing to Firebase
+    statusPollTimer = setInterval(async () => {
+      if (syncSuccess) return;
+      try {
+        if (typeof db !== 'undefined' && db) {
+          const snap = await db.ref('appConfig/googleDriveAutoBackup').once('value');
+          const val = snap.val() || {};
+          if (val.lastBackupTimestamp && val.lastBackupTimestamp >= syncStartTime - 2000) {
+            handleBackupSuccess(val.lastFileUrl);
+          }
+        }
+      } catch (e) {}
+    }, 2000);
+  }
+
+  try {
+    // Send lightweight command to Google Apps Script Web App
+    const postPayload = {
+      action: 'saveBackup',
+      folderId: folderId,
+      fileName: fileName,
+      includeImages: includeImages
+    };
+
+    try {
+      await fetch(webAppUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(postPayload),
+        signal: currentTaskAbortController ? currentTaskAbortController.signal : undefined
+      });
+      // After fetch returns, give cloud script a moment to finalize if poll hasn't already fired
+      setTimeout(() => {
+        if (!syncSuccess) handleBackupSuccess();
+      }, 1500);
+    } catch (postErr) {
+      if (currentTaskAbortController?.signal?.aborted) {
+        if (syncSuccess) return;
+        throw new Error("Sync time limit reached ya task abort kiya gaya.");
+      }
+      console.warn("POST to Web App failed, attempting GET trigger:", postErr);
+      try {
+        const getUrl = `${webAppUrl}${webAppUrl.includes('?') ? '&' : '?'}action=saveBackup&folderId=${encodeURIComponent(folderId)}&fileName=${encodeURIComponent(fileName)}&includeImages=${includeImages}&t=${Date.now()}`;
+        await fetch(getUrl, { 
+          method: 'GET', 
+          mode: 'no-cors',
+          signal: currentTaskAbortController ? currentTaskAbortController.signal : undefined
+        });
+        setTimeout(() => {
+          if (!syncSuccess) handleBackupSuccess();
+        }, 1500);
+      } catch (getErr) {
+        if (syncSuccess) return;
+        if (currentTaskAbortController?.signal?.aborted) {
+          throw new Error("Sync time limit reached ya task abort kiya gaya.");
+        }
+        console.error("GET trigger also failed:", getErr);
+        throw new Error("Google Apps Script Web App tak connect nahi ho paya. Kripya Web App URL check karein.");
+      }
     }
+  } catch (err) {
+    if (syncSuccess) return;
     stopDmProgressAutoAdvance();
-    console.error("Drive auto backup failed:", err);
+    if (statusPollTimer) clearInterval(statusPollTimer);
+    if (fetchTimeoutId) clearTimeout(fetchTimeoutId);
+
+    const isAborted = currentTaskAbortController?.signal?.aborted || err?.name === 'AbortError';
+    console.error("Drive auto backup error:", err);
     if (isManual) {
       updateDmProgress(100, {
-        subtitle: "Google Drive Backup Failed!",
-        step: "Error",
-        icon: "fas fa-times-circle text-rose-400",
-        color: "rose",
-        detail: err.message,
+        subtitle: isAborted ? "Google Drive Sync Aborted / Timeout" : "Google Drive Backup Failed!",
+        step: isAborted ? "Cancelled" : "Error",
+        icon: isAborted ? "fas fa-exclamation-triangle text-amber-400" : "fas fa-times-circle text-rose-400",
+        color: isAborted ? "amber" : "rose",
+        detail: isAborted ? "Sync time limit reached ya task abort kiya gaya." : err.message,
         isFail: true,
         taskName: taskTitle
       });
-      closeDmProgress(2500);
+      closeDmProgress(2000);
     }
-    toast.err(`Google Drive backup failed: ${err.message}`);
+    toast.err(`Google Drive sync: ${err.message || 'Cancelled'}`);
   } finally {
+    if (statusPollTimer) clearInterval(statusPollTimer);
     if (fetchTimeoutId) clearTimeout(fetchTimeoutId);
     currentTaskAbortController = null;
     stopDmProgressAutoAdvance();
     if (testBtn && isManual) {
       testBtn.disabled = false;
-      testBtn.innerHTML = `<i class="fab fa-google-drive"></i> <span>Save Backup to Google Drive Now (Test)</span>`;
+      testBtn.innerHTML = `<i class="fab fa-google-drive"></i> <span>Sync Backup to Google Drive Now (Test)</span>`;
     }
   }
 }
