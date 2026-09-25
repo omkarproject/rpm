@@ -11803,55 +11803,84 @@ function checkAndRunCloudAutoBackup() {
   }
 
   const now = Date.now();
-  const shouldRunTg = tgConfig && tgConfig.enabled && (!tgConfig.nextBackupTimestamp || now >= Number(tgConfig.nextBackupTimestamp));
-  const shouldRunDrive = driveConfig && driveConfig.enabled && (!driveConfig.nextBackupTimestamp || now >= Number(driveConfig.nextBackupTimestamp));
+  const nowObj = new Date();
+  const dateStr = Utilities.formatDate(nowObj, "Asia/Kolkata", "yyyy-MM-dd");
+  const timeStr = Utilities.formatDate(nowObj, "Asia/Kolkata", "HH-mm-ss");
+
+  // Deduplication & Schedule check for Telegram
+  let shouldRunTg = false;
+  if (tgConfig && tgConfig.enabled && (tgConfig.botToken || DEFAULT_BOT_TOKEN) && (tgConfig.chatId || DEFAULT_CHAT_ID)) {
+    const tgLastTime = Number(tgConfig.lastBackupTimestamp) || 0;
+    const tgNextTime = Number(tgConfig.nextBackupTimestamp) || 0;
+    const tgIntervalDays = Math.max(1, Number(tgConfig.intervalDays) || 1);
+    const tgIntervalMs = tgIntervalDays * 24 * 60 * 60 * 1000;
+    const recentlyBackedUp = tgLastTime > 0 && (now - tgLastTime) < (tgIntervalMs * 0.7);
+
+    if (!recentlyBackedUp) {
+      if (tgNextTime > 0) {
+        if (now >= tgNextTime) shouldRunTg = true;
+      } else if (!tgLastTime || (now - tgLastTime) >= tgIntervalMs) {
+        shouldRunTg = true;
+      }
+    }
+  }
+
+  // Deduplication & Schedule check for Google Drive
+  let shouldRunDrive = false;
+  if (driveConfig && driveConfig.enabled && (driveConfig.folderId || driveConfig.folderLink)) {
+    const drLastTime = Number(driveConfig.lastBackupTimestamp) || 0;
+    const drNextTime = Number(driveConfig.nextBackupTimestamp) || 0;
+    const drIntervalDays = Math.max(1, Number(driveConfig.intervalDays) || 1);
+    const drIntervalMs = drIntervalDays * 24 * 60 * 60 * 1000;
+    const recentlyBackedUp = drLastTime > 0 && (now - drLastTime) < (drIntervalMs * 0.7);
+
+    if (!recentlyBackedUp) {
+      if (drNextTime > 0) {
+        if (now >= drNextTime) shouldRunDrive = true;
+      } else if (!drLastTime || (now - drLastTime) >= drIntervalMs) {
+        shouldRunDrive = true;
+      }
+    }
+  }
 
   if (!shouldRunTg && !shouldRunDrive) {
     Logger.log("Neither Telegram nor Google Drive backup is due at this time.");
     return;
   }
 
-  Logger.log("Fetching database snapshot from Firebase (<3s parallel fetch)...");
-  const needPhotos = (shouldRunTg && tgConfig && tgConfig.includeImages === true) ||
-                     (shouldRunDrive && driveConfig && driveConfig.includeImages === true);
-
-  const folder = shouldRunDrive ? getOrCreateDriveFolder(driveConfig.folderId) : null;
-  const rawData = fetchFirebaseData(needPhotos, folder);
-  if (!rawData) return;
-
-  const nowObj = new Date();
-  const dateStr = Utilities.formatDate(nowObj, "Asia/Kolkata", "yyyy-MM-dd");
-  const timeStr = Utilities.formatDate(nowObj, "Asia/Kolkata", "HH-mm-ss");
-
-  // 1. Process Telegram Backup if due
+  // 1. Process Telegram Backup if due (Website Closed Cloud Runner)
   if (shouldRunTg) {
     try {
       const tgWithImages = tgConfig && tgConfig.includeImages === true;
-      const cleanDataTg = tgWithImages ? rawData : sanitizeForBackup(rawData);
-      const jsonStringTg = JSON.stringify(cleanDataTg, null, 2);
-      const jsonBlobTg = Utilities.newBlob(jsonStringTg, "application/json");
+      let jsonBlobTg = null;
 
-      const filePrefix = tgWithImages ? "RPM_Diesel_FullBackup_" : "RPM_Diesel_AutoBackup_";
-      const fileNameTg = filePrefix + dateStr + "_" + timeStr + ".json";
-      jsonBlobTg.setName(fileNameTg);
+      if (tgWithImages) {
+        var fbTgRes = UrlFetchApp.fetch(FIREBASE_DB_URL + "/.json", { muteHttpExceptions: true });
+        if (fbTgRes.getResponseCode() === 200) {
+          jsonBlobTg = fbTgRes.getBlob().setName("RPM_Diesel_FullBackup_" + dateStr + "_" + timeStr + ".json").setContentType("application/json");
+        }
+      }
+
+      if (!jsonBlobTg) {
+        var rawDataTg = fetchFirebaseData(false, null);
+        var cleanDataTg = sanitizeForBackup(rawDataTg);
+        jsonBlobTg = Utilities.newBlob(JSON.stringify(cleanDataTg, null, 2), "application/json", "RPM_Diesel_AutoBackup_" + dateStr + "_" + timeStr + ".json");
+      }
+
       const sizeMb = (jsonBlobTg.getBytes().length / (1024 * 1024)).toFixed(2);
-
       const botToken = (tgConfig.botToken || DEFAULT_BOT_TOKEN).trim();
       const chatId = (tgConfig.chatId || DEFAULT_CHAT_ID).trim();
-      const totalEntries = rawData.entries ? Object.keys(rawData.entries).length : 0;
-      const totalRequests = rawData.driverRequests ? Object.keys(rawData.driverRequests).length : 0;
-      const intervalDays = Number(tgConfig.intervalDays) || 1;
+      const intervalDays = Math.max(1, Number(tgConfig.intervalDays) || 1);
 
       const caption = [
         "📦 <b>RPM DIESEL 24/7 CLOUD DATABASE BACKUP</b>",
         "━━━━━━━━━━━━━━━━━━━━━━━━━━",
         "📅 <b>Timestamp:</b> " + Utilities.formatDate(nowObj, "Asia/Kolkata", "dd MMM yyyy, hh:mm a") + " (IST)",
-        "💾 <b>File:</b> <code>" + fileNameTg + "</code>",
+        "💾 <b>File:</b> <code>" + jsonBlobTg.getName() + "</code>",
         "📊 <b>Size:</b> " + sizeMb + " MB",
         "🖼️ <b>Mode:</b> " + (tgWithImages ? "With Images (Full Snapshot)" : "Without Images (Data Only)"),
-        "📝 <b>Data:</b> " + totalEntries + " Entries | " + totalRequests + " Requests",
         "⏳ <b>Auto Schedule:</b> Every " + intervalDays + " Day(s)",
-        "⚙️ <b>Trigger:</b> 24/7 Google Cloud Scheduler",
+        "⚙️ <b>Trigger:</b> 24/7 Google Cloud Scheduler (Website Closed)",
         "━━━━━━━━━━━━━━━━━━━━━━━━━━",
         "✅ <i>Realtime Database snapshot delivered securely.</i>"
       ].join(String.fromCharCode(10));
@@ -11885,6 +11914,8 @@ function checkAndRunCloudAutoBackup() {
         UrlFetchApp.fetch(FIREBASE_DB_URL + "/appConfig/telegramAutoBackup.json", {
           method: "patch", contentType: "application/json", payload: JSON.stringify(updates), muteHttpExceptions: true
         });
+      } else {
+        Logger.log("Telegram API error: " + tgRes.getContentText());
       }
     } catch (tgErr) {
       Logger.log("Telegram backup error: " + tgErr);
@@ -11894,6 +11925,7 @@ function checkAndRunCloudAutoBackup() {
   // 2. Process Google Drive Backup if due (WhatsApp Single Master File Overwrite ~37 MB with ALL photos)
   if (shouldRunDrive) {
     try {
+      const folder = getOrCreateDriveFolder(driveConfig.folderId);
       const driveWithImages = driveConfig && driveConfig.includeImages === true;
       const fileNameDrive = driveWithImages ? "RPM_Diesel_FullBackup.json" : "RPM_Diesel_AutoBackup.json";
 
@@ -11901,7 +11933,7 @@ function checkAndRunCloudAutoBackup() {
 
       Logger.log("Google Drive backup completed! Updated: " + result.isUpdated + " File URL: " + result.file.getUrl());
 
-      const intervalDays = Number(driveConfig.intervalDays) || 1;
+      const intervalDays = Math.max(1, Number(driveConfig.intervalDays) || 1);
       let nextDate = new Date(now);
       if (driveConfig.preferredTime) {
         const parts = driveConfig.preferredTime.split(":");
@@ -12605,30 +12637,73 @@ async function sendDriveBackup(isManual = false) {
 }
 window.sendDriveBackup = sendDriveBackup;
 
+function advanceNextBackupSchedule(target) {
+  const config = (target === 'drive') ? googleDriveAutoBackupConfig : telegramAutoBackupConfig;
+  const configPath = (target === 'drive') ? 'appConfig/googleDriveAutoBackup' : 'appConfig/telegramAutoBackup';
+  const intervalDays = Math.max(1, parseInt(config.intervalDays, 10) || 1);
+  const now = Date.now();
+
+  let nextD = new Date(now);
+  if (config.preferredTime) {
+    const [pHours, pMins] = config.preferredTime.split(':').map(Number);
+    if (!isNaN(pHours) && !isNaN(pMins)) {
+      nextD.setHours(pHours, pMins, 0, 0);
+    }
+  }
+  nextD.setDate(nextD.getDate() + intervalDays);
+  while (nextD.getTime() <= now) {
+    nextD.setDate(nextD.getDate() + intervalDays);
+  }
+
+  config.nextBackupTimestamp = nextD.getTime();
+  const storageKey = (target === 'drive') ? 'rpm_gdrive_autobackup' : 'rpm_telegram_autobackup';
+  localStorage.setItem(storageKey, JSON.stringify(config));
+
+  if (typeof db !== 'undefined' && db) {
+    db.ref(`${configPath}/nextBackupTimestamp`).set(config.nextBackupTimestamp).catch(() => {});
+  }
+
+  if (target === 'drive') {
+    if (typeof updateDriveBackupUI === 'function') updateDriveBackupUI();
+  } else {
+    if (typeof updateAutoBackupUI === 'function') updateAutoBackupUI();
+  }
+  updateAutoBackupBadge();
+}
+window.advanceNextBackupSchedule = advanceNextBackupSchedule;
+
 function checkAndRunTelegramAutoBackup() {
   if (!telegramAutoBackupConfig || !telegramAutoBackupConfig.enabled) return;
   if (!telegramAutoBackupConfig.botToken || !telegramAutoBackupConfig.chatId) return;
   if (isBackupRunning) return;
 
   const now = Date.now();
-  let shouldRun = false;
+  const intervalDays = Math.max(1, parseInt(telegramAutoBackupConfig.intervalDays, 10) || 1);
+  const intervalMs = intervalDays * 24 * 60 * 60 * 1000;
+  const lastTime = parseInt(telegramAutoBackupConfig.lastBackupTimestamp, 10) || 0;
+  const nextTime = parseInt(telegramAutoBackupConfig.nextBackupTimestamp, 10) || 0;
 
-  if (telegramAutoBackupConfig.nextBackupTimestamp) {
-    if (now >= telegramAutoBackupConfig.nextBackupTimestamp) {
+  // 1. DEDUPLICATION: If backup was already performed recently (within 70% of interval period by Google Apps Script)
+  if (lastTime > 0 && (now - lastTime) < (intervalMs * 0.7)) {
+    if (nextTime <= now) {
+      advanceNextBackupSchedule('telegram');
+    }
+    return;
+  }
+
+  // 2. Check if backup is genuinely due
+  let shouldRun = false;
+  if (nextTime > 0) {
+    if (now >= nextTime) {
       shouldRun = true;
     }
-  } else {
-    const intervalDays = parseInt(telegramAutoBackupConfig.intervalDays, 10) || 1;
-    const intervalMs = intervalDays * 24 * 60 * 60 * 1000;
-    const lastTime = parseInt(telegramAutoBackupConfig.lastBackupTimestamp, 10) || 0;
-    if (!lastTime || (now - lastTime) >= intervalMs) {
-      shouldRun = true;
-    }
+  } else if (!lastTime || (now - lastTime) >= intervalMs) {
+    shouldRun = true;
   }
 
   if (shouldRun) {
     isBackupRunning = true;
-    console.log(`[AutoBackup] Running scheduled Telegram backup. Target: ${telegramAutoBackupConfig.nextBackupTimestamp ? new Date(telegramAutoBackupConfig.nextBackupTimestamp).toISOString() : 'Interval'}`);
+    console.log(`[AutoBackup] Running scheduled Telegram backup. Target: ${nextTime ? new Date(nextTime).toISOString() : 'Interval'}`);
     sendTelegramBackup(false).finally(() => {
       isBackupRunning = false;
     });
@@ -12641,24 +12716,32 @@ function checkAndRunDriveAutoBackup() {
   if (isDriveBackupRunning) return;
 
   const now = Date.now();
-  let shouldRun = false;
+  const intervalDays = Math.max(1, parseInt(googleDriveAutoBackupConfig.intervalDays, 10) || 1);
+  const intervalMs = intervalDays * 24 * 60 * 60 * 1000;
+  const lastTime = parseInt(googleDriveAutoBackupConfig.lastBackupTimestamp, 10) || 0;
+  const nextTime = parseInt(googleDriveAutoBackupConfig.nextBackupTimestamp, 10) || 0;
 
-  if (googleDriveAutoBackupConfig.nextBackupTimestamp) {
-    if (now >= googleDriveAutoBackupConfig.nextBackupTimestamp) {
+  // 1. DEDUPLICATION: If backup was already performed recently (within 70% of interval period by Google Apps Script)
+  if (lastTime > 0 && (now - lastTime) < (intervalMs * 0.7)) {
+    if (nextTime <= now) {
+      advanceNextBackupSchedule('drive');
+    }
+    return;
+  }
+
+  // 2. Check if backup is genuinely due
+  let shouldRun = false;
+  if (nextTime > 0) {
+    if (now >= nextTime) {
       shouldRun = true;
     }
-  } else {
-    const intervalDays = parseInt(googleDriveAutoBackupConfig.intervalDays, 10) || 1;
-    const intervalMs = intervalDays * 24 * 60 * 60 * 1000;
-    const lastTime = parseInt(googleDriveAutoBackupConfig.lastBackupTimestamp, 10) || 0;
-    if (!lastTime || (now - lastTime) >= intervalMs) {
-      shouldRun = true;
-    }
+  } else if (!lastTime || (now - lastTime) >= intervalMs) {
+    shouldRun = true;
   }
 
   if (shouldRun) {
     isDriveBackupRunning = true;
-    console.log(`[AutoBackup] Running scheduled Google Drive backup. Target: ${googleDriveAutoBackupConfig.nextBackupTimestamp ? new Date(googleDriveAutoBackupConfig.nextBackupTimestamp).toISOString() : 'Interval'}`);
+    console.log(`[AutoBackup] Running scheduled Google Drive backup. Target: ${nextTime ? new Date(nextTime).toISOString() : 'Interval'}`);
     sendDriveBackup(false).finally(() => {
       isDriveBackupRunning = false;
     });
