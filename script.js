@@ -21294,7 +21294,7 @@ function compressAndPreviewFillReceipt(img) {
 
   let width = img.naturalWidth || img.width;
   let height = img.naturalHeight || img.height;
-  const maxDim = 1280;
+  const maxDim = 640;
   if (width > maxDim || height > maxDim) {
     if (width > height) {
       height = Math.round((height * maxDim) / width);
@@ -21308,7 +21308,7 @@ function compressAndPreviewFillReceipt(img) {
   canvas.height = height;
   ctx.drawImage(img, 0, 0, width, height);
 
-  capturedReceiptBase64 = canvas.toDataURL('image/jpeg', 0.8);
+  capturedReceiptBase64 = canvas.toDataURL('image/jpeg', 0.50);
 
   if (fillCameraStream) {
     fillCameraStream.getTracks().forEach(t => t.stop());
@@ -23104,7 +23104,7 @@ function nextReceiptPhoto() {
   resetReceiptImageTransform();
 }
 
-function compressReceiptImage(file, minTargetBytes = 100 * 1024, maxTargetBytes = 200 * 1024) {
+function compressReceiptImage(file, minTargetBytes = 10 * 1024, maxTargetBytes = 20 * 1024) {
   return new Promise((resolve, reject) => {
     if (!file) return resolve(null);
     const reader = new FileReader();
@@ -23118,8 +23118,8 @@ function compressReceiptImage(file, minTargetBytes = 100 * 1024, maxTargetBytes 
             return resolve(e.target.result);
           }
 
-          // Initial max dimension: 1400px preserves crystal clarity for odometer numbers & receipts
-          const MAX_INIT_DIM = 1400;
+          // Max dimension: 640px preserves clarity for numbers & slips while keeping file strictly 10KB - 20KB
+          const MAX_INIT_DIM = 640;
           let w = origW;
           let h = origH;
           if (w > MAX_INIT_DIM || h > MAX_INIT_DIM) {
@@ -23145,19 +23145,19 @@ function compressReceiptImage(file, minTargetBytes = 100 * 1024, maxTargetBytes 
             return Math.round((b64.length * 3) / 4);
           }
 
-          // Initial pass with quality 0.82
-          let q = 0.82;
+          // Initial pass with quality 0.50 for lightweight 10KB - 20KB footprint
+          let q = 0.50;
           let dataUrl = canvas.toDataURL('image/jpeg', q);
           let currentBytes = getBytes(dataUrl);
 
-          // If already in 100KB - 200KB range, perfect!
+          // If already in 10KB - 20KB range, perfect!
           if (currentBytes <= maxTargetBytes && currentBytes >= minTargetBytes) {
             return resolve(dataUrl);
           }
 
-          // If smaller than 100KB, try higher quality for enhanced clarity if under maxTargetBytes
+          // If smaller than 10KB, try slightly higher quality (0.68) if under maxTargetBytes
           if (currentBytes < minTargetBytes) {
-            const highQUrl = canvas.toDataURL('image/jpeg', 0.94);
+            const highQUrl = canvas.toDataURL('image/jpeg', 0.68);
             const highQBytes = getBytes(highQUrl);
             if (highQBytes <= maxTargetBytes) {
               return resolve(highQUrl);
@@ -23165,7 +23165,7 @@ function compressReceiptImage(file, minTargetBytes = 100 * 1024, maxTargetBytes 
             return resolve(dataUrl);
           }
 
-          // If larger than 200KB, perform adaptive passes to bring it strictly into 100KB - 200KB
+          // If larger than 20KB, perform adaptive passes to bring strictly into 10KB - 20KB
           let bestUrl = dataUrl;
           for (let iter = 0; iter < 6; iter++) {
             if (currentBytes <= maxTargetBytes && currentBytes >= minTargetBytes) {
@@ -23174,21 +23174,19 @@ function compressReceiptImage(file, minTargetBytes = 100 * 1024, maxTargetBytes 
             }
 
             if (currentBytes > maxTargetBytes) {
-              if (q > 0.48) {
-                // Adaptive step down in quality
-                const ratio = Math.sqrt((160 * 1024) / currentBytes);
-                q = Math.max(0.40, Math.min(q - 0.10, q * ratio));
+              if (q > 0.35) {
+                const ratio = Math.sqrt((15 * 1024) / currentBytes);
+                q = Math.max(0.30, Math.min(q - 0.08, q * ratio));
                 dataUrl = canvas.toDataURL('image/jpeg', q);
                 currentBytes = getBytes(dataUrl);
               } else {
-                // Quality at baseline, scale down dimensions slightly to preserve sharpness
-                w = Math.max(480, Math.round(w * 0.82));
-                h = Math.max(480, Math.round(h * 0.82));
+                w = Math.max(380, Math.round(w * 0.85));
+                h = Math.max(380, Math.round(h * 0.85));
                 canvas.width = w;
                 canvas.height = h;
                 ctx = canvas.getContext('2d');
                 ctx.drawImage(img, 0, 0, w, h);
-                q = 0.70; // Reset quality for smaller resolution
+                q = 0.45;
                 dataUrl = canvas.toDataURL('image/jpeg', q);
                 currentBytes = getBytes(dataUrl);
               }
@@ -23196,8 +23194,7 @@ function compressReceiptImage(file, minTargetBytes = 100 * 1024, maxTargetBytes 
                 bestUrl = dataUrl;
               }
             } else if (currentBytes < minTargetBytes) {
-              // Stepped slightly below 100KB, bump slightly
-              const tryQ = Math.min(0.85, q + 0.08);
+              const tryQ = Math.min(0.65, q + 0.06);
               const tryUrl = canvas.toDataURL('image/jpeg', tryQ);
               const tryBytes = getBytes(tryUrl);
               if (tryBytes <= maxTargetBytes) {
@@ -23209,7 +23206,7 @@ function compressReceiptImage(file, minTargetBytes = 100 * 1024, maxTargetBytes 
             }
           }
 
-          // Safety guard: guarantee strictly <= maxTargetBytes (200KB)
+          // Safety guard: guarantee strictly <= maxTargetBytes (20KB)
           if (getBytes(bestUrl) > maxTargetBytes) {
             w = Math.round(w * 0.75);
             h = Math.round(h * 0.75);
@@ -23217,7 +23214,7 @@ function compressReceiptImage(file, minTargetBytes = 100 * 1024, maxTargetBytes 
             canvas.height = h;
             ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, w, h);
-            bestUrl = canvas.toDataURL('image/jpeg', 0.50);
+            bestUrl = canvas.toDataURL('image/jpeg', 0.35);
           }
 
           resolve(bestUrl);
