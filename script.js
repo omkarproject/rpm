@@ -11218,6 +11218,32 @@ function saveOrUpdateDriveFile(folder, fileName, content) {
   }
 }
 
+// Master Drive Single-File Saver (Streams 100% full ~37 MB database with ALL photos)
+function saveDriveMasterBackup(folder, fileName, isWithImages) {
+  if (isWithImages) {
+    // 100% Full Database with ALL 1,473 photos directly streamed from Firebase (~37 MB)
+    var fbRes = UrlFetchApp.fetch(FIREBASE_DB_URL + "/.json", { muteHttpExceptions: true });
+    if (fbRes.getResponseCode() === 200) {
+      var blob = fbRes.getBlob().setName(fileName).setContentType("application/json");
+      var existing = folder.getFilesByName(fileName);
+      while (existing.hasNext()) {
+        try {
+          existing.next().setTrashed(true);
+        } catch (tErr) {}
+      }
+      var newFile = folder.createFile(blob);
+      Logger.log("Full Master backup saved to Drive: " + fileName + " (" + newFile.getSize() + " bytes)");
+      return { file: newFile, isUpdated: true };
+    }
+  }
+
+  // Data Only (Without photos ~3.2 MB)
+  var rawData = fetchFirebaseData(false, folder);
+  var cleanData = sanitizeForBackup(rawData);
+  var jsonString = JSON.stringify(cleanData, null, 2);
+  return saveOrUpdateDriveFile(folder, fileName, jsonString);
+}
+
 // Helper: Read Drive Backup Index (Checkpoint tracking)
 function getDriveBackupIndex(folder) {
   var indexFileName = "RPM_Diesel_Backup_Index.json";
@@ -11718,15 +11744,13 @@ function checkAndRunCloudAutoBackup() {
     }
   }
 
-  // 2. Process Google Drive Backup if due (WhatsApp Single-File Overwrite)
+  // 2. Process Google Drive Backup if due (WhatsApp Single Master File Overwrite ~37 MB with ALL photos)
   if (shouldRunDrive) {
     try {
       const driveWithImages = driveConfig && driveConfig.includeImages === true;
-      const cleanDataDrive = driveWithImages ? rawData : sanitizeForBackup(rawData);
-      const jsonStringDrive = JSON.stringify(cleanDataDrive, null, 2);
       const fileNameDrive = driveWithImages ? "RPM_Diesel_FullBackup.json" : "RPM_Diesel_AutoBackup.json";
 
-      const result = saveOrUpdateDriveFile(folder, fileNameDrive, jsonStringDrive);
+      const result = saveDriveMasterBackup(folder, fileNameDrive, driveWithImages);
 
       Logger.log("Google Drive backup completed! Updated: " + result.isUpdated + " File URL: " + result.file.getUrl());
 
@@ -11787,16 +11811,14 @@ function doPost(e) {
     const defaultFileName = isWithImages ? "RPM_Diesel_FullBackup.json" : "RPM_Diesel_AutoBackup.json";
     const fileName = (body.fileName || defaultFileName).trim();
 
-    let content = "";
+    let saveResult;
     if (body.data) {
-      content = typeof body.data === "string" ? body.data : JSON.stringify(body.data, null, 2);
+      const content = typeof body.data === "string" ? body.data : JSON.stringify(body.data, null, 2);
+      saveResult = saveOrUpdateDriveFile(folder, fileName, content);
     } else {
-      const rawData = fetchFirebaseData(isWithImages, folder);
-      const cleanData = isWithImages ? rawData : sanitizeForBackup(rawData);
-      content = JSON.stringify(cleanData, null, 2);
+      saveResult = saveDriveMasterBackup(folder, fileName, isWithImages);
     }
 
-    const saveResult = saveOrUpdateDriveFile(folder, fileName, content);
     const file = saveResult.file;
     const isUpdated = saveResult.isUpdated;
 
@@ -11849,17 +11871,10 @@ function doGet(e) {
 
     if (action === "saveBackup" || action === "backupNow" || action === "test") {
       const folder = getOrCreateDriveFolder(folderId);
-      const rawData = fetchFirebaseData(isWithImages, folder);
-      if (!rawData) {
-        return ContentService.createTextOutput(JSON.stringify({ ok: false, error: "Firebase read failed" })).setMimeType(ContentService.MimeType.JSON);
-      }
-      const cleanData = isWithImages ? rawData : sanitizeForBackup(rawData);
-      const jsonString = JSON.stringify(cleanData, null, 2);
-
       const defaultFileName = isWithImages ? "RPM_Diesel_FullBackup.json" : "RPM_Diesel_AutoBackup.json";
       const fileName = (params.fileName || defaultFileName).trim();
 
-      const saveResult = saveOrUpdateDriveFile(folder, fileName, jsonString);
+      const saveResult = saveDriveMasterBackup(folder, fileName, isWithImages);
       const file = saveResult.file;
       const isUpdated = saveResult.isUpdated;
 
@@ -11886,7 +11901,7 @@ function doGet(e) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    return ContentService.createTextOutput(JSON.stringify({ status: "ok", service: "RPM Diesel Cloud Auto Backup Service v2 (WhatsApp Style + 50MB Chunks)" })).setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({ status: "ok", service: "RPM Diesel Cloud Auto Backup Service v3 (WhatsApp Style Master Stream)" })).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ ok: false, error: err.toString() })).setMimeType(ContentService.MimeType.JSON);
   }

@@ -2440,45 +2440,6 @@
                     </div>
                   </div>
 
-                  <!-- 50MB Chunked Historical Photos Archive Card (Shown when Backup With Images is ON) -->
-                  <div id="dm-drivebackup-photos-chunk-card" class="hidden p-3.5 rounded-2xl border border-sky-500/30 bg-gradient-to-br from-sky-950/40 via-slate-900/60 to-indigo-950/40 space-y-2.5 transition-all">
-                    <div class="flex items-center justify-between">
-                      <div class="flex items-center gap-2">
-                        <div class="w-7 h-7 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center text-xs shrink-0">
-                          <i class="fas fa-layer-group"></i>
-                        </div>
-                        <div>
-                          <h6 class="text-xs font-extrabold text-white flex items-center gap-1.5">
-                            50MB Chunks Photo Archive (~280 MB)
-                          </h6>
-                          <p class="text-[9px] text-slate-300">Google Drive 50MB quota safe: Tukdo-tukdo me full images backup</p>
-                        </div>
-                      </div>
-                      <span id="dm-drivebackup-photos-badge" class="text-[9px] px-2 py-0.5 rounded-full font-bold bg-sky-500/20 text-sky-300 border border-sky-500/30">
-                        Checking...
-                      </span>
-                    </div>
-
-                    <!-- Progress Bar & Counts -->
-                    <div class="space-y-1">
-                      <div class="flex items-center justify-between text-[10px] text-slate-300 font-semibold">
-                        <span>Backed Up: <b id="dm-drivebackup-photos-stat-text" class="text-sky-300">0 / 1,470 Photos</b></span>
-                        <span id="dm-drivebackup-photos-pct-text" class="text-sky-400 font-bold">0%</span>
-                      </div>
-                      <div class="w-full h-2 rounded-full bg-slate-800 overflow-hidden border border-slate-700/50">
-                        <div id="dm-drivebackup-photos-progress-bar" class="h-full bg-gradient-to-r from-sky-500 to-indigo-500 rounded-full transition-all duration-500" style="width: 0%"></div>
-                      </div>
-                      <div class="flex items-center justify-between text-[9px] text-slate-400 pt-0.5">
-                        <span id="dm-drivebackup-photos-parts-info"><i class="fas fa-file-lines text-sky-400"></i> Parts in Drive: 0 Files</span>
-                        <span class="text-slate-400"><i class="fas fa-shield-halved text-emerald-400"></i> Auto Resume Checkpoint</span>
-                      </div>
-                    </div>
-
-                    <!-- Action Button for Chunk Archive -->
-                    <button onclick="startDrivePhotosChunkArchive()" id="dm-drivebackup-chunk-btn" type="button" class="w-full py-2 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-sky-900/30 transition-all cursor-pointer">
-                      <i class="fas fa-boxes-stacked"></i> <span id="dm-drivebackup-chunk-btn-text">Archive Historical Photos in 50MB Chunks</span>
-                    </button>
-                  </div>
 
                   <!-- Google Apps Script Web App URL (Direct Drive Save) -->
                   <div>
@@ -6116,7 +6077,7 @@
   <div id="toasts-container"></div>
 
   <!-- Core JavaScript Core App Logic File -->
-  <script src="script.js?v=105" defer></script>
+  <script src="script.js?v=106" defer></script>
   <script src="broadcast.js" defer></script>
 
   <!-- Re-add transition after page load for smooth theme toggles -->
