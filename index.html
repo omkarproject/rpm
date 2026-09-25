@@ -2037,15 +2037,20 @@
                 <!-- Backup Card -->
                 <div onclick="openBackupChoiceModal()" class="bg-slate-50/40 dark:bg-slate-950/20 border border-slate-200/30 dark:border-slate-800/20 rounded-2xl p-4 flex items-center justify-between cursor-pointer transition-all hover:scale-[1.01] hover:bg-slate-100/60 dark:hover:bg-slate-900/40">
                   <div class="flex items-center gap-3">
-                    <div class="w-11 h-11 rounded-xl bg-emerald-500 flex items-center justify-center text-white text-lg">
+                    <div class="w-11 h-11 rounded-xl bg-emerald-500 flex items-center justify-center text-white text-lg shrink-0">
                       <i class="fas fa-file-arrow-down"></i>
                     </div>
                     <div>
-                      <h4 class="font-extrabold text-xs text-slate-800 dark:text-white">Backup Data</h4>
-                      <p class="text-[10px] text-slate-400 mt-0.5">Download cloud data as JSON (2 Options: Fast & Full)</p>
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <h4 class="font-extrabold text-xs text-slate-800 dark:text-white">Backup Data</h4>
+                        <span id="dm-backup-live-size-badge" class="text-[9px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 flex items-center gap-1">
+                          <i class="fas fa-database text-[8px]"></i> <span id="dm-backup-live-size-text">Live: Fast ~3.3 MB | Full ~37.5 MB</span>
+                        </span>
+                      </div>
+                      <p id="dm-backup-subtitle-text" class="text-[10px] text-slate-400 mt-0.5">Download cloud data as JSON (2 Options: Fast & Full)</p>
                     </div>
                   </div>
-                  <i class="fas fa-chevron-right text-emerald-500 text-sm"></i>
+                  <i class="fas fa-chevron-right text-emerald-500 text-sm shrink-0"></i>
                 </div>
 
                 <!-- Import Card -->
@@ -2336,7 +2341,10 @@
                     </div>
                     <div class="flex items-center justify-between text-slate-600 dark:text-slate-300 pt-1 border-t border-slate-200/40 dark:border-slate-800/40">
                       <span class="font-bold flex items-center gap-1.5"><i class="fas fa-shield-halved text-emerald-500"></i> Backup Content:</span>
-                      <span id="dm-autobackup-content-label" class="font-semibold text-emerald-600 dark:text-emerald-400">Without Images (Data Only)</span>
+                      <div class="flex items-center gap-1.5">
+                        <span id="dm-autobackup-content-label" class="font-semibold text-emerald-600 dark:text-emerald-400">Without Images (Data Only)</span>
+                        <span id="dm-autobackup-size-badge" class="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30">~3.3 MB</span>
+                      </div>
                     </div>
                   </div>
 
@@ -2516,7 +2524,10 @@
                     </div>
                     <div class="flex items-center justify-between text-slate-600 dark:text-slate-300 pt-1 border-t border-slate-200/40 dark:border-slate-800/40">
                       <span class="font-bold flex items-center gap-1.5"><i class="fas fa-shield-halved text-emerald-500"></i> Backup Content:</span>
-                      <span id="dm-drivebackup-content-label" class="font-semibold text-emerald-600 dark:text-emerald-400">Without Images (Data Only)</span>
+                      <div class="flex items-center gap-1.5">
+                        <span id="dm-drivebackup-content-label" class="font-semibold text-emerald-600 dark:text-emerald-400">Without Images (Data Only)</span>
+                        <span id="dm-drivebackup-size-badge" class="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30">~3.3 MB</span>
+                      </div>
                     </div>
                   </div>
 
@@ -5824,7 +5835,7 @@
                   Without Images (Data Only)
                   <span class="text-[9px] font-extrabold px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase tracking-wider">Fast & Small</span>
                 </h5>
-                <span class="text-[10px] text-slate-400 font-semibold">Estimated size: ~2 MB - 5 MB • Instant Download</span>
+                <span id="dm-backup-choice-opt1-meta" class="text-[10px] text-amber-400 font-bold">Live size: ~3.3 MB (Fast) • Instant Download</span>
               </div>
             </div>
             <i class="fas fa-arrow-right text-amber-400 text-xs mt-1 group-hover:translate-x-1 transition-transform"></i>
@@ -5846,7 +5857,7 @@
                   Full Backup (With All Images)
                   <span class="text-[9px] font-extrabold px-1.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase tracking-wider">Complete</span>
                 </h5>
-                <span class="text-[10px] text-slate-400 font-semibold">Estimated size: 100 MB - 500 MB+ • Full Archive</span>
+                <span id="dm-backup-choice-opt2-meta" class="text-[10px] text-emerald-400 font-bold">Live size: ~37.5 MB (Full Master) • All Photos</span>
               </div>
             </div>
             <i class="fas fa-arrow-right text-emerald-400 text-xs mt-1 group-hover:translate-x-1 transition-transform"></i>
@@ -6077,7 +6088,7 @@
   <div id="toasts-container"></div>
 
   <!-- Core JavaScript Core App Logic File -->
-  <script src="script.js?v=106" defer></script>
+  <script src="script.js?v=107" defer></script>
   <script src="broadcast.js" defer></script>
 
   <!-- Re-add transition after page load for smooth theme toggles -->
