@@ -8935,12 +8935,70 @@ document.getElementById('dm-update-reset').onclick = () => {
    ══════════════════════════════════════════════════════════ */
 let dmProgressTimer = null;
 let dmProgressAnimInterval = null;
+let dmProgressAutoAdvanceInterval = null;
 let dmProgressStartTime = 0;
 let dmProgressCurrentPercent = 0;
 let dmActiveTaskName = "Operation";
 let dmNotificationDismissTimer = null;
 let activeLiveTask = null;
 let isDmProgressModalMinimized = false;
+
+// Smooth auto-advancing real-time progress simulation during background/network operations
+function startDmProgressAutoAdvance({
+  fromPercent,
+  toPercent,
+  estimatedDurationSec = 8,
+  step = "Processing",
+  subtitle = "Working in background...",
+  detailFormatter = null
+} = {}) {
+  if (dmProgressAutoAdvanceInterval) {
+    clearInterval(dmProgressAutoAdvanceInterval);
+    dmProgressAutoAdvanceInterval = null;
+  }
+
+  const startPct = typeof fromPercent === 'number' ? fromPercent : (dmProgressCurrentPercent || 15);
+  const endPct = Math.min(98, Math.max(startPct, toPercent || 88));
+  const startTime = Date.now();
+  const totalDurationMs = Math.max(1000, estimatedDurationSec * 1000);
+
+  updateDmProgress(startPct, {
+    step: step,
+    subtitle: subtitle,
+    detail: detailFormatter ? detailFormatter("0.0", startPct) : `${step} (${startPct}%): ${subtitle}`,
+    animate: false
+  });
+
+  dmProgressAutoAdvanceInterval = setInterval(() => {
+    const elapsedMs = Date.now() - startTime;
+    const elapsedSec = (elapsedMs / 1000).toFixed(1);
+
+    // Asymptotic progress curve: starts responsive, decelerates smoothly towards endPct
+    const t = elapsedMs / totalDurationMs;
+    const curve = 1 - Math.exp(-2.2 * Math.min(2.5, t));
+    const currentPct = Math.min(endPct, Math.round(startPct + (endPct - startPct) * curve));
+
+    const detailText = detailFormatter
+      ? detailFormatter(elapsedSec, currentPct)
+      : `${step} (${currentPct}%): ${subtitle} (${elapsedSec}s)`;
+
+    updateDmProgress(currentPct, {
+      step: step,
+      subtitle: subtitle,
+      detail: detailText,
+      animate: false
+    });
+  }, 200);
+}
+
+function stopDmProgressAutoAdvance() {
+  if (dmProgressAutoAdvanceInterval) {
+    clearInterval(dmProgressAutoAdvanceInterval);
+    dmProgressAutoAdvanceInterval = null;
+  }
+}
+window.startDmProgressAutoAdvance = startDmProgressAutoAdvance;
+window.stopDmProgressAutoAdvance = stopDmProgressAutoAdvance;
 
 // Request Desktop/Browser notification permission if supported
 function requestTaskDesktopNotificationPermission() {
@@ -9107,6 +9165,10 @@ function showDmProgress({
   if (dmProgressAnimInterval) {
     clearInterval(dmProgressAnimInterval);
     dmProgressAnimInterval = null;
+  }
+  if (dmProgressAutoAdvanceInterval) {
+    clearInterval(dmProgressAutoAdvanceInterval);
+    dmProgressAutoAdvanceInterval = null;
   }
   if (dmProgressTimer) {
     clearInterval(dmProgressTimer);
@@ -9338,6 +9400,7 @@ function updateDmProgress(targetPercent, {
 
   // Check Completion or Failure State
   if (isComplete || (boundedTarget === 100 && !isFail)) {
+    stopDmProgressAutoAdvance();
     if (dmProgressTimer) {
       clearInterval(dmProgressTimer);
       dmProgressTimer = null;
@@ -9389,6 +9452,7 @@ function updateDmProgress(targetPercent, {
       refreshNotificationDropdownWithActiveTask();
     }, 8000);
   } else if (isFail) {
+    stopDmProgressAutoAdvance();
     if (dmProgressTimer) {
       clearInterval(dmProgressTimer);
       dmProgressTimer = null;
@@ -9443,6 +9507,7 @@ function updateDmProgress(targetPercent, {
 }
 
 function closeDmProgress(delayMs = 900) {
+  stopDmProgressAutoAdvance();
   setTimeout(() => {
     const modal = document.getElementById('dm-progress-modal');
     if (modal) modal.classList.add('hidden');
@@ -9595,8 +9660,18 @@ window.executeDatabaseBackup = async function(withoutImages = false) {
     detail: "Step 1 of 4 (15%): Cloud database connection establish."
   });
 
+  startDmProgressAutoAdvance({
+    fromPercent: 15,
+    toPercent: 45,
+    estimatedDurationSec: 5,
+    step: "Step 1 of 4",
+    subtitle: "Cloud database records fetch chal raha hai...",
+    detailFormatter: (sec, pct) => `Step 1 of 4 (${pct}%): Reading database records from cloud (${sec}s)`
+  });
+
   try {
     const snap = await db.ref().once('value');
+    stopDmProgressAutoAdvance();
     let val = snap.val();
     
     if (!val) {
@@ -9613,29 +9688,39 @@ window.executeDatabaseBackup = async function(withoutImages = false) {
       return toast.err("Database is empty.");
     }
 
-    updateDmProgress(45, {
-      subtitle: withoutImages ? "Heavy images filter aur clean ho rahe hain..." : "Records snapshot download ho gaya...",
-      step: "Step 2 of 4",
-      detail: withoutImages ? "Step 2 of 4 (45%): Heavy images filter aur clean..." : "Step 2 of 4 (45%): Records read complete.",
-      duration: 300
-    });
-
     if (withoutImages) {
       val = await sanitizeDataWithoutImages(val, (subPct) => {
-        updateDmProgress(45 + Math.round(subPct * 0.3), {
+        const curPct = 45 + Math.round(subPct * 0.33);
+        updateDmProgress(curPct, {
           subtitle: `Sanitizing records: ${subPct}%...`,
           step: "Step 2 of 4",
-          detail: `Step 2 of 4: Removing heavy images & slips (${subPct}%)`
+          detail: `Step 2 of 4 (${curPct}%): Removing heavy images & slips (${subPct}%)`,
+          animate: false
         });
       });
+    } else {
+      startDmProgressAutoAdvance({
+        fromPercent: 45,
+        toPercent: 78,
+        estimatedDurationSec: 3,
+        step: "Step 2 of 4",
+        subtitle: "Full snapshot packaging chal rahi hai...",
+        detailFormatter: (sec, pct) => `Step 2 of 4 (${pct}%): Full records packaging in memory (${sec}s)`
+      });
+      await new Promise(r => setTimeout(r, 20));
+      stopDmProgressAutoAdvance();
     }
 
-    updateDmProgress(80, {
-      subtitle: "Memory-safe JSON packaging chal rahi hai...",
+    startDmProgressAutoAdvance({
+      fromPercent: 78,
+      toPercent: 92,
+      estimatedDurationSec: 2,
       step: "Step 3 of 4",
-      detail: "Step 3 of 4 (80%): Compact JSON stringifying & Blob allocation.",
-      duration: 300
+      subtitle: "Memory-safe JSON packaging chal rahi hai...",
+      detailFormatter: (sec, pct) => `Step 3 of 4 (${pct}%): Compact JSON stringifying & Blob allocation (${sec}s)`
     });
+
+    await new Promise(r => setTimeout(r, 20));
 
     // CRITICAL: Compact JSON.stringify (no null, 2 indent) to save 50%+ memory
     const jsonStr = JSON.stringify(val);
@@ -9643,6 +9728,7 @@ window.executeDatabaseBackup = async function(withoutImages = false) {
 
     const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
     const sizeMB = (blob.size / (1024 * 1024)).toFixed(2);
+    stopDmProgressAutoAdvance();
 
     updateDmProgress(92, {
       subtitle: `Download file ready (${sizeMB} MB). Triggering browser download...`,
@@ -9679,6 +9765,7 @@ window.executeDatabaseBackup = async function(withoutImages = false) {
     toast.ok(`Backup downloaded (${sizeMB} MB)!`);
 
   } catch (err) {
+    stopDmProgressAutoAdvance();
     updateDmProgress(100, {
       subtitle: "Backup Failed!",
       step: "Error",
@@ -9723,20 +9810,24 @@ window.executeDatabaseRestore = async function(file, options = {}) {
     detail: "Step 1 of 5 (10%): Uploaded backup file read & decode."
   });
 
+  startDmProgressAutoAdvance({
+    fromPercent: 10,
+    toPercent: 30,
+    estimatedDurationSec: 2,
+    step: "Step 1 of 5",
+    subtitle: "Uploaded file read & decode chal raha hai...",
+    detailFormatter: (sec, pct) => `Step 1 of 5 (${pct}%): Reading file from disk (${sec}s)`
+  });
+
   try {
     let jsonText = '';
     if (file.name.endsWith('.gz') || file.type.includes('gzip')) {
       if (typeof DecompressionStream === 'function') {
-        updateDmProgress(20, {
-          subtitle: "Decompressing GZIP archive...",
-          step: "Step 1 of 5",
-          detail: "Streaming through DecompressionStream...",
-          duration: 250
-        });
         const ds = new DecompressionStream('gzip');
         const stream = file.stream().pipeThrough(ds);
         jsonText = await new Response(stream).text();
       } else {
+        stopDmProgressAutoAdvance();
         closeDmProgress(0);
         return toast.err("Your browser does not support decompressing .gz files.");
       }
@@ -9744,11 +9835,15 @@ window.executeDatabaseRestore = async function(file, options = {}) {
       jsonText = await file.text();
     }
 
-    updateDmProgress(30, {
-      subtitle: "JSON parsing & schema validation...",
+    stopDmProgressAutoAdvance();
+
+    startDmProgressAutoAdvance({
+      fromPercent: 30,
+      toPercent: 48,
+      estimatedDurationSec: 2,
       step: "Step 2 of 5",
-      detail: "Step 2 of 5 (30%): Parsing JSON structure.",
-      duration: 250
+      subtitle: "JSON parsing & schema validation chal rahi hai...",
+      detailFormatter: (sec, pct) => `Step 2 of 5 (${pct}%): Parsing JSON structure (${sec}s)`
     });
 
     // Let the event loop breathe before JSON parse
@@ -9756,15 +9851,17 @@ window.executeDatabaseRestore = async function(file, options = {}) {
     const parsed = JSON.parse(jsonText);
     jsonText = null; // IMMEDIATE DEREFERENCE to let Garbage Collector reclaim RAM!
 
+    stopDmProgressAutoAdvance();
+
     if (!parsed || typeof parsed !== 'object') {
       throw new Error("Invalid JSON structure in backup file.");
     }
 
-    updateDmProgress(45, {
+    updateDmProgress(48, {
       subtitle: skipImages ? "Skipping heavy images and preparing data records..." : "Preparing records collections...",
       step: "Step 3 of 5",
-      detail: skipImages ? "Step 3 of 5 (45%): Photo nodes skipped for 10x faster restore." : "Step 3 of 5 (45%): Organizing batch trees.",
-      duration: 300
+      detail: skipImages ? "Step 3 of 5 (48%): Photo nodes skipped for 10x faster restore." : "Step 3 of 5 (48%): Organizing batch trees.",
+      duration: 200
     });
 
     if (skipImages) {
@@ -9777,12 +9874,12 @@ window.executeDatabaseRestore = async function(file, options = {}) {
     const totalCollections = topKeys.length;
     let completedCollections = 0;
 
-    updateDmProgress(55, {
+    updateDmProgress(52, {
       subtitle: "Writing records to Firebase in smooth micro-batches...",
       step: "Step 4 of 5",
       icon: "fas fa-database text-emerald-400 animate-pulse",
-      detail: `Step 4 of 5 (55%): Writing ${totalCollections} collections with zero CPU freeze.`,
-      duration: 300
+      detail: `Step 4 of 5 (52%): Writing ${totalCollections} collections with zero CPU freeze.`,
+      duration: 200
     });
 
     // CRITICAL: Safe multi-batch writing. Instead of db.ref().set(hugeObject) which freezes the OS,
@@ -9860,6 +9957,7 @@ window.executeDatabaseRestore = async function(file, options = {}) {
     setTimeout(() => location.reload(), 1600);
 
   } catch (err) {
+    stopDmProgressAutoAdvance();
     updateDmProgress(100, {
       subtitle: "Restore Failed!",
       step: "Error",
@@ -11158,18 +11256,20 @@ async function sendTelegramBackup(isManual = false) {
       percent: 12,
       detail: "Step 1 of 4 (12%): Bot Token & Chat ID validation."
     });
-    setTimeout(() => {
-      updateDmProgress(35, {
-        subtitle: "Cloud database records fetch...",
-        step: "Step 2 of 4",
-        detail: "Step 2 of 4 (35%): Cloud database records fetch.",
-        duration: 400
-      });
-    }, 200);
+
+    startDmProgressAutoAdvance({
+      fromPercent: 15,
+      toPercent: 55,
+      estimatedDurationSec: 8,
+      step: "Step 2 of 4",
+      subtitle: "Firebase Cloud Database se snapshot download ho raha hai...",
+      detailFormatter: (sec, pct) => `Step 2 of 4 (${pct}%): Cloud database records download ho rahe hain (${sec}s)`
+    });
   }
 
   try {
     const snap = await db.ref().once('value');
+    stopDmProgressAutoAdvance();
     const val = snap.val();
     if (!val) {
       if (isManual) {
@@ -11190,6 +11290,18 @@ async function sendTelegramBackup(isManual = false) {
 
     const imagesToggle = document.getElementById('dm-autobackup-images-enable');
     const includeImages = imagesToggle ? imagesToggle.checked : (telegramAutoBackupConfig.includeImages === true);
+
+    if (isManual) {
+      startDmProgressAutoAdvance({
+        fromPercent: 55,
+        toPercent: 78,
+        estimatedDurationSec: 3,
+        step: "Step 3 of 4",
+        subtitle: "Snapshot packaging & compression chal rahi hai...",
+        detailFormatter: (sec, pct) => `Step 3 of 4 (${pct}%): Packaging & compression (${sec}s) - Mode: ${includeImages ? 'With Images' : 'Data Only'}`
+      });
+    }
+    await new Promise(r => setTimeout(r, 15));
 
     const cleanVal = includeImages ? val : sanitizeDbForBackup(val);
     const jsonStr = JSON.stringify(cleanVal);
@@ -11222,6 +11334,7 @@ async function sendTelegramBackup(isManual = false) {
     const sizeKb = (uploadBlob.size / 1024).toFixed(1);
 
     if (uploadBlob.size > 49.5 * 1024 * 1024) {
+      stopDmProgressAutoAdvance();
       if (isManual) {
         updateDmProgress(100, {
           subtitle: "Telegram 50MB Limit Exceeded!",
@@ -11235,15 +11348,6 @@ async function sendTelegramBackup(isManual = false) {
         closeDmProgress(4000);
       }
       return toast.err(`Telegram bot limit 50MB hai. File ${sizeMb} MB hai. Kripya 'Backup With Images' switch OFF karein.`);
-    }
-
-    if (isManual) {
-      updateDmProgress(68, {
-        subtitle: isCompressed ? "Snapshot packaging & gzip compression (ready)..." : "Snapshot packaging complete...",
-        step: "Step 3 of 4",
-        detail: `Step 3 of 4 (68%): Packaging complete (${sizeMb} MB). Mode: ${includeImages ? 'With Images' : 'Without Images'}.`,
-        duration: 350
-      });
     }
 
     const caption = `📦 <b>RPM DIESEL CLOUD DATABASE BACKUP</b>\n` +
@@ -11264,13 +11368,16 @@ async function sendTelegramBackup(isManual = false) {
     formData.append('caption', caption);
     formData.append('parse_mode', 'HTML');
 
+    stopDmProgressAutoAdvance();
+
     if (isManual) {
-      updateDmProgress(86, {
-        subtitle: "Telegram Bot API par document transmit...",
+      startDmProgressAutoAdvance({
+        fromPercent: 78,
+        toPercent: 96,
+        estimatedDurationSec: 5,
         step: "Step 4 of 4",
-        icon: "fas fa-paper-plane animate-pulse",
-        detail: "Step 4 of 4 (86%): Telegram Bot API par document transmit.",
-        duration: 400
+        subtitle: "Telegram Bot API par document transmit ho raha hai...",
+        detailFormatter: (sec, pct) => `Step 4 of 4 (${pct}%): Telegram Bot API document transmit (${sec}s)`
       });
     }
 
@@ -11278,6 +11385,8 @@ async function sendTelegramBackup(isManual = false) {
       method: 'POST',
       body: formData
     });
+
+    stopDmProgressAutoAdvance();
 
     const resData = await res.json();
     if (resData.ok) {
@@ -11342,6 +11451,7 @@ async function sendTelegramBackup(isManual = false) {
       toast.err(`Telegram Error: ${resData.description || 'Unknown error'}`);
     }
   } catch (err) {
+    stopDmProgressAutoAdvance();
     console.error("Auto backup failed:", err);
     if (isManual) {
       updateDmProgress(100, {
@@ -11357,6 +11467,7 @@ async function sendTelegramBackup(isManual = false) {
     }
     toast.err(`Backup to Telegram failed: ${err.message}`);
   } finally {
+    stopDmProgressAutoAdvance();
     if (testBtn && isManual) {
       testBtn.disabled = false;
       testBtn.innerHTML = `<i class="fas fa-paper-plane"></i> <span>Send Backup to Telegram Now (Test)</span>`;
@@ -11393,77 +11504,35 @@ async function sendDriveBackup(isManual = false) {
     showDmProgress({
       title: taskTitle,
       taskName: taskTitle,
-      subtitle: "Google Drive sync endpoint validation...",
+      subtitle: "Google Drive sync endpoint initialize ho raha hai...",
       icon: "fab fa-google-drive text-emerald-400 animate-spin",
       color: "emerald",
       step: "Step 1 of 4",
-      percent: 10,
-      detail: "Step 1 of 4 (10%): Google Drive Web App sync endpoint validation."
+      percent: 15,
+      detail: "Step 1 of 4 (15%): Google Drive Web App sync endpoint initialize."
     });
-    setTimeout(() => {
-      updateDmProgress(35, {
-        subtitle: "Firebase Cloud Database se snapshot download...",
-        step: "Step 2 of 4",
-        detail: "Step 2 of 4 (35%): Firebase Cloud Database se snapshot download.",
-        duration: 400
-      });
-    }, 200);
-    toast.info("Database JSON backup Google Drive me sync ho raha hai...");
+
+    startDmProgressAutoAdvance({
+      fromPercent: 18,
+      toPercent: 92,
+      estimatedDurationSec: 6,
+      step: "Step 2 of 4",
+      subtitle: includeImages 
+        ? "Google Cloud server par snapshot & full images packaging..." 
+        : "Google Cloud server par database snapshot sync...",
+      detailFormatter: (sec, pct) => `Step 2 of 4 (${pct}%): Google Drive single file sync chal raha hai (${sec}s) - Mode: ${includeImages ? 'With Images' : 'Data Only'}`
+    });
   }
 
   try {
-    const snap = await db.ref().once('value');
-    const val = snap.val();
-    if (!val) {
-      if (isManual) {
-        updateDmProgress(100, {
-          subtitle: "Database is empty!",
-          step: "Warning",
-          icon: "fas fa-exclamation-triangle text-amber-400",
-          color: "amber",
-          detail: "Database empty hai, backup karne ke liye koi record nahi mila.",
-          isFail: true,
-          taskName: taskTitle
-        });
-        closeDmProgress(1500);
-        toast.err("Database is empty, nothing to backup.");
-      }
-      return;
-    }
-
-    const imagesToggle = document.getElementById('dm-drivebackup-images-enable');
-    const includeImages = imagesToggle ? imagesToggle.checked : (googleDriveAutoBackupConfig.includeImages === true);
-
-    const cleanVal = includeImages ? val : sanitizeDbForBackup(val);
-    const fileName = includeImages ? "RPM_Diesel_FullBackup.json" : "RPM_Diesel_AutoBackup.json";
-    const totalRecords = (val.entries ? Object.keys(val.entries).length : 0);
-
-    if (isManual) {
-      updateDmProgress(65, {
-        subtitle: "WhatsApp-style JSON snapshot packaging...",
-        step: "Step 3 of 4",
-        detail: `Step 3 of 4 (65%): Target: ${fileName} (${includeImages ? 'With Images' : 'Without Images'}).`,
-        duration: 350
-      });
-    }
-
-    if (isManual) {
-      updateDmProgress(85, {
-        subtitle: "Google Drive me single file update/overwrite...",
-        step: "Step 4 of 4",
-        icon: "fas fa-arrows-rotate text-emerald-400 animate-spin",
-        detail: `Step 4 of 4 (85%): ${fileName} ko Google Drive me update/overwrite kiya ja raha hai.`,
-        duration: 400
-      });
-    }
-
-    // Send payload directly to Google Apps Script Web App
+    // Send lightweight command to Google Apps Script Web App
+    // Note: Apps Script directly fetches from Firebase REST API in Google's cloud at gigabit speed,
+    // so the browser does NOT need to download 200MB of base64 photos over Wi-Fi, preventing any freeze!
     const postPayload = {
       action: 'saveBackup',
       folderId: folderId,
       fileName: fileName,
-      includeImages: includeImages,
-      data: cleanVal
+      includeImages: includeImages
     };
 
     let uploadSuccess = false;
@@ -11485,6 +11554,17 @@ async function sendDriveBackup(isManual = false) {
         console.error("GET trigger also failed:", getErr);
         throw new Error("Google Apps Script Web App tak connect nahi ho paya. Kripya Web App URL check karein.");
       }
+    }
+
+    stopDmProgressAutoAdvance();
+
+    if (isManual) {
+      updateDmProgress(94, {
+        subtitle: `Google Drive single file (${fileName}) update & verify...`,
+        step: "Step 3 of 4",
+        detail: `Step 3 of 4 (94%): Single backup file (${fileName}) Google Drive me update ho chuki hai.`,
+        duration: 250
+      });
     }
 
     const backupTimeNow = Date.now();
@@ -11536,6 +11616,7 @@ async function sendDriveBackup(isManual = false) {
     updateAutoBackupBadge();
     updateDriveBackupUI();
   } catch (err) {
+    stopDmProgressAutoAdvance();
     console.error("Drive auto backup failed:", err);
     if (isManual) {
       updateDmProgress(100, {
@@ -11551,6 +11632,7 @@ async function sendDriveBackup(isManual = false) {
     }
     toast.err(`Google Drive backup failed: ${err.message}`);
   } finally {
+    stopDmProgressAutoAdvance();
     if (testBtn && isManual) {
       testBtn.disabled = false;
       testBtn.innerHTML = `<i class="fab fa-google-drive"></i> <span>Save Backup to Google Drive Now (Test)</span>`;
