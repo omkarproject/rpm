@@ -2291,6 +2291,22 @@
                     </label>
                   </div>
 
+                  <!-- 49MB Auto-Protection Toggle Switch (ON: Auto Rollover to Part2/Part3, OFF: Auto-Disable Images) -->
+                  <div class="p-3.5 rounded-2xl border border-indigo-500/20 bg-indigo-500/5 flex items-center justify-between">
+                    <div>
+                      <h5 class="text-xs font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
+                        <i class="fas fa-layer-group text-indigo-500"></i> 49MB Limit Auto-Protection
+                      </h5>
+                      <p id="dm-autobackup-overflow-status-text" class="text-[10px] text-slate-400">
+                        ON: 49MB+ par <span class="font-bold text-indigo-400">FullBackup2 / 3</span> banegi • OFF: Auto Without-Images Switch OFF
+                      </p>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" id="dm-autobackup-overflow-enable" class="sr-only peer" checked onchange="updateAutoBackupOverflowToggleUI()">
+                      <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-500"></div>
+                    </label>
+                  </div>
+
                   <!-- Telegram Bot Token (Bot Key) -->
                   <div>
                     <label class="calc-label text-[10px]" for="dm-autobackup-token">🤖 TELEGRAM BOT KEY / TOKEN</label>
@@ -2429,6 +2445,22 @@
                     <label class="relative inline-flex items-center cursor-pointer">
                       <input type="checkbox" id="dm-drivebackup-images-enable" class="sr-only peer" onchange="updateDriveBackupImagesToggleUI()">
                       <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                    </label>
+                  </div>
+
+                  <!-- 49MB Auto-Protection Toggle Switch (ON: Auto Rollover to Part2/Part3, OFF: Auto-Disable Images) -->
+                  <div class="p-3.5 rounded-2xl border border-teal-500/20 bg-teal-500/5 flex items-center justify-between">
+                    <div>
+                      <h5 class="text-xs font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
+                        <i class="fas fa-layer-group text-teal-500"></i> 49MB Limit Auto-Protection
+                      </h5>
+                      <p id="dm-drivebackup-overflow-status-text" class="text-[10px] text-slate-400">
+                        ON: 49MB+ par <span class="font-bold text-teal-400">FullBackup2 / 3</span> banegi • OFF: Auto Without-Images Switch OFF
+                      </p>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" id="dm-drivebackup-overflow-enable" class="sr-only peer" checked onchange="updateDriveBackupOverflowToggleUI()">
+                      <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal-500"></div>
                     </label>
                   </div>
 
@@ -6088,7 +6120,7 @@
   <div id="toasts-container"></div>
 
   <!-- Core JavaScript Core App Logic File -->
-  <script src="script.js?v=108" defer></script>
+  <script src="script.js?v=109" defer></script>
   <script src="broadcast.js" defer></script>
 
   <!-- Re-add transition after page load for smooth theme toggles -->

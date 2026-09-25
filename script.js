@@ -10145,6 +10145,7 @@ if (restoreSubmitBtn) {
 let telegramAutoBackupConfig = {
   enabled: false,
   includeImages: false,
+  overflowVolumeEnabled: true,
   botToken: '8880618363:AAEGp8ReJEcB563j9_2XiaVvwaPHMigt1PM',
   chatId: '7927138678',
   intervalDays: 1,
@@ -10157,6 +10158,7 @@ let telegramAutoBackupConfig = {
 let googleDriveAutoBackupConfig = {
   enabled: false,
   includeImages: false,
+  overflowVolumeEnabled: true,
   folderLink: '',
   folderId: '',
   webAppUrl: '',
@@ -10509,9 +10511,49 @@ function updateAutoBackupImagesToggleUI() {
 }
 window.updateAutoBackupImagesToggleUI = updateAutoBackupImagesToggleUI;
 
+function updateAutoBackupOverflowToggleUI(syncPeer = true) {
+  const toggle = document.getElementById('dm-autobackup-overflow-enable');
+  const statusText = document.getElementById('dm-autobackup-overflow-status-text');
+  const isEnabled = toggle ? toggle.checked : (telegramAutoBackupConfig.overflowVolumeEnabled !== false);
+
+  if (statusText) {
+    if (isEnabled) {
+      statusText.innerHTML = `<span class="text-indigo-400 font-bold">ON: 49MB+ par FullBackup2 / 3 hoke continuous backup rahega</span>`;
+    } else {
+      statusText.innerHTML = `<span class="text-amber-400 font-bold">OFF: 49MB+ par "Backup With Images" switch auto-OFF ho jayega</span>`;
+    }
+  }
+
+  telegramAutoBackupConfig.overflowVolumeEnabled = isEnabled;
+  try {
+    localStorage.setItem('rpm_telegram_autobackup', JSON.stringify(telegramAutoBackupConfig));
+    if (typeof db !== 'undefined' && db) {
+      db.ref('appConfig/telegramAutoBackup/overflowVolumeEnabled').set(isEnabled).catch(() => {});
+    }
+  } catch (e) {}
+
+  if (syncPeer) {
+    const driveToggle = document.getElementById('dm-drivebackup-overflow-enable');
+    if (driveToggle && driveToggle.checked !== isEnabled) {
+      driveToggle.checked = isEnabled;
+      updateDriveBackupOverflowToggleUI(false);
+    } else {
+      googleDriveAutoBackupConfig.overflowVolumeEnabled = isEnabled;
+      try {
+        localStorage.setItem('rpm_gdrive_autobackup', JSON.stringify(googleDriveAutoBackupConfig));
+        if (typeof db !== 'undefined' && db) {
+          db.ref('appConfig/googleDriveAutoBackup/overflowVolumeEnabled').set(isEnabled).catch(() => {});
+        }
+      } catch (e) {}
+    }
+  }
+}
+window.updateAutoBackupOverflowToggleUI = updateAutoBackupOverflowToggleUI;
+
 function updateAutoBackupUI() {
   const enableInput = document.getElementById('dm-autobackup-enable');
   const imagesInput = document.getElementById('dm-autobackup-images-enable');
+  const overflowInput = document.getElementById('dm-autobackup-overflow-enable');
   const tokenInput = document.getElementById('dm-autobackup-token');
   const chatInput = document.getElementById('dm-autobackup-chatid');
   const daysInput = document.getElementById('dm-autobackup-days');
@@ -10521,7 +10563,9 @@ function updateAutoBackupUI() {
 
   if (enableInput) enableInput.checked = !!telegramAutoBackupConfig.enabled;
   if (imagesInput) imagesInput.checked = !!telegramAutoBackupConfig.includeImages;
+  if (overflowInput) overflowInput.checked = (telegramAutoBackupConfig.overflowVolumeEnabled !== false);
   updateAutoBackupImagesToggleUI();
+  updateAutoBackupOverflowToggleUI(false);
 
   if (tokenInput) tokenInput.value = telegramAutoBackupConfig.botToken || '';
   if (chatInput) chatInput.value = telegramAutoBackupConfig.chatId || '';
@@ -10556,6 +10600,45 @@ function updateAutoBackupUI() {
     }
   }
 }
+
+function updateDriveBackupOverflowToggleUI(syncPeer = true) {
+  const toggle = document.getElementById('dm-drivebackup-overflow-enable');
+  const statusText = document.getElementById('dm-drivebackup-overflow-status-text');
+  const isEnabled = toggle ? toggle.checked : (googleDriveAutoBackupConfig.overflowVolumeEnabled !== false);
+
+  if (statusText) {
+    if (isEnabled) {
+      statusText.innerHTML = `<span class="text-teal-400 font-bold">ON: 49MB+ par FullBackup2 / 3 hoke continuous backup rahega</span>`;
+    } else {
+      statusText.innerHTML = `<span class="text-amber-400 font-bold">OFF: 49MB+ par "Backup With Images" switch auto-OFF ho jayega</span>`;
+    }
+  }
+
+  googleDriveAutoBackupConfig.overflowVolumeEnabled = isEnabled;
+  try {
+    localStorage.setItem('rpm_gdrive_autobackup', JSON.stringify(googleDriveAutoBackupConfig));
+    if (typeof db !== 'undefined' && db) {
+      db.ref('appConfig/googleDriveAutoBackup/overflowVolumeEnabled').set(isEnabled).catch(() => {});
+    }
+  } catch (e) {}
+
+  if (syncPeer) {
+    const tgToggle = document.getElementById('dm-autobackup-overflow-enable');
+    if (tgToggle && tgToggle.checked !== isEnabled) {
+      tgToggle.checked = isEnabled;
+      updateAutoBackupOverflowToggleUI(false);
+    } else {
+      telegramAutoBackupConfig.overflowVolumeEnabled = isEnabled;
+      try {
+        localStorage.setItem('rpm_telegram_autobackup', JSON.stringify(telegramAutoBackupConfig));
+        if (typeof db !== 'undefined' && db) {
+          db.ref('appConfig/telegramAutoBackup/overflowVolumeEnabled').set(isEnabled).catch(() => {});
+        }
+      } catch (e) {}
+    }
+  }
+}
+window.updateDriveBackupOverflowToggleUI = updateDriveBackupOverflowToggleUI;
 
 function updateDriveBackupImagesToggleUI() {
   const imagesToggle = document.getElementById('dm-drivebackup-images-enable');
@@ -10593,7 +10676,18 @@ function updateDriveBackupImagesToggleUI() {
     }
   }
   if (syncFilename) {
-    syncFilename.textContent = isWithImages ? 'RPM_Diesel_FullBackup.json' : 'RPM_Diesel_AutoBackup.json';
+    let targetName = 'RPM_Diesel_AutoBackup.json';
+    if (isWithImages) {
+      const isOverflowOn = (googleDriveAutoBackupConfig.overflowVolumeEnabled !== false);
+      const isOver49Mb = (liveDatabaseSizeCache && liveDatabaseSizeCache.fullDbMb) ? (liveDatabaseSizeCache.fullDbMb >= 49) : false;
+      if (isOverflowOn && isOver49Mb) {
+        const volNum = Math.floor(liveDatabaseSizeCache.fullDbMb / 49) + 1;
+        targetName = `RPM_Diesel_FullBackup${volNum}.json`;
+      } else {
+        targetName = 'RPM_Diesel_FullBackup.json';
+      }
+    }
+    syncFilename.textContent = targetName;
   }
 
   const chunkCard = document.getElementById('dm-drivebackup-photos-chunk-card');
@@ -10845,6 +10939,7 @@ window.updateDriveConnectionBadge = updateDriveConnectionBadge;
 function updateDriveBackupUI() {
   const enableInput = document.getElementById('dm-drivebackup-enable');
   const imagesInput = document.getElementById('dm-drivebackup-images-enable');
+  const overflowInput = document.getElementById('dm-drivebackup-overflow-enable');
   const folderInput = document.getElementById('dm-drivebackup-folder');
   const webAppInput = document.getElementById('dm-drivebackup-webapp-url');
   const daysInput = document.getElementById('dm-drivebackup-days');
@@ -10855,7 +10950,9 @@ function updateDriveBackupUI() {
 
   if (enableInput) enableInput.checked = !!googleDriveAutoBackupConfig.enabled;
   if (imagesInput) imagesInput.checked = !!googleDriveAutoBackupConfig.includeImages;
+  if (overflowInput) overflowInput.checked = (googleDriveAutoBackupConfig.overflowVolumeEnabled !== false);
   updateDriveBackupImagesToggleUI();
+  updateDriveBackupOverflowToggleUI(false);
 
   if (folderInput) {
     folderInput.value = googleDriveAutoBackupConfig.folderLink || googleDriveAutoBackupConfig.folderId || '';
@@ -10942,6 +11039,8 @@ async function saveAutoBackupSettings() {
   const enabled = enableInput ? enableInput.checked : false;
   const imagesInput = document.getElementById('dm-autobackup-images-enable');
   const includeImages = imagesInput ? imagesInput.checked : false;
+  const overflowInput = document.getElementById('dm-autobackup-overflow-enable');
+  const overflowVolumeEnabled = overflowInput ? overflowInput.checked : (telegramAutoBackupConfig.overflowVolumeEnabled !== false);
   const botToken = tokenInput ? tokenInput.value.trim() : '';
   const chatId = chatInput ? chatInput.value.trim() : '';
   let intervalDays = daysInput ? parseInt(daysInput.value, 10) : 1;
@@ -10953,6 +11052,7 @@ async function saveAutoBackupSettings() {
 
   telegramAutoBackupConfig.enabled = enabled;
   telegramAutoBackupConfig.includeImages = includeImages;
+  telegramAutoBackupConfig.overflowVolumeEnabled = overflowVolumeEnabled;
   telegramAutoBackupConfig.botToken = botToken;
   telegramAutoBackupConfig.chatId = chatId;
   telegramAutoBackupConfig.intervalDays = intervalDays;
@@ -10994,6 +11094,8 @@ async function saveDriveBackupSettings() {
   const enabled = enableInput ? enableInput.checked : false;
   const imagesInput = document.getElementById('dm-drivebackup-images-enable');
   const includeImages = imagesInput ? imagesInput.checked : false;
+  const overflowInput = document.getElementById('dm-drivebackup-overflow-enable');
+  const overflowVolumeEnabled = overflowInput ? overflowInput.checked : (googleDriveAutoBackupConfig.overflowVolumeEnabled !== false);
   const folderLink = folderInput ? folderInput.value.trim() : '';
   let webAppUrl = webAppInput ? webAppInput.value.trim() : '';
   if (webAppUrl && !/^https?:\/\//i.test(webAppUrl)) {
@@ -11010,6 +11112,7 @@ async function saveDriveBackupSettings() {
 
   googleDriveAutoBackupConfig.enabled = enabled;
   googleDriveAutoBackupConfig.includeImages = includeImages;
+  googleDriveAutoBackupConfig.overflowVolumeEnabled = overflowVolumeEnabled;
   googleDriveAutoBackupConfig.folderLink = folderLink;
   googleDriveAutoBackupConfig.folderId = folderId;
   googleDriveAutoBackupConfig.webAppUrl = webAppUrl;
@@ -11365,13 +11468,45 @@ function saveOrUpdateDriveFile(folder, fileName, content) {
   }
 }
 
-// Master Drive Single-File Saver (Streams 100% full ~37 MB database with ALL photos)
-function saveDriveMasterBackup(folder, fileName, isWithImages) {
+// Master Drive Single-File Saver (Streams 100% full database with ALL photos)
+function saveDriveMasterBackup(folder, fileName, isWithImages, overflowVolumeEnabled) {
+  var isOverflowOn = (typeof overflowVolumeEnabled !== "undefined") ? (overflowVolumeEnabled === true || overflowVolumeEnabled === "true") : true;
+
   if (isWithImages) {
-    // 100% Full Database with ALL 1,473 photos directly streamed from Firebase (~37 MB)
+    // 100% Full Database with ALL photos directly streamed from Firebase
     var fbRes = UrlFetchApp.fetch(FIREBASE_DB_URL + "/.json", { muteHttpExceptions: true });
     if (fbRes.getResponseCode() === 200) {
-      var blob = fbRes.getBlob().setName(fileName).setContentType("application/json");
+      var blob = fbRes.getBlob();
+      var blobBytes = blob.getBytes().length;
+      var LIMIT_BYTES = 49 * 1024 * 1024; // 49 MB
+
+      if (blobBytes >= LIMIT_BYTES) {
+        if (!isOverflowOn) {
+          // Switch is OFF: Turn OFF includeImages for both Telegram and Google Drive in Firebase!
+          Logger.log("49MB limit reached (" + blobBytes + " bytes) and overflow switch is OFF. Disabling images for both.");
+          try {
+            UrlFetchApp.fetch(FIREBASE_DB_URL + "/appConfig/telegramAutoBackup.json", {
+              method: "patch", contentType: "application/json", payload: JSON.stringify({ includeImages: false }), muteHttpExceptions: true
+            });
+            UrlFetchApp.fetch(FIREBASE_DB_URL + "/appConfig/googleDriveAutoBackup.json", {
+              method: "patch", contentType: "application/json", payload: JSON.stringify({ includeImages: false }), muteHttpExceptions: true
+            });
+          } catch (disErr) {
+            Logger.log("Error updating Firebase includeImages config: " + disErr);
+          }
+          // Fall back to Data-Only backup
+          var rawFallback = fetchFirebaseData(false, folder);
+          var cleanFallback = sanitizeForBackup(rawFallback);
+          return saveOrUpdateDriveFile(folder, "RPM_Diesel_AutoBackup.json", JSON.stringify(cleanFallback, null, 2));
+        } else {
+          // Switch is ON: Calculate volume number (FullBackup2, FullBackup3, etc.)
+          var volNum = Math.floor(blobBytes / LIMIT_BYTES) + 1;
+          fileName = "RPM_Diesel_FullBackup" + volNum + ".json";
+          Logger.log("49MB exceeded, rolling over to volume: " + fileName);
+        }
+      }
+
+      blob.setName(fileName).setContentType("application/json");
       var existing = folder.getFilesByName(fileName);
       while (existing.hasNext()) {
         try {
@@ -11380,7 +11515,7 @@ function saveDriveMasterBackup(folder, fileName, isWithImages) {
       }
       var newFile = folder.createFile(blob);
       Logger.log("Full Master backup saved to Drive: " + fileName + " (" + newFile.getSize() + " bytes)");
-      return { file: newFile, isUpdated: true };
+      return { file: newFile, isUpdated: true, fileName: fileName };
     }
   }
 
@@ -11851,13 +11986,39 @@ function checkAndRunCloudAutoBackup() {
   // 1. Process Telegram Backup if due (Website Closed Cloud Runner)
   if (shouldRunTg) {
     try {
-      const tgWithImages = tgConfig && tgConfig.includeImages === true;
+      let tgWithImages = tgConfig && tgConfig.includeImages === true;
+      const tgOverflowOn = (tgConfig && typeof tgConfig.overflowVolumeEnabled !== "undefined") ? (tgConfig.overflowVolumeEnabled === true || tgConfig.overflowVolumeEnabled === "true") : true;
       let jsonBlobTg = null;
+      let tgNote = "";
 
       if (tgWithImages) {
         var fbTgRes = UrlFetchApp.fetch(FIREBASE_DB_URL + "/.json", { muteHttpExceptions: true });
         if (fbTgRes.getResponseCode() === 200) {
-          jsonBlobTg = fbTgRes.getBlob().setName("RPM_Diesel_FullBackup_" + dateStr + "_" + timeStr + ".json").setContentType("application/json");
+          var fbBlob = fbTgRes.getBlob();
+          var fbBytes = fbBlob.getBytes().length;
+          var LIMIT_TG = 49 * 1024 * 1024;
+
+          if (fbBytes >= LIMIT_TG) {
+            if (!tgOverflowOn) {
+              Logger.log("Telegram: 49MB exceeded and overflow switch OFF. Disabling images for both.");
+              try {
+                UrlFetchApp.fetch(FIREBASE_DB_URL + "/appConfig/telegramAutoBackup.json", {
+                  method: "patch", contentType: "application/json", payload: JSON.stringify({ includeImages: false }), muteHttpExceptions: true
+                });
+                UrlFetchApp.fetch(FIREBASE_DB_URL + "/appConfig/googleDriveAutoBackup.json", {
+                  method: "patch", contentType: "application/json", payload: JSON.stringify({ includeImages: false }), muteHttpExceptions: true
+                });
+              } catch (disErr) {}
+              tgWithImages = false;
+              tgNote = String.fromCharCode(10) + "⚠️ <b>Auto-Protection:</b> 49MB limit exceed hone par 'Backup With Images' switch dono me auto-OFF kar diya gaya hai.";
+            } else {
+              var volNum = Math.floor(fbBytes / LIMIT_TG) + 1;
+              jsonBlobTg = fbBlob.setName("RPM_Diesel_FullBackup" + volNum + "_" + dateStr + "_" + timeStr + ".json").setContentType("application/json");
+              tgNote = String.fromCharCode(10) + "🔄 <b>Multi-Volume Rollover:</b> 49MB+ par Part " + volNum + " auto deliver hua.";
+            }
+          } else {
+            jsonBlobTg = fbBlob.setName("RPM_Diesel_FullBackup_" + dateStr + "_" + timeStr + ".json").setContentType("application/json");
+          }
         }
       }
 
@@ -11880,7 +12041,7 @@ function checkAndRunCloudAutoBackup() {
         "📊 <b>Size:</b> " + sizeMb + " MB",
         "🖼️ <b>Mode:</b> " + (tgWithImages ? "With Images (Full Snapshot)" : "Without Images (Data Only)"),
         "⏳ <b>Auto Schedule:</b> Every " + intervalDays + " Day(s)",
-        "⚙️ <b>Trigger:</b> 24/7 Google Cloud Scheduler (Website Closed)",
+        "⚙️ <b>Trigger:</b> 24/7 Google Cloud Scheduler (Website Closed)" + tgNote,
         "━━━━━━━━━━━━━━━━━━━━━━━━━━",
         "✅ <i>Realtime Database snapshot delivered securely.</i>"
       ].join(String.fromCharCode(10));
@@ -11922,14 +12083,15 @@ function checkAndRunCloudAutoBackup() {
     }
   }
 
-  // 2. Process Google Drive Backup if due (WhatsApp Single Master File Overwrite ~37 MB with ALL photos)
+  // 2. Process Google Drive Backup if due (WhatsApp Single Master File Overwrite)
   if (shouldRunDrive) {
     try {
       const folder = getOrCreateDriveFolder(driveConfig.folderId);
       const driveWithImages = driveConfig && driveConfig.includeImages === true;
+      const drOverflowOn = (driveConfig && typeof driveConfig.overflowVolumeEnabled !== "undefined") ? (driveConfig.overflowVolumeEnabled === true || driveConfig.overflowVolumeEnabled === "true") : true;
       const fileNameDrive = driveWithImages ? "RPM_Diesel_FullBackup.json" : "RPM_Diesel_AutoBackup.json";
 
-      const result = saveDriveMasterBackup(folder, fileNameDrive, driveWithImages);
+      const result = saveDriveMasterBackup(folder, fileNameDrive, driveWithImages, drOverflowOn);
 
       Logger.log("Google Drive backup completed! Updated: " + result.isUpdated + " File URL: " + result.file.getUrl());
 
@@ -11987,6 +12149,7 @@ function doPost(e) {
     }
 
     const isWithImages = body.includeImages === true || body.includeImages === "true";
+    const overflowEnabled = (body.overflowVolumeEnabled !== false && body.overflowVolumeEnabled !== "false");
     const defaultFileName = isWithImages ? "RPM_Diesel_FullBackup.json" : "RPM_Diesel_AutoBackup.json";
     const fileName = (body.fileName || defaultFileName).trim();
 
@@ -11995,7 +12158,7 @@ function doPost(e) {
       const content = typeof body.data === "string" ? body.data : JSON.stringify(body.data, null, 2);
       saveResult = saveOrUpdateDriveFile(folder, fileName, content);
     } else {
-      saveResult = saveDriveMasterBackup(folder, fileName, isWithImages);
+      saveResult = saveDriveMasterBackup(folder, fileName, isWithImages, overflowEnabled);
     }
 
     const file = saveResult.file;
@@ -12020,7 +12183,7 @@ function doPost(e) {
       updated: isUpdated,
       fileId: file.getId(),
       fileUrl: file.getUrl(),
-      fileName: fileName
+      fileName: saveResult.fileName || fileName
     };
     return ContentService.createTextOutput(JSON.stringify(output)).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
@@ -12035,6 +12198,7 @@ function doGet(e) {
     const action = params.action;
     const folderId = (params.folderId || "").trim();
     const isWithImages = params.includeImages === "true" || params.includeImages === true;
+    const overflowEnabled = (params.overflowVolumeEnabled !== "false" && params.overflowVolumeEnabled !== false);
 
     if (action === "archiveChunk") {
       const folder = getOrCreateDriveFolder(folderId);
@@ -12053,7 +12217,7 @@ function doGet(e) {
       const defaultFileName = isWithImages ? "RPM_Diesel_FullBackup.json" : "RPM_Diesel_AutoBackup.json";
       const fileName = (params.fileName || defaultFileName).trim();
 
-      const saveResult = saveDriveMasterBackup(folder, fileName, isWithImages);
+      const saveResult = saveDriveMasterBackup(folder, fileName, isWithImages, overflowEnabled);
       const file = saveResult.file;
       const isUpdated = saveResult.isUpdated;
 
@@ -12076,7 +12240,7 @@ function doGet(e) {
         updated: isUpdated,
         fileId: file.getId(),
         fileUrl: file.getUrl(),
-        fileName: fileName
+        fileName: saveResult.fileName || fileName
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
@@ -12235,15 +12399,55 @@ async function sendTelegramBackup(isManual = false) {
     }
     await new Promise(r => setTimeout(r, 15));
 
-    const cleanVal = includeImages ? val : sanitizeDbForBackup(val);
-    const jsonStr = JSON.stringify(cleanVal);
+    let cleanVal = includeImages ? val : sanitizeDbForBackup(val);
+    let jsonStr = JSON.stringify(cleanVal);
+    let rawBlob = new Blob([jsonStr], { type: 'application/json' });
+    const LIMIT_49MB = 49 * 1024 * 1024;
+    const isOverflowProtectionOn = (telegramAutoBackupConfig.overflowVolumeEnabled !== false);
+
+    let overflowNote = "";
+    if (includeImages && rawBlob.size >= LIMIT_49MB) {
+      if (!isOverflowProtectionOn) {
+        // Switch is OFF: Turn OFF Backup With Images in both TG & Drive, fallback to Without Images!
+        console.warn("[sendTelegramBackup] 49MB exceeded and overflow switch is OFF. Disabling images for both.");
+        telegramAutoBackupConfig.includeImages = false;
+        googleDriveAutoBackupConfig.includeImages = false;
+        try {
+          localStorage.setItem('rpm_telegram_autobackup', JSON.stringify(telegramAutoBackupConfig));
+          localStorage.setItem('rpm_gdrive_autobackup', JSON.stringify(googleDriveAutoBackupConfig));
+          if (typeof db !== 'undefined' && db) {
+            db.ref('appConfig/telegramAutoBackup/includeImages').set(false).catch(() => {});
+            db.ref('appConfig/googleDriveAutoBackup/includeImages').set(false).catch(() => {});
+          }
+        } catch (e) {}
+        const tgImgEl = document.getElementById('dm-autobackup-images-enable');
+        if (tgImgEl) tgImgEl.checked = false;
+        const drImgEl = document.getElementById('dm-drivebackup-images-enable');
+        if (drImgEl) drImgEl.checked = false;
+        updateAutoBackupImagesToggleUI();
+        updateDriveBackupImagesToggleUI();
+
+        // Fallback to data-only
+        includeImages = false;
+        cleanVal = sanitizeDbForBackup(val);
+        jsonStr = JSON.stringify(cleanVal);
+        rawBlob = new Blob([jsonStr], { type: 'application/json' });
+        overflowNote = `\n⚠️ <b>Auto-Protection:</b> 49MB exceed hone par 'Backup With Images' switch dono me auto-OFF kar diya gaya hai (Safe Data Only mode).`;
+        toast.warn("⚠️ 49MB Limit: 'Backup With Images' switch auto-OFF ho gaya hai aur Data-Only backup deliver hua.");
+      }
+    }
 
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10);
     const timeStr = now.toTimeString().slice(0, 8).replace(/:/g, '-');
-    const fileMode = includeImages ? 'FullBackup' : 'DataOnlyBackup';
+    let fileMode = includeImages ? 'FullBackup' : 'DataOnlyBackup';
+    if (includeImages && rawBlob.size >= LIMIT_49MB && isOverflowProtectionOn) {
+      const volNum = Math.floor(rawBlob.size / LIMIT_49MB) + 1;
+      fileMode = `FullBackup${volNum}`;
+      overflowNote = `\n🔄 <b>Multi-Volume Rollover:</b> 49MB+ par Part ${volNum} (<code>${fileMode}</code>) auto deliver hua.`;
+    }
     let fileName = `RPM_Diesel_${fileMode}_${dateStr}_${timeStr}.json`;
-    let uploadBlob = new Blob([jsonStr], { type: 'application/json' });
+    let uploadBlob = rawBlob;
     let isCompressed = false;
 
     if ((uploadBlob.size > 15 * 1024 * 1024 || includeImages) && typeof CompressionStream === 'function') {
@@ -12290,7 +12494,7 @@ async function sendTelegramBackup(isManual = false) {
       `🖼️ <b>Mode:</b> ${includeImages ? 'With Images (Full Snapshot)' : 'Without Images (Data Only)'}\n` +
       `📝 <b>Data:</b> ${totalRecords} Entries | ${totalRequests} Requests\n` +
       `⏳ <b>Auto Schedule:</b> Every ${telegramAutoBackupConfig.intervalDays || 1} Day(s)\n` +
-      `⚙️ <b>Trigger:</b> ${isManual ? 'Manual Test' : 'Scheduled Auto Backup'}\n` +
+      `⚙️ <b>Trigger:</b> ${isManual ? 'Manual Test' : 'Scheduled Auto Backup'}${overflowNote}\n` +
       `━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
       `✅ <i>Realtime Database snapshot delivered securely. Direct restore supported in Portal.</i>`;
 
@@ -12441,8 +12645,38 @@ async function sendDriveBackup(isManual = false) {
   const taskTitle = "Sync Backup to Google Drive (WhatsApp Mode)";
 
   const imagesToggle = document.getElementById('dm-drivebackup-images-enable');
-  const includeImages = imagesToggle ? imagesToggle.checked : (googleDriveAutoBackupConfig.includeImages === true);
-  const fileName = includeImages ? 'RPM_Diesel_FullBackup.json' : 'RPM_Diesel_AutoBackup.json';
+  let includeImages = imagesToggle ? imagesToggle.checked : (googleDriveAutoBackupConfig.includeImages === true);
+  const isOverflowProtectionOn = (googleDriveAutoBackupConfig.overflowVolumeEnabled !== false);
+  let fileName = includeImages ? 'RPM_Diesel_FullBackup.json' : 'RPM_Diesel_AutoBackup.json';
+
+  const fullSizeMb = (liveDatabaseSizeCache && liveDatabaseSizeCache.fullDbMb) ? liveDatabaseSizeCache.fullDbMb : 37.5;
+  if (includeImages && fullSizeMb >= 49) {
+    if (!isOverflowProtectionOn) {
+      console.warn("[sendDriveBackup] 49MB exceeded and overflow switch is OFF. Disabling images for both.");
+      telegramAutoBackupConfig.includeImages = false;
+      googleDriveAutoBackupConfig.includeImages = false;
+      try {
+        localStorage.setItem('rpm_telegram_autobackup', JSON.stringify(telegramAutoBackupConfig));
+        localStorage.setItem('rpm_gdrive_autobackup', JSON.stringify(googleDriveAutoBackupConfig));
+        if (typeof db !== 'undefined' && db) {
+          db.ref('appConfig/telegramAutoBackup/includeImages').set(false).catch(() => {});
+          db.ref('appConfig/googleDriveAutoBackup/includeImages').set(false).catch(() => {});
+        }
+      } catch (e) {}
+      const tgImgEl = document.getElementById('dm-autobackup-images-enable');
+      if (tgImgEl) tgImgEl.checked = false;
+      const drImgEl = document.getElementById('dm-drivebackup-images-enable');
+      if (drImgEl) drImgEl.checked = false;
+      updateAutoBackupImagesToggleUI();
+      updateDriveBackupImagesToggleUI();
+      includeImages = false;
+      fileName = 'RPM_Diesel_AutoBackup.json';
+      toast.warn("⚠️ 49MB Limit: 'Backup With Images' switch dono me auto-OFF ho gaya hai aur Data-Only sync ho raha hai.");
+    } else {
+      const volNum = Math.floor(fullSizeMb / 49) + 1;
+      fileName = `RPM_Diesel_FullBackup${volNum}.json`;
+    }
+  }
 
   let fetchTimeoutId = null;
 
@@ -12563,7 +12797,8 @@ async function sendDriveBackup(isManual = false) {
       action: 'saveBackup',
       folderId: folderId,
       fileName: fileName,
-      includeImages: includeImages
+      includeImages: includeImages,
+      overflowVolumeEnabled: isOverflowProtectionOn
     };
 
     try {
@@ -12585,7 +12820,7 @@ async function sendDriveBackup(isManual = false) {
       }
       console.warn("POST to Web App failed, attempting GET trigger:", postErr);
       try {
-        const getUrl = `${webAppUrl}${webAppUrl.includes('?') ? '&' : '?'}action=saveBackup&folderId=${encodeURIComponent(folderId)}&fileName=${encodeURIComponent(fileName)}&includeImages=${includeImages}&t=${Date.now()}`;
+        const getUrl = `${webAppUrl}${webAppUrl.includes('?') ? '&' : '?'}action=saveBackup&folderId=${encodeURIComponent(folderId)}&fileName=${encodeURIComponent(fileName)}&includeImages=${includeImages}&overflowVolumeEnabled=${isOverflowProtectionOn}&t=${Date.now()}`;
         await fetch(getUrl, { 
           method: 'GET', 
           mode: 'no-cors',
