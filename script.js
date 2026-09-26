@@ -22084,6 +22084,17 @@ function closeFillReceiptCameraModal() {
   activeFillReceiptKey = null;
   capturedReceiptBase64 = '';
   isSubmittingFillReceipt = false;
+
+  const submitBtn = document.getElementById('fill-btn-confirm-submit');
+  if (submitBtn) {
+    submitBtn.disabled = false;
+    submitBtn.innerHTML = '<i class="fas fa-check-circle"></i> Successfully Fill';
+  }
+  const captureBtn = document.getElementById('fill-btn-capture');
+  if (captureBtn) {
+    captureBtn.disabled = false;
+    captureBtn.innerHTML = '<i class="fas fa-camera"></i> Capture Photo';
+  }
 }
 
 function triggerFillReceiptFileInput() {
@@ -22099,7 +22110,13 @@ function handleFillReceiptFallbackFile(input) {
     img.onload = function() {
       compressAndPreviewFillReceipt(img);
     };
+    img.onerror = function() {
+      toast.err("Could not read image from file.");
+    };
     img.src = e.target.result;
+  };
+  reader.onerror = function() {
+    toast.err("Error reading file.");
   };
   reader.readAsDataURL(file);
   input.value = '';
@@ -22112,19 +22129,47 @@ function captureFillReceiptPhoto() {
     return;
   }
 
-  const width = video.videoWidth || 640;
-  const height = video.videoHeight || 480;
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, width, height);
+  const captureBtn = document.getElementById('fill-btn-capture');
+  if (captureBtn) {
+    captureBtn.disabled = true;
+    captureBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Capturing...';
+  }
 
-  const img = new Image();
-  img.onload = function() {
-    compressAndPreviewFillReceipt(img);
-  };
-  img.src = canvas.toDataURL('image/jpeg');
+  try {
+    const width = video.videoWidth || 640;
+    const height = video.videoHeight || 480;
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, width, height);
+
+    const img = new Image();
+    img.onload = function() {
+      if (captureBtn) {
+        captureBtn.disabled = false;
+        captureBtn.innerHTML = '<i class="fas fa-camera"></i> Capture Photo';
+      }
+      compressAndPreviewFillReceipt(img);
+    };
+    img.onerror = function() {
+      if (captureBtn) {
+        captureBtn.disabled = false;
+        captureBtn.innerHTML = '<i class="fas fa-camera"></i> Capture Photo';
+      }
+      toast.warn("Could not capture frame. Opening gallery/camera fallback...");
+      triggerFillReceiptFileInput();
+    };
+    img.src = canvas.toDataURL('image/jpeg');
+  } catch (err) {
+    console.error("Camera capture error:", err);
+    if (captureBtn) {
+      captureBtn.disabled = false;
+      captureBtn.innerHTML = '<i class="fas fa-camera"></i> Capture Photo';
+    }
+    toast.warn("Live capture fallback triggered.");
+    triggerFillReceiptFileInput();
+  }
 }
 
 function compressAndPreviewFillReceipt(img) {
@@ -22208,13 +22253,20 @@ function compressAndPreviewFillReceipt(img) {
 
   document.getElementById('fill-btn-capture')?.classList.add('hidden');
   document.getElementById('fill-btn-upload-file')?.classList.add('hidden');
-  document.getElementById('fill-btn-confirm-submit')?.classList.remove('hidden');
+  const confirmBtn = document.getElementById('fill-btn-confirm-submit');
+  if (confirmBtn) {
+    confirmBtn.classList.remove('hidden');
+    confirmBtn.disabled = false;
+    confirmBtn.innerHTML = '<i class="fas fa-check-circle"></i> Successfully Fill';
+  }
   document.getElementById('fill-btn-retake')?.classList.remove('hidden');
 }
 
 function submitFillReceiptAction() {
   if (isSubmittingFillReceipt) return;
-  if (!activeFillReceiptKey) return;
+  if (!activeFillReceiptKey) {
+    return toast.err("Request key not found. Please re-open the request.");
+  }
 
   const req = driverRequestsList.find(r => r.key === activeFillReceiptKey);
   if (!req) return toast.err("Request details not found.");
@@ -22230,8 +22282,11 @@ function submitFillReceiptAction() {
     submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
   }
 
-  // Compute next sequential response number accurately from historyEntries & entries
-  const nums = historyEntries.map(x => parseInt(x.responseNumber)).filter(n => !isNaN(n));
+  // Compute next sequential response number accurately from historyEntries & allLoadedEntries
+  const allEntries = (typeof historyEntries !== 'undefined' && Array.isArray(historyEntries) && historyEntries.length > 0)
+    ? historyEntries 
+    : ((typeof window.allLoadedEntries !== 'undefined' && Array.isArray(window.allLoadedEntries)) ? window.allLoadedEntries : []);
+  const nums = allEntries.map(x => parseInt(x.responseNumber)).filter(n => !isNaN(n));
   const maxNum = nums.length > 0 ? Math.max(...nums) : 0;
   const newRespNum = String(maxNum + 1);
 
@@ -22267,32 +22322,49 @@ function submitFillReceiptAction() {
     e.litres = String((parseFloat(e.dieselAmount) / dieselRate).toFixed(2));
   }
 
-  Promise.all([
-    db.ref('driverRequestPhotos').child(activeFillReceiptKey).once('value'),
-    driverRequestsRef.child(activeFillReceiptKey).once('value')
-  ]).then(([photoSnap, reqSnap]) => {
-    const photoData = photoSnap.val() || {};
-    const fullReq = { ...(reqSnap.val() || {}), ...photoData };
+  // Safe fast lookup of existing photos with 2.5s timeout (never hangs if network is slow)
+  const fetchPhotosPromise = new Promise(resolve => {
+    let resolved = false;
+    const timeout = setTimeout(() => {
+      if (!resolved) { resolved = true; resolve(null); }
+    }, 2500);
 
-    const kPhotos = extractPhotosFromRecord(fullReq, 'kmPhotos', 'kmPhoto', 'photo');
+    if (typeof db !== 'undefined' && db) {
+      db.ref('driverRequestPhotos').child(activeFillReceiptKey).once('value')
+        .then(snap => {
+          if (!resolved) { resolved = true; clearTimeout(timeout); resolve(snap.val()); }
+        })
+        .catch(() => {
+          if (!resolved) { resolved = true; clearTimeout(timeout); resolve(null); }
+        });
+    } else {
+      if (!resolved) { resolved = true; clearTimeout(timeout); resolve(null); }
+    }
+  });
+
+  fetchPhotosPromise.then(photoData => {
+    const fullReq = Object.assign({}, req, photoData || {});
+    const kPhotos = extractPhotosFromRecord(fullReq, 'kmPhotos', 'kmPhoto', 'photo')
+      .filter(p => typeof p === 'string' && p.trim().length > 0);
+
     if (kPhotos.length > 0) {
-      e.kmPhotos = kPhotos;
-      e.kmPhoto = kPhotos[0];
       e.hasKmPhoto = true;
     }
 
-    const receiptList = [capturedReceiptBase64];
+    const receiptList = [];
+    if (typeof capturedReceiptBase64 === 'string' && capturedReceiptBase64.trim().length > 0) {
+      receiptList.push(capturedReceiptBase64.trim());
+    }
     const existingReceipts = extractPhotosFromRecord(fullReq, 'receiptPhotos', 'receiptPhoto');
     existingReceipts.forEach(p => {
-      if (!receiptList.includes(p) && receiptList.length < 5) receiptList.push(p);
+      if (typeof p === 'string' && p.trim().length > 0 && !receiptList.includes(p) && receiptList.length < 5) {
+        receiptList.push(p);
+      }
     });
-
-    e.receiptPhotos = receiptList;
-    e.receiptPhoto = receiptList[0];
 
     const photoPayload = {
       receiptPhotos: receiptList,
-      receiptPhoto: receiptList[0]
+      receiptPhoto: receiptList[0] || capturedReceiptBase64
     };
     if (kPhotos.length > 0) {
       photoPayload.kmPhotos = kPhotos;
@@ -22301,24 +22373,41 @@ function submitFillReceiptAction() {
 
     const cleanEntryPayload = JSON.parse(JSON.stringify(e));
 
-    return entriesRef.child(newRespNum).set(cleanEntryPayload).then(() => {
-      const writes = [
-        driverRequestsRef.child(activeFillReceiptKey).update({
-          status: 'filled',
-          processedAt: firebase.database.ServerValue.TIMESTAMP,
-          filledAt: firebase.database.ServerValue.TIMESTAMP,
-          linkedResponseNumber: newRespNum,
-          hasReceiptPhoto: true,
-          receiptPhoto: null,
-          receiptPhotos: null
-        }),
-        db.ref('driverRequestPhotos').child(activeFillReceiptKey).update(photoPayload),
-        db.ref('entryPhotos').child(newRespNum).set(photoPayload)
-      ];
-      return Promise.all(writes);
-    });
+    const writePromises = [
+      entriesRef.child(newRespNum).set(cleanEntryPayload),
+      db.ref('entryPhotos').child(newRespNum).set(photoPayload),
+      driverRequestsRef.child(activeFillReceiptKey).update({
+        status: 'filled',
+        processedAt: firebase.database.ServerValue.TIMESTAMP,
+        filledAt: firebase.database.ServerValue.TIMESTAMP,
+        linkedResponseNumber: newRespNum,
+        hasReceiptPhoto: true,
+        receiptPhoto: null,
+        receiptPhotos: null
+      }),
+      db.ref('driverRequestPhotos').child(activeFillReceiptKey).update(photoPayload)
+    ];
+
+    // Safety timeout: 10s max so user is NEVER stuck on "Saving..."
+    return Promise.race([
+      Promise.all(writePromises),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Save request timed out. Please check internet connection and try again.")), 10000))
+    ]);
   })
   .then(() => {
+    isSubmittingFillReceipt = false;
+    
+    // Update local in-memory request object immediately
+    if (req) {
+      req.status = 'filled';
+      req.linkedResponseNumber = newRespNum;
+      req.filledAt = Date.now();
+      req.hasReceiptPhoto = true;
+    }
+    if (typeof renderDriverRequestsList === 'function') {
+      renderDriverRequestsList();
+    }
+
     const avg = vehicleTypes[e.vehicleType.toUpperCase()] || '';
     const formattedTime = e.time ? (typeof convertTo24Hour === 'function' ? convertTo24Hour(e.time) : e.time) : '';
     const copyText = `🔔Diesel Request📢
@@ -22350,7 +22439,7 @@ Response #${newRespNum}
       submitBtn.disabled = false;
       submitBtn.innerHTML = '<i class="fas fa-check-circle"></i> Successfully Fill';
     }
-    toast.err("Error saving diesel fill: " + err.message);
+    toast.err("Error saving diesel fill: " + (err ? err.message : 'Unknown error'));
   });
 }
 
