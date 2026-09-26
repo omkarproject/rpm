@@ -97,6 +97,15 @@
       background-color: #ffffff;
     }
 
+    .calc-input:disabled,
+    .calc-input.autofill-locked {
+      background-color: #e2e8f0 !important;
+      color: #475569 !important;
+      cursor: not-allowed !important;
+      opacity: 0.85 !important;
+      border-color: #cbd5e1 !important;
+    }
+
     .calc-label {
       display: block;
       font-size: 0.7rem;
@@ -1297,6 +1306,23 @@
       }
     });
 
+    // Lock/Unlock field when auto-filled from vehicle data
+    function setAutofillLock(fieldId, locked) {
+      const el = document.getElementById(fieldId);
+      if (!el) return;
+      if (locked) {
+        el.disabled = true;
+        el.setAttribute('tabindex', '-1');
+        el.title = "Vehicle data se auto-filled hai (Locked)";
+        el.classList.add('autofill-locked');
+      } else {
+        el.disabled = false;
+        el.removeAttribute('tabindex');
+        el.removeAttribute('title');
+        el.classList.remove('autofill-locked');
+      }
+    }
+
     // Auto Set Date & Time
     function setDefaults() {
       const now = new Date();
@@ -1304,6 +1330,9 @@
       document.getElementById('req-date').value = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
       document.getElementById('req-time').value = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
       document.getElementById('req-vehicle-state').value = "MH";
+      setAutofillLock('req-vtype', false);
+      setAutofillLock('req-vendor', false);
+      if (typeof lastLiveLoadedVehicle !== 'undefined') lastLiveLoadedVehicle = '';
     }
     setDefaults();
 
@@ -2824,6 +2853,16 @@
                 if (typeof onCalcVehicleInput === 'function') onCalcVehicleInput();
               }
             }
+          } else {
+            // New vehicle or no summary data found in Firebase
+            const trip = typeof getVehicleLatestTrip === 'function' ? getVehicleLatestTrip(cleanNo) : null;
+            const cached = vehicleAutofillMap[cleanNo];
+            if ((cached && (cached.vehicleType || cached.vendorName)) || (trip && (trip.vehicleType || trip.vendorName))) {
+              applyVehicleAutofillFields(cleanNo);
+            } else {
+              setAutofillLock('req-vtype', false);
+              setAutofillLock('req-vendor', false);
+            }
           }
 
           // Hide overlay immediately
@@ -2873,29 +2912,43 @@
 
     // Applies vehicle type + vendor for a vehicle number
     function applyVehicleAutofillFields(cleanVal) {
-      if (!cleanVal) return;
+      if (!cleanVal) {
+        setAutofillLock('req-vtype', false);
+        setAutofillLock('req-vendor', false);
+        return;
+      }
       const match = vehicleAutofillMap[cleanVal] || {};
       const vtypeSelect = document.getElementById('req-vtype');
       const knownType = match.vehicleType || vehicleToTypeMap[cleanVal] || '';
-      if (vtypeSelect && knownType) {
-        if (!selectOptionLoose(vtypeSelect, knownType)) {
-          const opt = document.createElement('option');
-          opt.value = knownType;
-          opt.textContent = knownType;
-          vtypeSelect.appendChild(opt);
+      if (vtypeSelect) {
+        if (knownType) {
+          if (!selectOptionLoose(vtypeSelect, knownType)) {
+            const opt = document.createElement('option');
+            opt.value = knownType;
+            opt.textContent = knownType;
+            vtypeSelect.appendChild(opt);
+          }
           vtypeSelect.value = knownType;
+          setAutofillLock('req-vtype', true);
+        } else {
+          setAutofillLock('req-vtype', false);
         }
       }
 
       const vendorSelect = document.getElementById('req-vendor');
       const knownVendor = match.vendorName || '';
-      if (vendorSelect && knownVendor) {
-        if (!selectOptionLoose(vendorSelect, knownVendor)) {
-          const opt = document.createElement('option');
-          opt.value = knownVendor;
-          opt.textContent = knownVendor;
-          vendorSelect.appendChild(opt);
+      if (vendorSelect) {
+        if (knownVendor) {
+          if (!selectOptionLoose(vendorSelect, knownVendor)) {
+            const opt = document.createElement('option');
+            opt.value = knownVendor;
+            opt.textContent = knownVendor;
+            vendorSelect.appendChild(opt);
+          }
           vendorSelect.value = knownVendor;
+          setAutofillLock('req-vendor', true);
+        } else {
+          setAutofillLock('req-vendor', false);
         }
       }
 
@@ -2937,12 +2990,24 @@
         if (fullVeh !== lastLiveLoadedVehicle) {
           lastLiveLoadedVehicle = fullVeh;
           lastVehicleQuery = fullVeh;
+          const cached = vehicleAutofillMap[fullVeh];
+          const trip = typeof getVehicleLatestTrip === 'function' ? getVehicleLatestTrip(fullVeh) : null;
+          if ((cached && (cached.vehicleType || cached.vendorName)) || (trip && (trip.vehicleType || trip.vendorName))) {
+            applyVehicleAutofillFields(fullVeh);
+          } else {
+            // New or unknown vehicle so far -> keep unlocked!
+            setAutofillLock('req-vtype', false);
+            setAutofillLock('req-vendor', false);
+          }
           fetchVehicleDataRealtime(fullVeh);
         }
       } else {
         if (lastLiveLoadedVehicle && !document.getElementById('req-vehicle-number')?.value) {
           lastLiveLoadedVehicle = '';
         }
+        // Vehicle number is incomplete or cleared -> unlock fields!
+        setAutofillLock('req-vtype', false);
+        setAutofillLock('req-vendor', false);
       }
       if (typeof updateMonthlyDueDisplay === 'function') {
         updateMonthlyDueDisplay();
