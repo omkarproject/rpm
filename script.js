@@ -20476,6 +20476,70 @@ function getAutoApproveBadgeHtml(req) {
   `;
 }
 
+// Format Vehicle Report Date Range (e.g. 01 Sep 2026 to 26 Sep 2026 (Current Month))
+function formatVehicleReportDateRange(r) {
+  if (!r) return '-';
+
+  const formatYMD = (ymd) => {
+    if (!ymd) return '';
+    const parts = String(ymd).split('-');
+    if (parts.length === 3) {
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const mIdx = parseInt(parts[1], 10) - 1;
+      const mName = monthNames[mIdx] || parts[1];
+      return `${parts[2]} ${mName} ${parts[0]}`;
+    }
+    return ymd;
+  };
+
+  const isCurrentMonth = (r.dateOption === 'current_month' || r.rangeType === 'current_month' || r.dateMode === 'current_month');
+
+  if (isCurrentMonth) {
+    const subTime = r.createdAt || r.requestedAt || r.submittedAt || Date.now();
+    const d = new Date(subTime);
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const mName = monthNames[d.getMonth()];
+    const yr = d.getFullYear();
+    const subDay = String(d.getDate()).padStart(2, '0');
+
+    // 1st date of current month to Submission Date (last date)
+    const fromStr = r.fromDate ? formatYMD(r.fromDate) : `01 ${mName} ${yr}`;
+    const toStr = `${subDay} ${mName} ${yr}`;
+    return `${fromStr} to ${toStr} (Current Month)`;
+  }
+
+  // Custom date range
+  if (r.fromDate && r.toDate) {
+    return `${formatYMD(r.fromDate)} to ${formatYMD(r.toDate)}`;
+  }
+  if (r.startDate && r.endDate) {
+    return `${formatYMD(r.startDate)} to ${formatYMD(r.endDate)}`;
+  }
+  if (r.dateRangeLabel) {
+    return r.dateRangeLabel;
+  }
+  return '-';
+}
+
+// Format Vehicle Report Submission Date (e.g. 26 Sep 2026, 04:39 pm)
+function formatVehicleReportSubmissionDate(r) {
+  if (!r) return '-';
+  const subTimestamp = r.createdAt || r.requestedAt || r.submittedAt;
+  if (!subTimestamp) return '-';
+  const d = new Date(subTimestamp);
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const day = String(d.getDate()).padStart(2, '0');
+  const mon = monthNames[d.getMonth()];
+  const yr = d.getFullYear();
+  let hrs = d.getHours();
+  const mins = String(d.getMinutes()).padStart(2, '0');
+  const ampm = hrs >= 12 ? 'pm' : 'am';
+  hrs = hrs % 12;
+  hrs = hrs ? hrs : 12;
+  const hrsStr = String(hrs).padStart(2, '0');
+  return `${day} ${mon} ${yr}, ${hrsStr}:${mins} ${ampm}`;
+}
+
 // Render driver requests table list
 function renderDriverRequestsList() {
   const tbody = document.getElementById('driver-requests-tbody');
@@ -20562,13 +20626,8 @@ function renderDriverRequestsList() {
     tr.className = "hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-all border-b border-slate-200/40 dark:border-slate-800/30";
     
     if (r.isVehicleReportRequest) {
-      const dateFormatted = r.requestedAt ? (typeof formatDateTime === 'function' ? formatDateTime(r.requestedAt) : new Date(r.requestedAt).toLocaleString('en-IN')) : '-';
-      let rangeText = '';
-      if (r.rangeType === 'current_month') {
-        rangeText = `Current Month (${r.rangeMonth || 'Active'})`;
-      } else {
-        rangeText = `${r.startDate || ''} to ${r.endDate || ''}`;
-      }
+      const dateFormatted = formatVehicleReportSubmissionDate(r);
+      const rangeText = formatVehicleReportDateRange(r);
 
       tr.innerHTML = `
         <td class="px-3 py-4 w-10 text-center">
@@ -21329,12 +21388,8 @@ function renderNotificationDropdown(actionRequests, pendingUsers = [], pendingVe
     const driverName = rep.name || 'User';
     const mobileNo = rep.mobile || '-';
     const currentKm = rep.currentKm ? `${Number(rep.currentKm).toLocaleString('en-IN')} KM` : '-';
-    let dateRangeStr = '';
-    if (rep.rangeType === 'current_month') {
-      dateRangeStr = `Current Month (${rep.rangeMonth || 'Active'})`;
-    } else {
-      dateRangeStr = `${rep.startDate || ''} to ${rep.endDate || ''}`;
-    }
+    const dateRangeStr = formatVehicleReportDateRange(rep);
+    const subDateStr = formatVehicleReportSubmissionDate(rep);
 
     html += `
       <div class="glass-panel p-5 rounded-2xl border border-indigo-500/30 dark:border-indigo-500/20 bg-indigo-500/5 shadow-[0_8px_20px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transition-all duration-300 relative" onclick="event.stopPropagation();">
@@ -21365,6 +21420,12 @@ function renderNotificationDropdown(actionRequests, pendingUsers = [], pendingVe
             <i class="fas fa-calendar-alt text-indigo-500 dark:text-indigo-400"></i>
             <span class="font-bold text-indigo-600 dark:text-indigo-300">${dateRangeStr}</span>
           </div>
+          ${subDateStr && subDateStr !== '-' ? `
+          <div class="text-[9px] text-slate-400 flex items-center gap-1">
+            <i class="fas fa-clock text-slate-400"></i>
+            <span>Requested: <strong class="text-slate-500 dark:text-slate-300 font-semibold">${subDateStr}</strong></span>
+          </div>
+          ` : ''}
         </div>
 
         <div class="flex gap-2">
@@ -23487,9 +23548,8 @@ window.renderVehicleReportRequestsList = function() {
       badgeText = '⌛ Expired (>24h)';
     }
 
-    const createdTimeStr = req.createdAt ? new Date(req.createdAt).toLocaleString('en-IN', {
-      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true
-    }) : 'N/A';
+    const createdTimeStr = formatVehicleReportSubmissionDate(req);
+    const dateRangeDisplay = formatVehicleReportDateRange(req);
 
     // 24hr Live Countdown Timer Display for Approved requests
     let timerOrExpiryBadge = '';
@@ -23551,7 +23611,7 @@ window.renderVehicleReportRequestsList = function() {
             </div>
             <div>
               <span class="text-slate-400 block text-[9px] font-semibold uppercase">Date Range</span>
-              <span class="font-bold text-emerald-600 dark:text-emerald-400">${req.dateRangeLabel || req.dateRangeText || (req.dateOption === 'current_month' || req.dateMode === 'current_month' ? 'Current Month' : 'Custom')}</span>
+              <span class="font-bold text-emerald-600 dark:text-emerald-400">${dateRangeDisplay}</span>
             </div>
           </div>
           ${req.rejectReason ? `

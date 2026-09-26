@@ -1360,14 +1360,15 @@
       let dateRangeLabel = '';
 
       const now = new Date();
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+
       if (dateOption === 'current_month') {
-        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-        dateRangeLabel = `Current Month (${monthNames[now.getMonth()]} ${now.getFullYear()})`;
-        const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, '0');
         fromDate = `${year}-${month}-01`;
-        const lastDay = new Date(year, now.getMonth() + 1, 0).getDate();
-        toDate = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
+        toDate = `${year}-${month}-${day}`; // 1st date of month to Submission Date (today)
+        dateRangeLabel = `01 ${monthNames[now.getMonth()]} ${year} to ${day} ${monthNames[now.getMonth()]} ${year} (Current Month)`;
       } else {
         fromDate = document.getElementById('rep-req-from-date')?.value;
         toDate = document.getElementById('rep-req-to-date')?.value;
@@ -1379,7 +1380,15 @@
           alert("From Date, To Date se baad ki nahi ho sakti!");
           return;
         }
-        dateRangeLabel = `${fromDate} to ${toDate}`;
+        const formatYMD = (ymd) => {
+          const parts = (ymd || '').split('-');
+          if (parts.length === 3) {
+            const mIdx = parseInt(parts[1], 10) - 1;
+            return `${parts[2]} ${monthNames[mIdx] || parts[1]} ${parts[0]}`;
+          }
+          return ymd;
+        };
+        dateRangeLabel = `${formatYMD(fromDate)} to ${formatYMD(toDate)}`;
       }
 
       btn.disabled = true;
@@ -1402,6 +1411,8 @@
         toDate: toDate,
         status: 'pending',
         createdAt: createdAt,
+        requestedAt: createdAt,
+        submittedAt: createdAt,
         expiresAt: expiresAt
       };
 
