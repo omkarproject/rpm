@@ -1764,12 +1764,12 @@
       calcEntries.forEach(e => {
         const amt = parseFloat(String(e.dieselAmount || e.amount || 0).replace(/[^0-9.\-]/g, '')) || 0;
         totalDieselAmount += amt;
-        const lit = parseFloat(String(e.litres || e.litre || 0).replace(/[^0-9.\-]/g, '')) || 0;
+        let lit = parseFloat(String(e.litres || e.litre || 0).replace(/[^0-9.\-]/g, '')) || 0;
+        if (lit <= 0 && amt > 0 && activeRate > 0) {
+          lit = amt / activeRate;
+        }
         totalLitres += lit;
       });
-      if (totalLitres <= 0 && activeRate > 0) {
-        totalLitres = totalDieselAmount / activeRate;
-      }
 
       const totalKm = (endKm > firstKm) ? (endKm - firstKm) : 0;
       const avgMileage = totalLitres > 0 && totalKm > 0 ? (totalKm / totalLitres).toFixed(2) : '-';
@@ -1808,7 +1808,19 @@
         }
       });
 
-      return { firstKm, endKm, totalKm, totalDieselAmount, totalLitres, avgMileage, leftovers, activeRate, mileage };
+      const expectedCost = (mileage > 0 && totalKm > 0 && activeRate > 0) ? (totalKm / mileage) * activeRate : 0;
+      const dueVal = totalDieselAmount - expectedCost;
+
+      return { firstKm, endKm, totalKm, totalDieselAmount, totalLitres, avgMileage, leftovers, activeRate, mileage, expectedCost, dueVal };
+    };
+
+    window.getDriverReportSummaryHtml = function(calc, totalEntries) {
+      const isDue = (calc.dueVal || 0) >= 0;
+      const dueColor = isDue ? '#34d399' : '#f43f5e';
+      const dueAbs = Math.abs(Math.round(calc.dueVal || 0)).toLocaleString('en-IN');
+      const dueText = isDue ? `Due: ₹${dueAbs}` : `Overdue: -₹${dueAbs}`;
+
+      return `Total Entries: ${totalEntries} | Total Fuel: ₹${Math.round(calc.totalDieselAmount).toLocaleString('en-IN')} | Total Run: ${Math.round(calc.totalKm).toLocaleString('en-IN')} KM | <span style="color:${dueColor} !important;font-weight:800;">${dueText}</span>`;
     };
 
     window.renderDriverReportTableRows = function(calc) {
@@ -1825,12 +1837,19 @@
         const tr = document.createElement('tr');
         const isExcl = excl.has(idx);
         tr.className = isExcl ? 'row-excluded' : '';
-        tr.style.cssText = isExcl ? 'background-color: rgba(244, 63, 94, 0.15) !important;' : '';
+        tr.style.cssText = isExcl
+          ? 'background-color: rgba(244, 63, 94, 0.15) !important;'
+          : (e.isCurrentKmRow ? 'background-color: rgba(59, 130, 246, 0.08) !important;' : '');
 
         const dieselVal = parseFloat(String(e.dieselAmount || e.amount || 0).replace(/[^0-9.\-]/g, '')) || 0;
-        const statusBadge = isExcl
-          ? `<span style="background-color:rgba(244,63,94,0.15);color:#fb7185;border:1px solid rgba(244,63,94,0.3);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;margin-left:6px;display:inline-flex;align-items:center;gap:4px;"><i class="fas fa-exclamation-triangle" style="font-size:9px;"></i> EXCLUDED</span>`
-          : `<span style="background-color:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.3);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;margin-left:6px;display:inline-flex;align-items:center;gap:4px;"><i class="fas fa-gas-pump" style="font-size:9px;"></i> DIESEL</span>`;
+        let statusBadge = '';
+        if (isExcl) {
+          statusBadge = `<span style="background-color:rgba(244,63,94,0.15);color:#fb7185;border:1px solid rgba(244,63,94,0.3);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;margin-left:6px;display:inline-flex;align-items:center;gap:4px;"><i class="fas fa-exclamation-triangle" style="font-size:9px;"></i> EXCLUDED</span>`;
+        } else if (e.isCurrentKmRow) {
+          statusBadge = `<span style="background-color:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.3);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;margin-left:6px;display:inline-flex;align-items:center;gap:4px;"><i class="fas fa-tachometer-alt" style="font-size:9px;"></i> CURRENT KM</span>`;
+        } else {
+          statusBadge = `<span style="background-color:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.3);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;margin-left:6px;display:inline-flex;align-items:center;gap:4px;"><i class="fas fa-gas-pump" style="font-size:9px;"></i> DIESEL</span>`;
+        }
 
         const leftoverVal = calc.leftovers[idx];
         let leftoverHtml = '';
@@ -1886,7 +1905,7 @@
       if (dAvg) dAvg.textContent = `${calc.avgMileage} km/l`;
 
       const dSummary = document.getElementById('driver-report-summary-text');
-      if (dSummary) dSummary.textContent = `Total Entries: ${window.driverReportSorted.length} | Total Fuel: ₹${Math.round(calc.totalDieselAmount).toLocaleString('en-IN')} | Total Run: ${Math.round(calc.totalKm).toLocaleString('en-IN')} KM`;
+      if (dSummary) dSummary.innerHTML = getDriverReportSummaryHtml(calc, window.driverReportSorted.length);
 
       renderDriverReportTableRows(calc);
     };
@@ -1958,6 +1977,45 @@
         return;
       }
 
+      // Check if driver submitted a Current KM that is higher than the last entry KM
+      const reqCurrentKm = parseFloat(String(reqData.currentKm || 0).replace(/[^0-9.\-]/g, '')) || 0;
+      let lastEntryKm = 0;
+      filtered.forEach(e => {
+        const k = parseFloat(String(e.currentKm || e.km || e.endKm || 0).replace(/[^0-9.\-]/g, '')) || 0;
+        if (k > lastEntryKm) lastEntryKm = k;
+      });
+
+      if (reqCurrentKm > lastEntryKm) {
+        let reqDateFormatted = '';
+        if (reqData.toDate) {
+          const parts = reqData.toDate.split('-');
+          if (parts.length === 3) reqDateFormatted = `${parts[2]}-${parts[1]}-${parts[0]}`;
+        }
+        if (!reqDateFormatted) {
+          const dObj = new Date(reqData.submittedAt || reqData.requestedAt || reqData.createdAt || Date.now());
+          reqDateFormatted = `${String(dObj.getDate()).padStart(2, '0')}-${String(dObj.getMonth() + 1).padStart(2, '0')}-${dObj.getFullYear()}`;
+        }
+
+        const virtualCurrentKmRow = {
+          key: 'virtual_current_km_' + (reqData.code || Date.now()),
+          date: reqDateFormatted,
+          vehicleNo: reqData.vehicleNo,
+          fromLocation: String(reqCurrentKm),
+          from: String(reqCurrentKm),
+          lastLocation: String(reqCurrentKm),
+          to: String(reqCurrentKm),
+          last: String(reqCurrentKm),
+          currentKm: reqCurrentKm,
+          km: reqCurrentKm,
+          dieselAmount: 0,
+          amount: 0,
+          litres: 0,
+          litre: 0,
+          isCurrentKmRow: true
+        };
+        filtered.push(virtualCurrentKmRow);
+      }
+
       window.driverReportSorted = filtered;
       window.driverReportReqData = reqData;
       window.driverReportExcludedIndices = new Set();
@@ -2006,7 +2064,7 @@
 
           <!-- MATCHING ENTRIES HISTORY TABLE (EXACT 3RD IMAGE DESIGN) -->
           <div class="m-history-card">
-            <!-- Header with Title and Export Buttons -->
+            <!-- Header with Title (Export buttons removed as requested) -->
             <div class="m-history-header">
               <div style="display:flex;align-items:center;gap:0.625rem;">
                 <div style="width:2rem;height:2rem;border-radius:0.75rem;background-color:rgba(59,130,246,0.2);color:#60a5fa;display:flex;align-items:center;justify-content:center;font-size:0.875rem;font-weight:900;flex-shrink:0;">
@@ -2015,15 +2073,6 @@
                 <h3 class="m-history-title">
                   Matching Entries History
                 </h3>
-              </div>
-              <!-- Action Buttons -->
-              <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
-                <button type="button" onclick="exportDriverVehicleReportExcel()" class="m-history-btn-excel">
-                  <i class="fas fa-file-excel"></i> Export Excel
-                </button>
-                <button type="button" onclick="exportDriverVehicleReportPDF()" class="m-history-btn-pdf">
-                  <i class="fas fa-file-pdf"></i> Export PDF Report
-                </button>
               </div>
             </div>
 
@@ -2055,7 +2104,9 @@
 
             <!-- Footer Summary -->
             <div class="m-history-footer">
-              <div id="driver-report-summary-text" style="color:#94a3b8;font-weight:600;">Total Entries: ${filtered.length} | Total Fuel: ₹${Math.round(calc.totalDieselAmount).toLocaleString('en-IN')}</div>
+              <div id="driver-report-summary-text" style="color:#94a3b8;font-weight:600;">
+                ${getDriverReportSummaryHtml(calc, filtered.length)}
+              </div>
               <button type="button" onclick="goToEnterCodeSubTab()" style="color:#60a5fa;font-weight:700;background:none;border:none;cursor:pointer;text-decoration:underline;">
                 ← Check Another Code
               </button>
