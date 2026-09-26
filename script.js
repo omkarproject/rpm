@@ -9091,6 +9091,7 @@ function hideDmProgressModal() {
   refreshNotificationDropdownWithActiveTask();
 }
 window.hideDmProgressModal = hideDmProgressModal;
+window.minimizeDmProgressModal = hideDmProgressModal;
 
 function reopenDmProgressModal() {
   isDmProgressModalMinimized = false;
