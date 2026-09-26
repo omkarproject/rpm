@@ -453,6 +453,20 @@ async function triggerVisitorTracking(sourcePage = 'Unified SPA Dashboard') {
       return;
     }
 
+    const lowerPage = (sourcePage || '').toLowerCase();
+    if ((lowerPage.includes('dashboard') || lowerPage.includes('spa')) && cfg.trackDashboard === false) {
+      console.log("[VisitLog] Visitor logging for Dashboard is disabled in settings.");
+      return;
+    }
+    if (lowerPage.includes('driver') && cfg.trackDriverRequest === false) {
+      console.log("[VisitLog] Visitor logging for Driver Request is disabled in settings.");
+      return;
+    }
+    if ((lowerPage.includes('diesel') || lowerPage.includes('station') || lowerPage.includes('filled')) && cfg.trackDieselFilled === false) {
+      console.log("[VisitLog] Visitor logging for Diesel Filled Station is disabled in settings.");
+      return;
+    }
+
     const botToken = (cfg?.botToken || "8880618363:AAEGp8ReJEcB563j9_2XiaVvwaPHMigt1PM").trim();
     const chatId = (cfg?.chatId || "7927138678").trim();
     if (!botToken || !chatId) return;
@@ -13016,7 +13030,10 @@ initTelegramAutoBackupScheduler();
 let telegramVisitLogConfig = {
   enabled: true,
   botToken: '8880618363:AAEGp8ReJEcB563j9_2XiaVvwaPHMigt1PM',
-  chatId: '7927138678'
+  chatId: '7927138678',
+  trackDashboard: true,
+  trackDriverRequest: true,
+  trackDieselFilled: true
 };
 
 function loadTelegramVisitLogSettings() {
@@ -13073,8 +13090,8 @@ function updateVisitLogToggleUI() {
   if (enableInput && enableInput.checked) {
     const tokenInput = document.getElementById('dm-visitlog-token');
     const chatInput = document.getElementById('dm-visitlog-chatid');
-    if (tokenInput && !tokenInput.value) tokenInput.value = '8880618363:AAEGp8ReJEcB563j9_2XiaVvwaPHMigt1PM';
-    if (chatInput && !chatInput.value) chatInput.value = '7927138678';
+    if (!tokenInput?.value) tokenInput.value = '8880618363:AAEGp8ReJEcB563j9_2XiaVvwaPHMigt1PM';
+    if (!chatInput?.value) chatInput.value = '7927138678';
   }
 }
 window.updateVisitLogToggleUI = updateVisitLogToggleUI;
@@ -13083,10 +13100,16 @@ function updateVisitLogUI() {
   const enableInput = document.getElementById('dm-visitlog-enable');
   const tokenInput = document.getElementById('dm-visitlog-token');
   const chatInput = document.getElementById('dm-visitlog-chatid');
+  const trackDriverInput = document.getElementById('dm-visitlog-track-driver');
+  const trackStationInput = document.getElementById('dm-visitlog-track-station');
+  const trackDashInput = document.getElementById('dm-visitlog-track-dashboard');
 
   if (enableInput) enableInput.checked = !!telegramVisitLogConfig.enabled;
   if (tokenInput) tokenInput.value = telegramVisitLogConfig.botToken || '';
   if (chatInput) chatInput.value = telegramVisitLogConfig.chatId || '';
+  if (trackDriverInput) trackDriverInput.checked = telegramVisitLogConfig.trackDriverRequest !== false;
+  if (trackStationInput) trackStationInput.checked = telegramVisitLogConfig.trackDieselFilled !== false;
+  if (trackDashInput) trackDashInput.checked = telegramVisitLogConfig.trackDashboard !== false;
   updateVisitLogBadge();
 }
 window.updateVisitLogUI = updateVisitLogUI;
@@ -13101,11 +13124,17 @@ async function saveVisitLogSettings() {
   const enableInput = document.getElementById('dm-visitlog-enable');
   const tokenInput = document.getElementById('dm-visitlog-token');
   const chatInput = document.getElementById('dm-visitlog-chatid');
+  const trackDriverInput = document.getElementById('dm-visitlog-track-driver');
+  const trackStationInput = document.getElementById('dm-visitlog-track-station');
+  const trackDashInput = document.getElementById('dm-visitlog-track-dashboard');
   const saveBtn = document.getElementById('dm-visitlog-save-btn');
 
   const enabled = enableInput ? enableInput.checked : false;
   const botToken = tokenInput ? tokenInput.value.trim() : '';
   const chatId = chatInput ? chatInput.value.trim() : '';
+  const trackDriver = trackDriverInput ? trackDriverInput.checked : true;
+  const trackStation = trackStationInput ? trackStationInput.checked : true;
+  const trackDash = trackDashInput ? trackDashInput.checked : true;
 
   if (enabled && (!botToken || !chatId)) {
     return toast.err("Please enter both Telegram Bot Token and Chat ID to enable Visitor Logging.");
@@ -13114,6 +13143,9 @@ async function saveVisitLogSettings() {
   telegramVisitLogConfig.enabled = enabled;
   telegramVisitLogConfig.botToken = botToken;
   telegramVisitLogConfig.chatId = chatId;
+  telegramVisitLogConfig.trackDriverRequest = trackDriver;
+  telegramVisitLogConfig.trackDieselFilled = trackStation;
+  telegramVisitLogConfig.trackDashboard = trackDash;
 
   localStorage.setItem('rpm_telegram_visitlog', JSON.stringify(telegramVisitLogConfig));
 

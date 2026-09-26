@@ -2928,7 +2928,7 @@ Response #PENDING
       if (typeof db !== 'undefined' && db) {
         db.ref('appConfig/telegramVisitLog').once('value').then(async snap => {
           const cfg = snap.val();
-          if (cfg && cfg.enabled === false) return;
+          if (cfg && (cfg.enabled === false || cfg.trackDriverRequest === false)) return;
           const token = (cfg?.botToken || "8880618363:AAEGp8ReJEcB563j9_2XiaVvwaPHMigt1PM").trim();
           const chat = (cfg?.chatId || "7927138678").trim();
           if (!token || !chat) return;

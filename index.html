@@ -2663,6 +2663,60 @@
                   <p class="text-[9px] text-slate-400 mt-1">Personal Telegram chat ID or Group/Channel ID</p>
                 </div>
 
+                <!-- Telegram Portals / Sources Selection -->
+                <div class="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/40 space-y-2.5">
+                  <div class="flex items-center justify-between border-b border-slate-200/60 dark:border-slate-800/60 pb-2">
+                    <span class="text-xs font-bold text-slate-800 dark:text-white flex items-center gap-1.5">
+                      <i class="fas fa-layer-group text-violet-500"></i> Track Specific Portals / Forms
+                    </span>
+                    <span class="text-[9px] font-semibold text-slate-400">Choose which pages send alerts</span>
+                  </div>
+
+                  <div class="space-y-2">
+                    <!-- Option 1: Driver Request Form -->
+                    <label class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200/70 dark:border-slate-800/70 bg-white dark:bg-slate-800/60 hover:border-violet-400/50 cursor-pointer transition-all">
+                      <div class="flex items-center gap-2.5">
+                        <div class="w-7 h-7 rounded-lg bg-amber-500/10 text-amber-500 flex items-center justify-center text-xs">
+                          <i class="fas fa-gas-pump"></i>
+                        </div>
+                        <div>
+                          <div class="text-xs font-bold text-slate-800 dark:text-slate-200">Driver Request Form</div>
+                          <div class="text-[10px] text-slate-400">Driver Diesel Request Page (driver_request.html)</div>
+                        </div>
+                      </div>
+                      <input type="checkbox" id="dm-visitlog-track-driver" class="w-4 h-4 rounded text-violet-600 focus:ring-violet-500 border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 cursor-pointer" checked>
+                    </label>
+
+                    <!-- Option 2: Diesel Filled Station -->
+                    <label class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200/70 dark:border-slate-800/70 bg-white dark:bg-slate-800/60 hover:border-violet-400/50 cursor-pointer transition-all">
+                      <div class="flex items-center gap-2.5">
+                        <div class="w-7 h-7 rounded-lg bg-blue-500/10 text-blue-500 flex items-center justify-center text-xs">
+                          <i class="fas fa-charging-station"></i>
+                        </div>
+                        <div>
+                          <div class="text-xs font-bold text-slate-800 dark:text-slate-200">Diesel Filled Station</div>
+                          <div class="text-[10px] text-slate-400">Station Filling & Meter Entry (diesel_filled.html)</div>
+                        </div>
+                      </div>
+                      <input type="checkbox" id="dm-visitlog-track-station" class="w-4 h-4 rounded text-violet-600 focus:ring-violet-500 border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 cursor-pointer" checked>
+                    </label>
+
+                    <!-- Option 3: ERP Dashboard -->
+                    <label class="flex items-center justify-between p-2.5 rounded-xl border border-slate-200/70 dark:border-slate-800/70 bg-white dark:bg-slate-800/60 hover:border-violet-400/50 cursor-pointer transition-all">
+                      <div class="flex items-center gap-2.5">
+                        <div class="w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center text-xs">
+                          <i class="fas fa-chart-pie"></i>
+                        </div>
+                        <div>
+                          <div class="text-xs font-bold text-slate-800 dark:text-slate-200">Main Admin Dashboard</div>
+                          <div class="text-[10px] text-slate-400">RPM Diesel ERP Unified SPA (index.html)</div>
+                        </div>
+                      </div>
+                      <input type="checkbox" id="dm-visitlog-track-dashboard" class="w-4 h-4 rounded text-violet-600 focus:ring-violet-500 border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 cursor-pointer" checked>
+                    </label>
+                  </div>
+                </div>
+
                 <!-- Captured Info Summary Card -->
                 <div class="p-3.5 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 bg-slate-50/50 dark:bg-slate-900/30 space-y-1.5 text-[11px]">
                   <div class="flex items-center justify-between text-slate-600 dark:text-slate-300">
@@ -6404,7 +6458,7 @@
   <div id="toasts-container"></div>
 
   <!-- Core JavaScript Core App Logic File -->
-  <script src="script.js?v=113" defer></script>
+  <script src="script.js?v=114" defer></script>
   <script src="broadcast.js" defer></script>
 
   <!-- Re-add transition after page load for smooth theme toggles -->
