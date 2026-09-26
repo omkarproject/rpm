@@ -5,7 +5,38 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="google" content="notranslate">
   <title>RPM Diesel - Filling Station Panel</title>
-<link id="favicon-link" rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E⛽%3C/text%3E%3C/svg%3E">
+  <link id="favicon-link" rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E⛽%3C/text%3E%3C/svg%3E">
+  <script>
+    (function() {
+      try {
+        var raw = localStorage.getItem('rpm_app_branding');
+        if (raw) {
+          var bData = JSON.parse(raw);
+          if (bData) {
+            var b = bData.station || bData.all || bData;
+            if (b.appName) {
+              document.title = b.appName;
+              document.addEventListener('DOMContentLoaded', function() {
+                document.querySelectorAll('.sys-brand-name').forEach(function(el) {
+                  el.textContent = b.appName;
+                });
+              });
+            }
+            if (b.faviconUrl) {
+              var fav = document.getElementById('favicon-link');
+              if (fav) fav.href = b.faviconUrl;
+            }
+            if (b.logoUrl) {
+              var s = document.createElement('style');
+              s.id = 'early-brand-style';
+              s.innerHTML = '.sys-brand-logo { content: url("' + b.logoUrl + '") !important; }';
+              document.head.appendChild(s);
+            }
+          }
+        }
+      } catch(e) {}
+    })();
+  </script>
   
   <!-- Font & Icons -->
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -92,11 +123,12 @@
     <!-- Top Header (Compact & Mobile Optimized) -->
     <div class="glass-panel rounded-2xl md:rounded-3xl shadow-xl p-4 md:p-6 flex flex-row items-center justify-between gap-3 w-full">
       <div class="flex items-center gap-2.5 md:gap-4 overflow-hidden">
-        <div onclick="window.location.reload()" class="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center justify-center text-xl md:text-2xl shadow-inner shrink-0 animate-pulse cursor-pointer" title="Click to Reload">
-          <i class="fas fa-gas-pump"></i>
+        <div onclick="window.location.reload()" class="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center justify-center p-1 shadow-inner shrink-0 cursor-pointer overflow-hidden" title="Click to Reload">
+          <img src="../assets/images/logo.png" alt="Logo" class="sys-brand-logo max-w-full max-h-full object-contain" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';">
+          <i class="fas fa-gas-pump" style="display:none;"></i>
         </div>
         <div class="overflow-hidden">
-          <h1 class="text-sm md:text-xl font-extrabold text-white tracking-tight leading-tight truncate">RPM DIESEL FILLING STATION</h1>
+          <h1 class="text-sm md:text-xl font-extrabold text-white tracking-tight leading-tight truncate sys-brand-name">RPM DIESEL FILLING STATION</h1>
           <p class="text-[9px] md:text-xs text-slate-400 font-medium mt-0.5 md:mt-1 truncate">Manage dispatches and fills</p>
         </div>
       </div>
@@ -332,6 +364,55 @@
     // References
     const driverRequestsRef = db.ref('driverRequests');
     const entriesRef = db.ref('entries');
+
+    // Realtime Branding Listener for Diesel Filling Station
+    db.ref('settings/branding').on('value', snap => {
+      let data = snap.val() || {};
+      try { localStorage.setItem('rpm_app_branding', JSON.stringify(data)); } catch(e){}
+      if (data.appName || data.logoUrl || data.faviconUrl) {
+        if (!data.all && !data.admin && !data.driver && !data.station) {
+          data = { all: data };
+        }
+      }
+      const b = data.station || data.all || {};
+      
+      // Update Logo
+      if (b.logoUrl) {
+        document.querySelectorAll('.sys-brand-logo').forEach(img => {
+          img.src = b.logoUrl;
+          img.style.display = 'inline-block';
+        });
+        let earlyStyle = document.getElementById('early-brand-style');
+        if (!earlyStyle) {
+          earlyStyle = document.createElement('style');
+          earlyStyle.id = 'early-brand-style';
+          document.head.appendChild(earlyStyle);
+        }
+        earlyStyle.innerHTML = `.sys-brand-logo { content: url("${b.logoUrl}") !important; }`;
+      }
+      
+      // Update Favicon
+      if (b.faviconUrl) {
+        let fav = document.getElementById('favicon-link');
+        if (fav) {
+          fav.href = b.faviconUrl;
+        } else {
+          fav = document.createElement('link');
+          fav.id = 'favicon-link';
+          fav.rel = 'icon';
+          fav.href = b.faviconUrl;
+          document.head.appendChild(fav);
+        }
+      }
+
+      // Update App Title & Company Name
+      if (b.appName) {
+        document.title = b.appName;
+        document.querySelectorAll('.sys-brand-name').forEach(el => {
+          el.textContent = b.appName;
+        });
+      }
+    });
 
     // Global variables
     let driverRequestsList = [];
@@ -1800,6 +1881,6 @@
   }, 4000);
 
 </script>
-<script src="../broadcast.js?v=2" defer></script>
+<script src="../broadcast.js?v=3" defer></script>
 </body>
 </html>

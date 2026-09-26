@@ -6758,16 +6758,66 @@ function updateEmailPreviewTemplate() {
   document.getElementById('preview-mode-badge').textContent = "STANDBY";
 }
 
+/* ══════════════════════════════════════════════════════════
+   GLOBAL APP BRANDING & DYNAMIC USER EXPORT METADATA
+   ══════════════════════════════════════════════════════════ */
+function getGlobalAppCompanyName(fallback = 'RPM LOGISTICS PVT. LTD.') {
+  try {
+    if (typeof brandingDataCache !== 'undefined' && brandingDataCache) {
+      if (brandingDataCache.all && brandingDataCache.all.appName) return brandingDataCache.all.appName.trim();
+      if (brandingDataCache.admin && brandingDataCache.admin.appName) return brandingDataCache.admin.appName.trim();
+      if (brandingDataCache.appName) return brandingDataCache.appName.trim();
+    }
+    const raw = localStorage.getItem('rpm_app_branding');
+    if (raw) {
+      const b = JSON.parse(raw);
+      if (b.all && b.all.appName) return b.all.appName.trim();
+      if (b.admin && b.admin.appName) return b.admin.appName.trim();
+      if (b.appName) return b.appName.trim();
+    }
+  } catch(e) {}
+  return fallback;
+}
+window.getGlobalAppCompanyName = getGlobalAppCompanyName;
+
+function getCurrentExportUserInfo() {
+  const profile = window.currentUserProfileData || {};
+  const name = (profile.fullName || profile.name || getAuthSession('rpm_user_name') || 'Authorized User').trim();
+  const email = (profile.email || getAuthSession('rpm_user_email') || '').trim();
+  const mobile = (profile.mobile || profile.phone || getAuthSession('rpm_user_mobile') || '').trim();
+
+  let role = (profile.designation || profile.role || getAuthSession('rpm_user_role') || 'Diesel Monitoring Incharge').trim();
+  if (role.toLowerCase() === 'admin' || role.toLowerCase() === 'superadmin') {
+    role = 'System Administrator';
+  } else if (role.toLowerCase() === 'user' || role.toLowerCase() === 'diesel incharge') {
+    role = 'Diesel Monitoring Incharge';
+  }
+
+  const companyName = getGlobalAppCompanyName('RPM LOGISTICS PVT. LTD.');
+
+  return {
+    name,
+    email,
+    mobile,
+    role,
+    companyName
+  };
+}
+window.getCurrentExportUserInfo = getCurrentExportUserInfo;
+
 /* ──────────────────────────────────────────────────────────
    16A. DAILY REPORT HTML EMAIL GENERATION TEMPLATE
    ────────────────────────────────────────────────────────── */
 function getDailyReportEmailHTML(dateLong) {
+  const exportUser = getCurrentExportUserInfo();
+  const mobileDisplay = exportUser.mobile ? (exportUser.mobile.startsWith('+') ? exportUser.mobile : ('+91 ' + exportUser.mobile)) : '';
+
   return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bhiwandi Diesel Report — RPM Logistics</title>
+  <title>Daily Diesel Report — ${exportUser.companyName}</title>
 </head>
 <body style="margin:0;padding:0;background-color:#f4f4f7;font-family:Arial,sans-serif;-webkit-text-size-adjust:none;">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f4f4f7;padding:20px 10px;">
@@ -6777,8 +6827,8 @@ function getDailyReportEmailHTML(dateLong) {
           <!-- Header -->
           <tr>
             <td bgcolor="#b30000" style="padding:28px 24px;text-align:center;background-color:#b30000;">
-              <div style="font-size:12px;font-weight:bold;color:#ffd54f;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;">RPM LOGISTICS PVT. LTD.</div>
-              <div style="font-size:24px;font-weight:bold;color:#ffffff;margin:0;">🚛 BHIWANDI DIESEL REPORT</div>
+              <div style="font-size:12px;font-weight:bold;color:#ffd54f;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;">${exportUser.companyName}</div>
+              <div style="font-size:24px;font-weight:bold;color:#ffffff;margin:0;">🚛 DAILY DIESEL REPORT</div>
               <div style="font-size:11px;color:#ffcdd2;letter-spacing:1px;margin-top:6px;text-transform:uppercase;">Daily Fuel Monitoring & Operational Report</div>
             </td>
           </tr>
@@ -6798,7 +6848,7 @@ function getDailyReportEmailHTML(dateLong) {
             <td style="padding:28px 24px;font-size:15px;line-height:24px;color:#2d3748;">
               <p style="margin:0 0 16px 0;font-weight:bold;color:#b30000;font-size:16px;">Dear Sir/Madam,</p>
               <p style="margin:0 0 14px 0;">I hope this email finds you well.</p>
-              <p style="margin:0 0 14px 0;">Please find attached today's <strong>Daily Diesel Monitoring Report</strong> for <strong>Bhiwandi</strong> operations. The report covers vehicle-wise fuel consumption, mileage tracking, and operational summary for the day.</p>
+              <p style="margin:0 0 14px 0;">Please find attached today's <strong>Daily Diesel Monitoring Report</strong>. The report covers vehicle-wise fuel consumption, mileage tracking, and operational summary for the day.</p>
               <p style="margin:0 0 14px 0;">Kindly review the attached Excel sheet for detailed vehicle-wise data. In case of any discrepancies or queries, please feel free to reach out.</p>
               <p style="margin:0 0 24px 0;">Your feedback and acknowledgement on the same shall be appreciated.</p>
               
@@ -6829,19 +6879,19 @@ function getDailyReportEmailHTML(dateLong) {
               
               <!-- Regards -->
               <p style="margin:0 0 4px 0;color:#718096;font-size:14px;">Regards,</p>
-              <p style="margin:0 0 2px 0;font-size:18px;font-weight:bold;color:#b30000;">ANANT KUMAR YADAV</p>
+              <p style="margin:0 0 2px 0;font-size:18px;font-weight:bold;color:#b30000;">${exportUser.name.toUpperCase()}</p>
               <p style="margin:0 0 10px 0;font-size:13px;color:#4a5568;line-height:18px;">
-                Diesel Monitoring Incharge<br>
-                RPM Logistics Pvt. Ltd.
+                ${exportUser.role}<br>
+                ${exportUser.companyName}${exportUser.email ? `<br><span style="font-size:11px;color:#718096;">✉️ ${exportUser.email}</span>` : ''}
               </p>
-              <span style="display:inline-block;padding:6px 12px;background-color:#fff5f5;border:1px solid #fed7d7;border-radius:4px;font-size:13px;font-weight:bold;color:#c53030;">📞 +91 8371838314</span>
+              ${mobileDisplay ? `<span style="display:inline-block;padding:6px 12px;background-color:#fff5f5;border:1px solid #fed7d7;border-radius:4px;font-size:13px;font-weight:bold;color:#c53030;">📞 ${mobileDisplay}</span>` : ''}
             </td>
           </tr>
           <!-- Footer -->
           <tr>
             <td bgcolor="#1a202c" style="padding:24px;text-align:center;background-color:#1a202c;font-size:11px;color:#a0aec0;line-height:18px;">
-              <div style="font-size:16px;font-weight:bold;color:#f7fafc;margin-bottom:6px;"><span style="color:#ef5350;">RPM</span> LOGISTICS PVT. LTD.</div>
-              <div>Bhiwandi Operations • Diesel Monitoring Division</div>
+              <div style="font-size:16px;font-weight:bold;color:#f7fafc;margin-bottom:6px;">${exportUser.companyName}</div>
+              <div>Operations Division • Diesel Monitoring Division</div>
               <div style="width:40px;height:1px;background-color:#4a5568;margin:12px auto;"></div>
               <div>This email contains official diesel monitoring records and supporting documents.<br>For internal verification and record purposes only.</div>
             </td>
@@ -6858,12 +6908,15 @@ function getDailyReportEmailHTML(dateLong) {
    16B. BILL SUBMISSION HTML EMAIL GENERATION TEMPLATE
    ────────────────────────────────────────────────────────── */
 function getBillSubmissionEmailHTML(fromStr, toStr) {
+  const exportUser = getCurrentExportUserInfo();
+  const mobileDisplay = exportUser.mobile ? (exportUser.mobile.startsWith('+') ? exportUser.mobile : ('+91 ' + exportUser.mobile)) : '';
+
   return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Diesel Bill Submission — RPM Logistics</title>
+  <title>Diesel Bill Submission — ${exportUser.companyName}</title>
 </head>
 <body style="margin:0;padding:0;background-color:#f4f4f7;font-family:Arial,sans-serif;-webkit-text-size-adjust:none;">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f4f4f7;padding:20px 10px;">
@@ -6873,7 +6926,7 @@ function getBillSubmissionEmailHTML(fromStr, toStr) {
           <!-- Header -->
           <tr>
             <td bgcolor="#b30000" style="padding:28px 24px;text-align:center;background-color:#b30000;">
-              <div style="font-size:12px;font-weight:bold;color:#ffd54f;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;">RPM LOGISTICS PVT. LTD.</div>
+              <div style="font-size:12px;font-weight:bold;color:#ffd54f;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;">${exportUser.companyName}</div>
               <div style="font-size:24px;font-weight:bold;color:#ffffff;margin:0;">💰 DIESEL BILL SUBMISSION</div>
               <div style="font-size:11px;color:#ffcdd2;letter-spacing:1px;margin-top:6px;text-transform:uppercase;">Diesel Expense Verification & Record Submission</div>
             </td>
@@ -6925,19 +6978,19 @@ function getBillSubmissionEmailHTML(fromStr, toStr) {
               
               <!-- Regards -->
               <p style="margin:0 0 4px 0;color:#718096;font-size:14px;">Regards,</p>
-              <p style="margin:0 0 2px 0;font-size:18px;font-weight:bold;color:#b30000;">ANANT KUMAR YADAV</p>
+              <p style="margin:0 0 2px 0;font-size:18px;font-weight:bold;color:#b30000;">${exportUser.name.toUpperCase()}</p>
               <p style="margin:0 0 10px 0;font-size:13px;color:#4a5568;line-height:18px;">
-                Diesel Monitoring Incharge<br>
-                RPM Logistics Pvt. Ltd.
+                ${exportUser.role}<br>
+                ${exportUser.companyName}${exportUser.email ? `<br><span style="font-size:11px;color:#718096;">✉️ ${exportUser.email}</span>` : ''}
               </p>
-              <span style="display:inline-block;padding:6px 12px;background-color:#fff5f5;border:1px solid #fed7d7;border-radius:4px;font-size:13px;font-weight:bold;color:#c53030;">📞 +91 8371838314</span>
+              ${mobileDisplay ? `<span style="display:inline-block;padding:6px 12px;background-color:#fff5f5;border:1px solid #fed7d7;border-radius:4px;font-size:13px;font-weight:bold;color:#c53030;">📞 ${mobileDisplay}</span>` : ''}
             </td>
           </tr>
           <!-- Footer -->
           <tr>
             <td bgcolor="#1a202c" style="padding:24px;text-align:center;background-color:#1a202c;font-size:11px;color:#a0aec0;line-height:18px;">
-              <div style="font-size:16px;font-weight:bold;color:#f7fafc;margin-bottom:6px;"><span style="color:#ef5350;">RPM</span> LOGISTICS PVT. LTD.</div>
-              <div>Bhiwandi Operations • Diesel Monitoring Division</div>
+              <div style="font-size:16px;font-weight:bold;color:#f7fafc;margin-bottom:6px;">${exportUser.companyName}</div>
+              <div>Operations Division • Diesel Monitoring Division</div>
             </td>
           </tr>
         </table>
@@ -7786,6 +7839,8 @@ function exportReportToExcel() {
 function exportReportToPDF() {
   if (reportEntries.length === 0) return toast.warn("No data available to export.");
 
+  const exportUser = getCurrentExportUserInfo();
+
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF('l', 'mm', 'a4'); // Landscape A4
 
@@ -7796,7 +7851,7 @@ function exportReportToPDF() {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
   doc.setTextColor(255, 213, 79); // yellow
-  doc.text("RPM LOGISTICS PVT. LTD. (BHIWANDI)", 14, 10);
+  doc.text(exportUser.companyName.toUpperCase(), 14, 10);
 
   doc.setFontSize(16);
   doc.setTextColor(255, 255, 255);
@@ -7875,11 +7930,16 @@ function exportReportToPDF() {
     doc.text("Regards,", 14, finalY);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(179, 0, 0);
-    doc.text("ANANT KUMAR YADAV", 14, finalY + 5);
+    doc.text(exportUser.name.toUpperCase(), 14, finalY + 5);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(74, 85, 104);
-    doc.text("Diesel Monitoring Incharge | RPM Logistics Pvt. Ltd.", 14, finalY + 9);
-    doc.text("📞 +91 8371838314", 14, finalY + 13);
+    let userMeta = `${exportUser.role} | ${exportUser.companyName}`;
+    if (exportUser.email) userMeta += ` | ${exportUser.email}`;
+    doc.text(userMeta, 14, finalY + 9);
+    if (exportUser.mobile) {
+      const mob = exportUser.mobile.startsWith('+') ? exportUser.mobile : ('+91 ' + exportUser.mobile);
+      doc.text(`📞 ${mob}`, 14, finalY + 13);
+    }
   }
 
   // Save pdf file
@@ -8300,6 +8360,8 @@ window.executeDailyReportExport = (format) => {
 };
 
 function generateDailyReportPDF(reportData, dateLabel) {
+  const exportUser = getCurrentExportUserInfo();
+
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF('l', 'mm', 'a4'); // Landscape A4 (297 x 210 mm)
 
@@ -8312,7 +8374,7 @@ function generateDailyReportPDF(reportData, dateLabel) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(10);
   doc.setTextColor(255, 213, 79); // Accent Yellow
-  doc.text("RPM LOGISTICS PVT. LTD. (BHIWANDI)", 14, 9);
+  doc.text(exportUser.companyName.toUpperCase(), 14, 9);
 
   doc.setFontSize(15);
   doc.setTextColor(255, 255, 255);
@@ -8407,10 +8469,18 @@ function generateDailyReportPDF(reportData, dateLabel) {
     doc.text("Regards,", 14, finalY);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(185, 28, 28);
-    doc.text("ANANT KUMAR YADAV", 14, finalY + 4.5);
+    doc.text(exportUser.name.toUpperCase(), 14, finalY + 4.5);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(71, 85, 105);
-    doc.text("Diesel Monitoring Incharge | RPM Logistics Pvt. Ltd.", 14, finalY + 8.5);
+    let userMeta = `${exportUser.role} | ${exportUser.companyName}`;
+    if (exportUser.email) userMeta += ` | ${exportUser.email}`;
+    doc.text(userMeta, 14, finalY + 8.5);
+    if (exportUser.mobile) {
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(185, 28, 28);
+      const mob = exportUser.mobile.startsWith('+') ? exportUser.mobile : ('+91 ' + exportUser.mobile);
+      doc.text(`Call / WhatsApp: ${mob}`, 14, finalY + 12.5);
+    }
   }
 
   const cleanDateStr = dateLabel.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '');
@@ -14505,8 +14575,11 @@ function exportCalculatorExcel() {
   const isSurplus = !extraDiesel.startsWith('-');
   const statusText = isSurplus ? "SURPLUS (TANK SAFE)" : "DEFICIT (SHORTAGE)";
 
+  const exportUser = getCurrentExportUserInfo();
+  const mobText = exportUser.mobile ? (exportUser.mobile.startsWith('+') ? exportUser.mobile : ('+91 ' + exportUser.mobile)) : '';
+
   const aoa = [];
-  aoa.push(["RPM LOGISTICS PVT. LTD."]);
+  aoa.push([exportUser.companyName.toUpperCase()]);
   aoa.push(["DIESEL INCHARGE PANEL - CALCULATION REPORT"]);
   aoa.push([`Generated Date: ${new Date().toLocaleString('en-IN')}`]);
   aoa.push([]);
@@ -14549,10 +14622,11 @@ function exportCalculatorExcel() {
   aoa.push([]);
   aoa.push([]);
   aoa.push(["Regards,"]);
-  aoa.push(["ANANT KUMAR YADAV"]);
-  aoa.push(["Diesel Monitoring Incharge"]);
-  aoa.push(["RPM Logistics Pvt. Ltd."]);
-  aoa.push(["Call: +91 8371838314"]);
+  aoa.push([exportUser.name.toUpperCase()]);
+  aoa.push([exportUser.role]);
+  aoa.push([exportUser.companyName]);
+  if (exportUser.email) aoa.push([`Email: ${exportUser.email}`]);
+  if (mobText) aoa.push([`Call: ${mobText}`]);
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
 
@@ -14663,20 +14737,34 @@ function exportCalculatorExcel() {
   setCell(`A${sigStart + 2}`, styles.signatureTitle);
   setCell(`A${sigStart + 3}`, styles.signatureTitle);
 
-  const calloutRow = sigStart + 4;
-  for (let c = 0; c < 3; c++) {
-    const l = String.fromCharCode(65 + c);
-    if (!ws[`${l}${calloutRow}`]) ws[`${l}${calloutRow}`] = { v: "", t: "s" };
-    setCell(`${l}${calloutRow}`, styles.phoneBox);
+  let currentExtraRow = sigStart + 4;
+  if (exportUser.email) {
+    setCell(`A${currentExtraRow}`, styles.signatureTitle);
+    currentExtraRow++;
   }
-  ws[`A${calloutRow}`].v = "Call: +91 8371838314";
 
-  ws['!merges'] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
-    { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } },
-    { s: { r: 2, c: 0 }, e: { r: 2, c: 8 } },
-    { s: { r: calloutRow - 1, c: 0 }, e: { r: calloutRow - 1, c: 2 } }
-  ];
+  if (mobText) {
+    const calloutRow = currentExtraRow;
+    for (let c = 0; c < 3; c++) {
+      const l = String.fromCharCode(65 + c);
+      if (!ws[`${l}${calloutRow}`]) ws[`${l}${calloutRow}`] = { v: "", t: "s" };
+      setCell(`${l}${calloutRow}`, styles.phoneBox);
+    }
+    ws[`A${calloutRow}`].v = `Call: ${mobText}`;
+
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } },
+      { s: { r: 2, c: 0 }, e: { r: 2, c: 8 } },
+      { s: { r: calloutRow - 1, c: 0 }, e: { r: calloutRow - 1, c: 2 } }
+    ];
+  } else {
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 8 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } },
+      { s: { r: 2, c: 0 }, e: { r: 2, c: 8 } }
+    ];
+  }
 
   ws['!cols'] = [
     { wch: 28 }, { wch: 15 }, { wch: 15 }, { wch: 24 }, { wch: 24 }, { wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 30 }
@@ -14690,6 +14778,8 @@ function exportCalculatorExcel() {
 
 // Export calculator list to PDF Report
 function exportCalculatorPDF() {
+  const exportUser = getCurrentExportUserInfo();
+
   const vehicle = document.getElementById('calc-vehicle').value;
   const dateFrom = document.getElementById('calc-date-from').value;
   const dateTo = document.getElementById('calc-date-to').value || new Date().toISOString().slice(0,10);
@@ -14716,7 +14806,7 @@ function exportCalculatorPDF() {
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(22);
-  doc.text("RPM LOGISTICS PVT. LTD.", 15, 18);
+  doc.text(exportUser.companyName.toUpperCase(), 15, 18);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(11);
@@ -14874,22 +14964,30 @@ function exportCalculatorPDF() {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(14);
   doc.setTextColor(244, 63, 94);
-  doc.text("ANANT KUMAR YADAV", 15, finalY + 6.5);
+  doc.text(exportUser.name.toUpperCase(), 15, finalY + 6.5);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
   doc.setTextColor(71, 85, 105);
-  doc.text("Diesel Monitoring Incharge", 15, finalY + 11.5);
-  doc.text("RPM Logistics Pvt. Ltd.", 15, finalY + 16.5);
+  let userMetaLine = `${exportUser.role} | ${exportUser.companyName}`;
+  doc.text(userMetaLine, 15, finalY + 11.5);
+  let nextY = finalY + 16.5;
+  if (exportUser.email) {
+    doc.text(`Email: ${exportUser.email}`, 15, nextY);
+    nextY += 5;
+  }
 
-  const boxY = finalY + 21;
+  const boxY = nextY;
+  const mob = exportUser.mobile ? (exportUser.mobile.startsWith('+') ? exportUser.mobile : ('+91 ' + exportUser.mobile)) : '';
+  const phoneText = mob ? `Call: ${mob}` : 'Verified User';
+  const boxWidth = Math.max(52, doc.getTextWidth(phoneText) + 8);
   doc.setFillColor(76, 48, 56);
-  doc.roundedRect(15, boxY, 52, 9, 1.5, 1.5, 'F');
+  doc.roundedRect(15, boxY, boxWidth, 8.5, 1.5, 1.5, 'F');
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
+  doc.setFontSize(9);
   doc.setTextColor(234, 128, 142);
-  doc.text("Call: +91 8371838314", 19, boxY + 6.2);
+  doc.text(phoneText, 19, boxY + 5.8);
 
   const pageCount = doc.internal.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
@@ -14901,7 +14999,7 @@ function exportCalculatorPDF() {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
     doc.setTextColor(156, 163, 175);
-    doc.text("RPM Logistics Pvt. Ltd. — Diesel Incharge Report", 15, doc.internal.pageSize.height - 10);
+    doc.text(`${exportUser.companyName} — Diesel Incharge Report`, 15, doc.internal.pageSize.height - 10);
     doc.text(`Page ${i} of ${pageCount}`, pageWidth - 15, doc.internal.pageSize.height - 10, { align: 'right' });
   }
 
@@ -25233,6 +25331,14 @@ window.updateAppBranding = async function() {
 
   try {
     await db.ref(`settings/branding/${target}`).update(payload);
+    if (!brandingDataCache[target]) brandingDataCache[target] = {};
+    Object.assign(brandingDataCache[target], payload);
+    try {
+      localStorage.setItem('rpm_app_branding', JSON.stringify(brandingDataCache));
+    } catch(e) {}
+    if (typeof applyAppBrandingToPage === 'function') {
+      applyAppBrandingToPage(brandingDataCache);
+    }
     toast.ok(`Branding updated successfully for ${target === 'all' ? 'All Applications' : target}!`);
   } catch (error) {
     toast.error('Failed to update branding.');
@@ -25302,6 +25408,46 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+function applyAppBrandingToPage(data) {
+  if (!data) return;
+  const path = window.location.pathname;
+  const appKey = path.includes('driver_request') ? 'driver' : (path.includes('diesel_filled') ? 'station' : 'admin');
+  const globalCfg = data['all'] || {};
+  const appCfg = data[appKey] || {};
+
+  const appName = appCfg.appName || globalCfg.appName;
+  const faviconUrl = appCfg.faviconUrl || globalCfg.faviconUrl;
+  const logoUrl = appCfg.logoUrl || globalCfg.logoUrl;
+
+  if (appName) {
+    document.title = appName;
+    document.querySelectorAll('.sys-brand-name').forEach(el => el.textContent = appName);
+  }
+  if (faviconUrl) {
+    let link = document.querySelector("link[rel~='icon']");
+    if (!link) {
+      link = document.createElement('link');
+      link.id = 'favicon-link';
+      link.rel = 'icon';
+      document.head.appendChild(link);
+    }
+    link.href = faviconUrl;
+  }
+  if (logoUrl) {
+    document.querySelectorAll('.sys-brand-logo, #sidebar-logo-img, #header-logo-img, #splash-logo-img, #login-logo-img').forEach(img => {
+      img.src = logoUrl;
+    });
+    let earlyStyle = document.getElementById('early-brand-style');
+    if (!earlyStyle) {
+      earlyStyle = document.createElement('style');
+      earlyStyle.id = 'early-brand-style';
+      document.head.appendChild(earlyStyle);
+    }
+    earlyStyle.textContent = '.sys-brand-logo { content: url("' + logoUrl + '") !important; }';
+  }
+}
+window.applyAppBrandingToPage = applyAppBrandingToPage;
+
 db.ref('settings/branding').on('value', snap => {
   let data = snap.val() || {};
   if (data.appName || data.logoUrl || data.faviconUrl) {
@@ -25310,9 +25456,13 @@ db.ref('settings/branding').on('value', snap => {
     }
   }
   brandingDataCache = data;
+  try {
+    localStorage.setItem('rpm_app_branding', JSON.stringify(data));
+  } catch(e) {}
   if(document.getElementById('brand-target')) {
     populateBrandingForm();
   }
+  applyAppBrandingToPage(data);
 });
 
 // --- UNIFIED EXPORT UTILITIES ---

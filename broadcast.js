@@ -82,15 +82,16 @@
       if (window._triggerBroadcastCheck) window._triggerBroadcastCheck();
     });
 
-    setTimeout(() => {
-      if (typeof db !== 'undefined') {
-        startBroadcastListener(db);
-        startBrandingListener(db);
-      } else if (typeof firebase !== 'undefined') {
-        startBroadcastListener(firebase.database());
-        startBrandingListener(firebase.database());
+    function initListeners() {
+      const database = (typeof db !== 'undefined' && db) ? db : (typeof firebase !== 'undefined' && firebase.database ? firebase.database() : null);
+      if (database) {
+        startBroadcastListener(database);
+        startBrandingListener(database);
+      } else {
+        setTimeout(initListeners, 100);
       }
-    }, 1000);
+    }
+    initListeners();
 
     function startBroadcastListener(database) {
       // Create a global trigger to re-check queue when a modal is closed
@@ -176,6 +177,10 @@
         let rawData = snap.val();
         if (!rawData) return;
         
+        try {
+          localStorage.setItem('rpm_app_branding', JSON.stringify(rawData));
+        } catch(e) {}
+
         // Handle migration from old format where it wasn't keyed by target
         if (rawData.appName || rawData.logoUrl || rawData.faviconUrl) {
           if (!rawData.all && !rawData.admin && !rawData.driver && !rawData.station) {
@@ -206,25 +211,27 @@
           let link = document.querySelector("link[rel~='icon']");
           if (!link) {
             link = document.createElement('link');
+            link.id = 'favicon-link';
             link.rel = 'icon';
             document.head.appendChild(link);
           } else {
-            // Remove the old link completely to force Chrome/WebKit to refresh the favicon
-            link.parentNode.removeChild(link);
-            let newLink = document.createElement('link');
-            newLink.rel = 'icon';
-            link = newLink;
-            document.head.appendChild(link);
+            link.href = data.faviconUrl;
           }
-          link.href = data.faviconUrl;
         }
 
         // 3. Update Logos
         if (data.logoUrl) {
-          const logoElements = document.querySelectorAll('.sys-brand-logo');
+          const logoElements = document.querySelectorAll('.sys-brand-logo, #sidebar-logo-img, #header-logo-img, #splash-logo-img, #login-logo-img');
           logoElements.forEach(img => {
             img.src = data.logoUrl;
           });
+          let earlyStyle = document.getElementById('early-brand-style');
+          if (!earlyStyle) {
+            earlyStyle = document.createElement('style');
+            earlyStyle.id = 'early-brand-style';
+            document.head.appendChild(earlyStyle);
+          }
+          earlyStyle.textContent = '.sys-brand-logo { content: url("' + data.logoUrl + '") !important; }';
         }
       });
     }

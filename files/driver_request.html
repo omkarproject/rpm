@@ -8,7 +8,38 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="google" content="notranslate">
   <title>Driver Diesel Request Form</title>
-<link id="favicon-link" rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E⛽%3C/text%3E%3C/svg%3E">
+  <link id="favicon-link" rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E⛽%3C/text%3E%3C/svg%3E">
+  <script>
+    (function() {
+      try {
+        var raw = localStorage.getItem('rpm_app_branding');
+        if (raw) {
+          var bData = JSON.parse(raw);
+          if (bData) {
+            var b = bData.driver || bData.all || bData;
+            if (b.appName) {
+              document.title = b.appName;
+              document.addEventListener('DOMContentLoaded', function() {
+                document.querySelectorAll('.sys-brand-name').forEach(function(el) {
+                  el.textContent = b.appName;
+                });
+              });
+            }
+            if (b.faviconUrl) {
+              var fav = document.getElementById('favicon-link');
+              if (fav) fav.href = b.faviconUrl;
+            }
+            if (b.logoUrl) {
+              var s = document.createElement('style');
+              s.id = 'early-brand-style';
+              s.innerHTML = '.sys-brand-logo { content: url("' + b.logoUrl + '") !important; }';
+              document.head.appendChild(s);
+            }
+          }
+        }
+      } catch(e) {}
+    })();
+  </script>
   
   <!-- Speed up third-party handshakes -->
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -329,7 +360,7 @@
           </h1>
           <p class="text-[9px] text-slate-400 font-extrabold tracking-wider uppercase mt-1 flex items-center gap-1">
             <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-            RPM LOGISTICS - FUEL MANAGEMENT
+            <span class="sys-brand-name">RPM LOGISTICS</span> - FUEL MANAGEMENT
           </p>
         </div>
       </div>
@@ -553,6 +584,7 @@
     // Realtime Branding Listener for Driver Request Form
     db.ref('settings/branding').on('value', snap => {
       let data = snap.val() || {};
+      try { localStorage.setItem('rpm_app_branding', JSON.stringify(data)); } catch(e){}
       if (data.appName || data.logoUrl || data.faviconUrl) {
         if (!data.all && !data.admin && !data.driver && !data.station) {
           data = { all: data };
@@ -565,6 +597,13 @@
         document.querySelectorAll('.sys-brand-logo').forEach(img => {
           img.src = b.logoUrl;
         });
+        let earlyStyle = document.getElementById('early-brand-style');
+        if (!earlyStyle) {
+          earlyStyle = document.createElement('style');
+          earlyStyle.id = 'early-brand-style';
+          document.head.appendChild(earlyStyle);
+        }
+        earlyStyle.innerHTML = `.sys-brand-logo { content: url("${b.logoUrl}") !important; }`;
       }
       
       // Update Favicon
@@ -581,9 +620,12 @@
         }
       }
 
-      // Update App Title
+      // Update App Title & Company Name
       if (b.appName) {
         document.title = b.appName;
+        document.querySelectorAll('.sys-brand-name').forEach(el => {
+          el.textContent = b.appName;
+        });
       }
     });
 
@@ -2974,7 +3016,7 @@ Response #PENDING
   }, 4000);
 
 </script>
-<script src="broadcast.js?v=2" defer></script>
+<script src="../broadcast.js?v=3" defer></script>
 
     <!-- Due Breakdown Popup Modal (1st KM & Calculation Details) -->
     <div id="due-breakdown-modal" onclick="if(event.target===this) closeDueBreakdownModal()" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 hidden">
