@@ -115,6 +115,8 @@ const saveCache = (key, data) => {
 let historyEntries = loadCache('rpm_cache_entries', []);      // Main diesel entries (Hydrated from fast cache, live Firebase updates)
 let ureaEntriesList = loadCache('rpm_cache_urea_entries', []); // Urea entries (Hydrated from fast cache)
 let driverRequestsList = loadCache('rpm_cache_driver_requests', []); // Driver requests list (Hydrated from fast cache)
+let vehicleReportRequestsMap = {};
+window.vehicleReportRequestsMap = vehicleReportRequestsMap;
 const pageLoadTime = Date.now();
 let locationsList = loadCache('rpm_cache_locations', []);       // Configuration: Locations
 let vehicleTypesList = loadCache('rpm_cache_vehicle_types', []);    // Configuration: Vehicle Types
@@ -23262,7 +23264,7 @@ window.removeVehicleFromKmExclusion = function(vehNo) {
 
 // === Vehicle Report Requests Manager ===
 const vehicleReportRequestsRef = db.ref('vehicle_report_requests');
-let vehicleReportRequestsMap = {};
+vehicleReportRequestsMap = {};
 let currentRepReqFilter = 'all';
 let vehRepTimerInterval = null;
 let currentVehRepRejectKey = null;
