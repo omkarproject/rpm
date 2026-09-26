@@ -4344,7 +4344,7 @@ function submitDrfPendingAction(withPhotos) {
     if (loader) loader.classList.remove('hidden');
     if (proceedBtn) proceedBtn.disabled = true;
 
-    Promise.all(drfSelectedReceiptFiles.map(f => compressReceiptImage(f)))
+    Promise.all(drfSelectedReceiptFiles.map(f => compressReceiptImage(f, 'fuelRequests')))
       .then(compressedDataUrls => {
         const validPhotos = compressedDataUrls.filter(u => u && u.startsWith('data:image'));
         executeDrfAction(validPhotos);
@@ -8743,6 +8743,8 @@ function showDmPanel(panelId) {
   if (autoBackupPanel) autoBackupPanel.classList.add('hidden');
   const visitLogPanel = document.getElementById('dm-visitlog-panel');
   if (visitLogPanel) visitLogPanel.classList.add('hidden');
+  const imgCompressPanel = document.getElementById('dm-imagecompressor-panel');
+  if (imgCompressPanel) imgCompressPanel.classList.add('hidden');
 
   // Show target
   const p = document.getElementById(panelId);
@@ -13228,6 +13230,297 @@ window.testVisitLogNow = testVisitLogNow;
 
 loadTelegramVisitLogSettings();
 
+/* ══════════════════════════════════════════════════════════
+   18.3 IMAGE COMPRESSOR & QUALITY SETTINGS CONTROLLER
+   ══════════════════════════════════════════════════════════ */
+const DEFAULT_IMAGE_COMPRESSION_CONFIG = {
+  version: 1,
+  fuelRequests: {
+    preset: 'clear_100_200',
+    customMinVal: 100,
+    customMinUnit: 'KB',
+    customMaxVal: 200,
+    customMaxUnit: 'KB'
+  },
+  ledgerKm: {
+    preset: 'clear_100_200',
+    customMinVal: 100,
+    customMinUnit: 'KB',
+    customMaxVal: 200,
+    customMaxUnit: 'KB'
+  },
+  cameraCapture: {
+    preset: 'clear_100_200',
+    customMinVal: 100,
+    customMinUnit: 'KB',
+    customMaxVal: 200,
+    customMaxUnit: 'KB'
+  },
+  chatPhotos: {
+    preset: 'clear_100_200',
+    customMinVal: 100,
+    customMinUnit: 'KB',
+    customMaxVal: 200,
+    customMaxUnit: 'KB'
+  }
+};
+
+let imageCompressionConfig = JSON.parse(JSON.stringify(DEFAULT_IMAGE_COMPRESSION_CONFIG));
+
+function resolveCategoryParams(catConfig) {
+  const cfg = catConfig || { preset: 'clear_100_200' };
+  const preset = cfg.preset || 'clear_100_200';
+
+  if (preset === 'original') {
+    return { isOriginal: true, minBytes: 0, maxBytes: 50 * 1024 * 1024, maxDim: 0, quality: 1.0, label: 'Original' };
+  }
+  if (preset === 'compact_30_50') {
+    return { isOriginal: false, minBytes: 30 * 1024, maxBytes: 50 * 1024, maxDim: 960, quality: 0.65, label: '30-50 KB' };
+  }
+  if (preset === 'clear_100_200') {
+    return { isOriginal: false, minBytes: 100 * 1024, maxBytes: 200 * 1024, maxDim: 1440, quality: 0.82, label: '100-200 KB' };
+  }
+  if (preset === 'hd_200_500') {
+    return { isOriginal: false, minBytes: 200 * 1024, maxBytes: 500 * 1024, maxDim: 1920, quality: 0.88, label: '200-500 KB' };
+  }
+  if (preset === 'super_1_2mb') {
+    return { isOriginal: false, minBytes: 1024 * 1024, maxBytes: 2 * 1024 * 1024, maxDim: 2560, quality: 0.92, label: '1-2 MB' };
+  }
+  if (preset === 'custom') {
+    const minUnit = cfg.customMinUnit || 'KB';
+    const maxUnit = cfg.customMaxUnit || 'KB';
+    const minMultiplier = (minUnit === 'MB') ? (1024 * 1024) : 1024;
+    const maxMultiplier = (maxUnit === 'MB') ? (1024 * 1024) : 1024;
+    const minBytes = Math.max(1024, Math.round((parseFloat(cfg.customMinVal) || 50) * minMultiplier));
+    const maxBytes = Math.max(minBytes, Math.round((parseFloat(cfg.customMaxVal) || 200) * maxMultiplier));
+
+    let maxDim = 1440;
+    let quality = 0.82;
+    if (maxBytes > 2 * 1024 * 1024) {
+      maxDim = 3200;
+      quality = 0.94;
+    } else if (maxBytes > 1024 * 1024) {
+      maxDim = 2560;
+      quality = 0.90;
+    } else if (maxBytes > 500 * 1024) {
+      maxDim = 1920;
+      quality = 0.88;
+    } else if (maxBytes < 80 * 1024) {
+      maxDim = 960;
+      quality = 0.65;
+    }
+    const label = `${cfg.customMinVal || 50}${minUnit}-${cfg.customMaxVal || 200}${maxUnit}`;
+    return { isOriginal: false, minBytes, maxBytes, maxDim, quality, label };
+  }
+
+  // fallback
+  return { isOriginal: false, minBytes: 100 * 1024, maxBytes: 200 * 1024, maxDim: 1440, quality: 0.82, label: '100-200 KB' };
+}
+
+function loadImageCompressorSettings() {
+  try {
+    const local = localStorage.getItem('rpm_image_compressor_config');
+    if (local) {
+      const parsed = JSON.parse(local);
+      if (parsed) {
+        imageCompressionConfig = {
+          version: 1,
+          fuelRequests: Object.assign({}, DEFAULT_IMAGE_COMPRESSION_CONFIG.fuelRequests, parsed.fuelRequests),
+          ledgerKm: Object.assign({}, DEFAULT_IMAGE_COMPRESSION_CONFIG.ledgerKm, parsed.ledgerKm),
+          cameraCapture: Object.assign({}, DEFAULT_IMAGE_COMPRESSION_CONFIG.cameraCapture, parsed.cameraCapture),
+          chatPhotos: Object.assign({}, DEFAULT_IMAGE_COMPRESSION_CONFIG.chatPhotos, parsed.chatPhotos)
+        };
+      }
+    }
+  } catch (e) {
+    console.error("Error reading local image compressor config", e);
+  }
+
+  // Firebase remote sync
+  if (typeof db !== 'undefined' && db) {
+    db.ref('appConfig/imageCompressionConfig').once('value').then(snap => {
+      const val = snap.val();
+      if (val && typeof val === 'object') {
+        imageCompressionConfig = {
+          version: 1,
+          fuelRequests: Object.assign({}, DEFAULT_IMAGE_COMPRESSION_CONFIG.fuelRequests, val.fuelRequests),
+          ledgerKm: Object.assign({}, DEFAULT_IMAGE_COMPRESSION_CONFIG.ledgerKm, val.ledgerKm),
+          cameraCapture: Object.assign({}, DEFAULT_IMAGE_COMPRESSION_CONFIG.cameraCapture, val.cameraCapture),
+          chatPhotos: Object.assign({}, DEFAULT_IMAGE_COMPRESSION_CONFIG.chatPhotos, val.chatPhotos)
+        };
+        localStorage.setItem('rpm_image_compressor_config', JSON.stringify(imageCompressionConfig));
+      }
+      updateImageCompressorUI();
+    }).catch(err => {
+      console.warn("Could not fetch remote image compressor config:", err);
+      updateImageCompressorUI();
+    });
+  } else {
+    updateImageCompressorUI();
+  }
+}
+
+function updateImageCompressorUI() {
+  const cats = ['fuelRequests', 'ledgerKm', 'cameraCapture', 'chatPhotos'];
+  let allSame = true;
+  let firstLabel = '';
+
+  cats.forEach((catKey, index) => {
+    const cfg = (imageCompressionConfig && imageCompressionConfig[catKey]) || DEFAULT_IMAGE_COMPRESSION_CONFIG[catKey];
+    const params = resolveCategoryParams(cfg);
+
+    const modeSel = document.getElementById(`dm-img-mode-${catKey}`);
+    const customDiv = document.getElementById(`dm-img-custom-${catKey}`);
+    const badge = document.getElementById(`dm-img-badge-${catKey}`);
+    const minValInp = document.getElementById(`dm-img-custom-min-val-${catKey}`);
+    const minUnitInp = document.getElementById(`dm-img-custom-min-unit-${catKey}`);
+    const maxValInp = document.getElementById(`dm-img-custom-max-val-${catKey}`);
+    const maxUnitInp = document.getElementById(`dm-img-custom-max-unit-${catKey}`);
+
+    if (modeSel) modeSel.value = cfg.preset || 'clear_100_200';
+    if (customDiv) {
+      if (cfg.preset === 'custom') {
+        customDiv.classList.remove('hidden');
+      } else {
+        customDiv.classList.add('hidden');
+      }
+    }
+    if (badge) {
+      badge.textContent = params.label;
+    }
+    if (minValInp) minValInp.value = cfg.customMinVal || 100;
+    if (minUnitInp) minUnitInp.value = cfg.customMinUnit || 'KB';
+    if (maxValInp) maxValInp.value = cfg.customMaxVal || 200;
+    if (maxUnitInp) maxUnitInp.value = cfg.customMaxUnit || 'KB';
+
+    if (index === 0) {
+      firstLabel = params.label;
+    } else if (params.label !== firstLabel) {
+      allSame = false;
+    }
+  });
+
+  const masterBadge = document.getElementById('dm-imgcompress-status-badge');
+  if (masterBadge) {
+    masterBadge.textContent = allSame ? firstLabel : 'Custom Mix';
+  }
+}
+window.updateImageCompressorUI = updateImageCompressorUI;
+
+function handleImgModeChange(catKey) {
+  const modeSel = document.getElementById(`dm-img-mode-${catKey}`);
+  const customDiv = document.getElementById(`dm-img-custom-${catKey}`);
+  const badge = document.getElementById(`dm-img-badge-${catKey}`);
+  if (!modeSel) return;
+
+  const preset = modeSel.value;
+  if (!imageCompressionConfig[catKey]) {
+    imageCompressionConfig[catKey] = Object.assign({}, DEFAULT_IMAGE_COMPRESSION_CONFIG[catKey]);
+  }
+  imageCompressionConfig[catKey].preset = preset;
+
+  if (customDiv) {
+    if (preset === 'custom') {
+      customDiv.classList.remove('hidden');
+    } else {
+      customDiv.classList.add('hidden');
+    }
+  }
+
+  const params = resolveCategoryParams(imageCompressionConfig[catKey]);
+  if (badge) badge.textContent = params.label;
+
+  const masterBadge = document.getElementById('dm-imgcompress-status-badge');
+  if (masterBadge) {
+    const cats = ['fuelRequests', 'ledgerKm', 'cameraCapture', 'chatPhotos'];
+    const allMatch = cats.every(k => resolveCategoryParams(imageCompressionConfig[k]).label === params.label);
+    masterBadge.textContent = allMatch ? params.label : 'Custom Mix';
+  }
+}
+window.handleImgModeChange = handleImgModeChange;
+
+function applyQuickImagePreset(presetKey) {
+  const cats = ['fuelRequests', 'ledgerKm', 'cameraCapture', 'chatPhotos'];
+  cats.forEach(catKey => {
+    if (!imageCompressionConfig[catKey]) {
+      imageCompressionConfig[catKey] = Object.assign({}, DEFAULT_IMAGE_COMPRESSION_CONFIG[catKey]);
+    }
+    imageCompressionConfig[catKey].preset = presetKey;
+  });
+  updateImageCompressorUI();
+  const labelMap = {
+    original: 'Original (No Compression)',
+    clear_100_200: '100–200 KB (Clear & Sharp)',
+    hd_200_500: '200–500 KB (High Definition)',
+    super_1_2mb: '1–2 MB (Super HD)',
+    compact_30_50: '30–50 KB (Compact)'
+  };
+  toast.info(`Preset applied to all 4 categories: ${labelMap[presetKey] || presetKey}. Click "Save Quality Settings" to apply.`);
+}
+window.applyQuickImagePreset = applyQuickImagePreset;
+
+function resetImageCompressorSettings() {
+  imageCompressionConfig = JSON.parse(JSON.stringify(DEFAULT_IMAGE_COMPRESSION_CONFIG));
+  updateImageCompressorUI();
+  toast.info("Image quality reset to recommended defaults (100–200 KB). Click Save to apply.");
+}
+window.resetImageCompressorSettings = resetImageCompressorSettings;
+
+async function saveImageCompressorSettings() {
+  const saveBtn = document.getElementById('dm-imagecompress-save-btn');
+  const cats = ['fuelRequests', 'ledgerKm', 'cameraCapture', 'chatPhotos'];
+
+  cats.forEach(catKey => {
+    const modeSel = document.getElementById(`dm-img-mode-${catKey}`);
+    const minValInp = document.getElementById(`dm-img-custom-min-val-${catKey}`);
+    const minUnitInp = document.getElementById(`dm-img-custom-min-unit-${catKey}`);
+    const maxValInp = document.getElementById(`dm-img-custom-max-val-${catKey}`);
+    const maxUnitInp = document.getElementById(`dm-img-custom-max-unit-${catKey}`);
+
+    if (!imageCompressionConfig[catKey]) {
+      imageCompressionConfig[catKey] = Object.assign({}, DEFAULT_IMAGE_COMPRESSION_CONFIG[catKey]);
+    }
+
+    if (modeSel) imageCompressionConfig[catKey].preset = modeSel.value;
+    if (minValInp) imageCompressionConfig[catKey].customMinVal = parseFloat(minValInp.value) || 100;
+    if (minUnitInp) imageCompressionConfig[catKey].customMinUnit = minUnitInp.value || 'KB';
+    if (maxValInp) imageCompressionConfig[catKey].customMaxVal = parseFloat(maxValInp.value) || 200;
+    if (maxUnitInp) imageCompressionConfig[catKey].customMaxUnit = maxUnitInp.value || 'KB';
+  });
+
+  localStorage.setItem('rpm_image_compressor_config', JSON.stringify(imageCompressionConfig));
+
+  if (saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>Saving...</span>`;
+  }
+
+  try {
+    if (typeof db !== 'undefined' && db) {
+      await db.ref('appConfig/imageCompressionConfig').set(imageCompressionConfig);
+    }
+    toast.ok("Image quality & compression settings saved successfully!");
+  } catch (e) {
+    console.error("Error saving image compression config to Firebase:", e);
+    toast.ok("Image quality settings saved locally!");
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = `<i class="fas fa-save"></i> <span>Save Quality Settings</span>`;
+    }
+    updateImageCompressorUI();
+  }
+}
+window.saveImageCompressorSettings = saveImageCompressorSettings;
+
+function openImageCompressorPanel() {
+  if (typeof updateImageCompressorUI === 'function') updateImageCompressorUI();
+  if (typeof showDmPanel === 'function') showDmPanel('dm-imagecompressor-panel');
+}
+window.openImageCompressorPanel = openImageCompressorPanel;
+
+loadImageCompressorSettings();
+
 // Download PDF Setup Tutorial
 window.downloadSetupTutorial = () => {
   const { jsPDF } = window.jspdf;
@@ -17491,17 +17784,34 @@ function renderUserChatMessages(threadData) {
 
 function compressAndSendImage(file, sendCallback) {
   if (!file) return;
-  
+
+  const catConfig = (imageCompressionConfig && imageCompressionConfig.chatPhotos)
+    ? imageCompressionConfig.chatPhotos
+    : { preset: 'clear_100_200' };
+  const params = resolveCategoryParams(catConfig);
+
+  if (params.isOriginal) {
+    const reader = new FileReader();
+    reader.onload = function(event) {
+      sendCallback(event.target.result);
+    };
+    reader.onerror = function() {
+      toast.err("Error reading image file.");
+    };
+    reader.readAsDataURL(file);
+    return;
+  }
+
   toast.info("Preparing image...");
-  
+
   const reader = new FileReader();
   reader.onload = function(event) {
     const img = new Image();
     img.onload = function() {
-      const maxDim = 1440;
+      const maxDim = params.maxDim || 1440;
       let width = img.width;
       let height = img.height;
-      
+
       if (width > maxDim || height > maxDim) {
         if (width > height) {
           height = Math.round((height * maxDim) / width);
@@ -17511,7 +17821,7 @@ function compressAndSendImage(file, sendCallback) {
           height = maxDim;
         }
       }
-      
+
       const canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
@@ -17519,7 +17829,7 @@ function compressAndSendImage(file, sendCallback) {
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, 0, 0, width, height);
-      
+
       try {
         function getBytes(url) {
           if (!url) return 0;
@@ -17527,13 +17837,14 @@ function compressAndSendImage(file, sendCallback) {
           const b64 = idx >= 0 ? url.slice(idx + 1) : url;
           return Math.round((b64.length * 3) / 4);
         }
-        let q = 0.82;
+        let q = params.quality || 0.82;
         let compressedDataUrl = canvas.toDataURL('image/jpeg', q);
         let bytes = getBytes(compressedDataUrl);
-        if (bytes > 200 * 1024) {
+        const maxTarget = params.maxBytes;
+        if (bytes > maxTarget) {
           for (let i = 0; i < 4; i++) {
-            if (bytes <= 200 * 1024) break;
-            q = Math.max(0.62, q - 0.08);
+            if (bytes <= maxTarget) break;
+            q = Math.max(0.55, q - 0.08);
             compressedDataUrl = canvas.toDataURL('image/jpeg', q);
             bytes = getBytes(compressedDataUrl);
           }
@@ -21820,48 +22131,63 @@ function compressAndPreviewFillReceipt(img) {
   const canvas = document.getElementById('fill-camera-canvas') || document.createElement('canvas');
   const ctx = canvas.getContext('2d');
 
-  let width = img.naturalWidth || img.width;
-  let height = img.naturalHeight || img.height;
-  const maxDim = 1440;
-  if (width > maxDim || height > maxDim) {
-    if (width > height) {
-      height = Math.round((height * maxDim) / width);
-      width = maxDim;
-    } else {
-      width = Math.round((width * maxDim) / height);
-      height = maxDim;
+  const catConfig = (imageCompressionConfig && imageCompressionConfig.cameraCapture) 
+    ? imageCompressionConfig.cameraCapture 
+    : { preset: 'clear_100_200' };
+  const params = resolveCategoryParams(catConfig);
+
+  let dataUrl;
+  if (params.isOriginal) {
+    const width = img.naturalWidth || img.width;
+    const height = img.naturalHeight || img.height;
+    canvas.width = width;
+    canvas.height = height;
+    ctx.drawImage(img, 0, 0, width, height);
+    dataUrl = canvas.toDataURL('image/jpeg', 0.98);
+  } else {
+    let width = img.naturalWidth || img.width;
+    let height = img.naturalHeight || img.height;
+    const maxDim = params.maxDim || 1440;
+    if (width > maxDim || height > maxDim) {
+      if (width > height) {
+        height = Math.round((height * maxDim) / width);
+        width = maxDim;
+      } else {
+        width = Math.round((width * maxDim) / height);
+        height = maxDim;
+      }
     }
-  }
-  canvas.width = width;
-  canvas.height = height;
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(img, 0, 0, width, height);
+    canvas.width = width;
+    canvas.height = height;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, 0, 0, width, height);
 
-  function getBytes(url) {
-    if (!url) return 0;
-    const idx = url.indexOf(',');
-    const b64 = idx >= 0 ? url.slice(idx + 1) : url;
-    return Math.round((b64.length * 3) / 4);
-  }
-
-  let q = 0.82;
-  let dataUrl = canvas.toDataURL('image/jpeg', q);
-  let bytes = getBytes(dataUrl);
-  const minTarget = 100 * 1024;
-  const maxTarget = 200 * 1024;
-
-  if (bytes > maxTarget) {
-    for (let i = 0; i < 4; i++) {
-      if (bytes <= maxTarget) break;
-      q = Math.max(0.62, q - 0.08);
-      dataUrl = canvas.toDataURL('image/jpeg', q);
-      bytes = getBytes(dataUrl);
+    function getBytes(url) {
+      if (!url) return 0;
+      const idx = url.indexOf(',');
+      const b64 = idx >= 0 ? url.slice(idx + 1) : url;
+      return Math.round((b64.length * 3) / 4);
     }
-  } else if (bytes < minTarget) {
-    const tryUrl = canvas.toDataURL('image/jpeg', 0.92);
-    if (getBytes(tryUrl) <= maxTarget) {
-      dataUrl = tryUrl;
+
+    let q = params.quality || 0.82;
+    dataUrl = canvas.toDataURL('image/jpeg', q);
+    let bytes = getBytes(dataUrl);
+    const minTarget = params.minBytes;
+    const maxTarget = params.maxBytes;
+
+    if (bytes > maxTarget) {
+      for (let i = 0; i < 4; i++) {
+        if (bytes <= maxTarget) break;
+        q = Math.max(0.55, q - 0.08);
+        dataUrl = canvas.toDataURL('image/jpeg', q);
+        bytes = getBytes(dataUrl);
+      }
+    } else if (bytes < minTarget) {
+      const tryUrl = canvas.toDataURL('image/jpeg', 0.94);
+      if (getBytes(tryUrl) <= maxTarget) {
+        dataUrl = tryUrl;
+      }
     }
   }
 
@@ -23661,9 +23987,39 @@ function nextReceiptPhoto() {
   resetReceiptImageTransform();
 }
 
-function compressReceiptImage(file, minTargetBytes = 100 * 1024, maxTargetBytes = 200 * 1024) {
+function compressReceiptImage(file, categoryOrMin = 'fuelRequests', maxTarget = null) {
   return new Promise((resolve, reject) => {
     if (!file) return resolve(null);
+
+    let params;
+    if (typeof categoryOrMin === 'string') {
+      const catConfig = (imageCompressionConfig && imageCompressionConfig[categoryOrMin])
+        ? imageCompressionConfig[categoryOrMin]
+        : { preset: 'clear_100_200' };
+      params = resolveCategoryParams(catConfig);
+    } else {
+      params = {
+        isOriginal: false,
+        minBytes: Number(categoryOrMin) || (100 * 1024),
+        maxBytes: Number(maxTarget) || (200 * 1024),
+        maxDim: 1440,
+        quality: 0.82
+      };
+    }
+
+    if (params.isOriginal) {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    const minTargetBytes = params.minBytes;
+    const maxTargetBytes = params.maxBytes;
+    const MAX_INIT_DIM = params.maxDim || 1440;
+    const initialQuality = params.quality || 0.82;
+
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
@@ -23675,8 +24031,6 @@ function compressReceiptImage(file, minTargetBytes = 100 * 1024, maxTargetBytes 
             return resolve(e.target.result);
           }
 
-          // Max dimension: 1440px provides razor-sharp clarity for numbers, meter digits & slips while keeping file within 100KB - 200KB
-          const MAX_INIT_DIM = 1440;
           let w = origW;
           let h = origH;
           if (w > MAX_INIT_DIM || h > MAX_INIT_DIM) {
@@ -23704,17 +24058,14 @@ function compressReceiptImage(file, minTargetBytes = 100 * 1024, maxTargetBytes 
             return Math.round((b64.length * 3) / 4);
           }
 
-          // Initial pass with quality 0.82 for crisp 100KB - 200KB photo
-          let q = 0.82;
+          let q = initialQuality;
           let dataUrl = canvas.toDataURL('image/jpeg', q);
           let currentBytes = getBytes(dataUrl);
 
-          // If already in target range (100KB - 200KB), perfect!
           if (currentBytes <= maxTargetBytes && currentBytes >= minTargetBytes) {
             return resolve(dataUrl);
           }
 
-          // If larger than 200KB, adaptively bring into 100KB - 200KB range
           if (currentBytes > maxTargetBytes) {
             let bestUrl = dataUrl;
             for (let iter = 0; iter < 5; iter++) {
@@ -23724,21 +24075,22 @@ function compressReceiptImage(file, minTargetBytes = 100 * 1024, maxTargetBytes 
               }
 
               if (currentBytes > maxTargetBytes) {
-                if (q > 0.65) {
-                  const ratio = Math.sqrt((165 * 1024) / currentBytes);
-                  q = Math.max(0.60, Math.min(q - 0.06, q * ratio));
+                if (q > 0.60) {
+                  const targetMid = (minTargetBytes + maxTargetBytes) / 2;
+                  const ratio = Math.sqrt(targetMid / currentBytes);
+                  q = Math.max(0.55, Math.min(q - 0.06, q * ratio));
                   dataUrl = canvas.toDataURL('image/jpeg', q);
                   currentBytes = getBytes(dataUrl);
                 } else {
-                  w = Math.max(960, Math.round(w * 0.88));
-                  h = Math.max(960, Math.round(h * 0.88));
+                  w = Math.max(640, Math.round(w * 0.88));
+                  h = Math.max(640, Math.round(h * 0.88));
                   canvas.width = w;
                   canvas.height = h;
                   ctx = canvas.getContext('2d');
                   ctx.imageSmoothingEnabled = true;
                   ctx.imageSmoothingQuality = 'high';
                   ctx.drawImage(img, 0, 0, w, h);
-                  q = 0.78;
+                  q = 0.75;
                   dataUrl = canvas.toDataURL('image/jpeg', q);
                   currentBytes = getBytes(dataUrl);
                 }
@@ -23750,9 +24102,8 @@ function compressReceiptImage(file, minTargetBytes = 100 * 1024, maxTargetBytes 
             return resolve(bestUrl);
           }
 
-          // If smaller than 100KB, boost quality up to 0.94 for maximum clarity
           if (currentBytes < minTargetBytes) {
-            const highQUrl = canvas.toDataURL('image/jpeg', 0.92);
+            const highQUrl = canvas.toDataURL('image/jpeg', 0.94);
             const highQBytes = getBytes(highQUrl);
             if (highQBytes <= maxTargetBytes) {
               return resolve(highQUrl);
@@ -23796,7 +24147,7 @@ function handleReceiptModalMultiUpload(event) {
   const progressDiv = document.getElementById('receipt-upload-progress');
   if (progressDiv) progressDiv.classList.remove('hidden');
 
-  Promise.all(filesToProcess.map(f => compressReceiptImage(f)))
+  Promise.all(filesToProcess.map(f => compressReceiptImage(f, 'ledgerKm')))
     .then(compressedDataUrls => {
       const validPhotos = compressedDataUrls.filter(u => u && (u.startsWith('data:image') || u.startsWith('http://') || u.startsWith('https://')));
       if (validPhotos.length === 0) {
