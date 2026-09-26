@@ -227,6 +227,143 @@
       border-radius: 9999px;
     }
 
+    /* Matching Entries History Dark Theme (Matches Image 3) */
+    .m-history-card {
+      background-color: #0b1120 !important;
+      border: 1px solid #1e293b !important;
+      border-radius: 1rem !important;
+      overflow: hidden !important;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5) !important;
+      margin-top: 0.75rem !important;
+    }
+    .m-history-header {
+      background-color: #0f172a !important;
+      border-bottom: 1px solid #1e293b !important;
+      padding: 0.75rem 1rem !important;
+      display: flex !important;
+      flex-wrap: wrap !important;
+      justify-content: space-between !important;
+      align-items: center !important;
+      gap: 0.5rem !important;
+    }
+    .m-history-title {
+      color: #ffffff !important;
+      font-weight: 800 !important;
+      font-size: 0.875rem !important;
+      display: flex !important;
+      align-items: center !important;
+      gap: 0.5rem !important;
+      margin: 0 !important;
+    }
+    .m-history-btn-excel {
+      background: linear-gradient(135deg, #10b981, #059669) !important;
+      color: #ffffff !important;
+      padding: 0.4rem 0.85rem !important;
+      border-radius: 0.75rem !important;
+      font-size: 0.75rem !important;
+      font-weight: 700 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 0.35rem !important;
+      border: none !important;
+      cursor: pointer !important;
+      box-shadow: 0 4px 10px rgba(16, 185, 129, 0.3) !important;
+      transition: all 0.15s ease !important;
+    }
+    .m-history-btn-excel:hover {
+      background: linear-gradient(135deg, #059669, #047857) !important;
+    }
+    .m-history-btn-pdf {
+      background: linear-gradient(135deg, #f43f5e, #e11d48) !important;
+      color: #ffffff !important;
+      padding: 0.4rem 0.85rem !important;
+      border-radius: 0.75rem !important;
+      font-size: 0.75rem !important;
+      font-weight: 700 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      gap: 0.35rem !important;
+      border: none !important;
+      cursor: pointer !important;
+      box-shadow: 0 4px 10px rgba(244, 63, 94, 0.3) !important;
+      transition: all 0.15s ease !important;
+    }
+    .m-history-btn-pdf:hover {
+      background: linear-gradient(135deg, #e11d48, #be123c) !important;
+    }
+    .m-history-hint {
+      background-color: rgba(59, 130, 246, 0.15) !important;
+      border-bottom: 1px solid rgba(59, 130, 246, 0.25) !important;
+      padding: 0.35rem 0.75rem !important;
+      color: #60a5fa !important;
+      font-size: 0.65rem !important;
+      font-weight: 700 !important;
+      display: flex !important;
+      justify-content: space-between !important;
+      align-items: center !important;
+    }
+    .m-history-table-wrap {
+      width: 100% !important;
+      overflow-x: auto !important;
+      max-height: 380px !important;
+      overflow-y: auto !important;
+      background-color: #080d1a !important;
+      -webkit-overflow-scrolling: touch !important;
+    }
+    .m-history-table {
+      width: 100% !important;
+      min-width: 760px !important;
+      border-collapse: collapse !important;
+      text-align: left !important;
+      font-size: 0.75rem !important;
+      color: #cbd5e1 !important;
+      background-color: #080d1a !important;
+    }
+    .m-history-table th {
+      background-color: #0f172a !important;
+      color: #94a3b8 !important;
+      font-size: 0.6875rem !important;
+      font-weight: 700 !important;
+      text-transform: uppercase !important;
+      letter-spacing: 0.05em !important;
+      padding: 0.75rem 0.85rem !important;
+      border-bottom: 1px solid #1e293b !important;
+      white-space: nowrap !important;
+      position: sticky !important;
+      top: 0 !important;
+      z-index: 10 !important;
+    }
+    .m-history-table td {
+      padding: 0.75rem 0.85rem !important;
+      border-bottom: 1px solid #1e293b !important;
+      white-space: nowrap !important;
+      vertical-align: middle !important;
+      color: #cbd5e1 !important;
+      font-size: 0.75rem !important;
+    }
+    .m-history-table tr:hover {
+      background-color: rgba(30, 41, 59, 0.5) !important;
+    }
+    .m-history-table tr.row-excluded {
+      background-color: rgba(244, 63, 94, 0.15) !important;
+    }
+    .m-history-table tr.row-excluded:hover {
+      background-color: rgba(244, 63, 94, 0.25) !important;
+    }
+    .m-history-footer {
+      padding: 0.65rem 1rem !important;
+      background-color: #0f172a !important;
+      border-top: 1px solid #1e293b !important;
+      display: flex !important;
+      flex-wrap: wrap !important;
+      justify-content: space-between !important;
+      align-items: center !important;
+      gap: 0.5rem !important;
+      font-size: 0.75rem !important;
+      color: #94a3b8 !important;
+      font-weight: 600 !important;
+    }
+
     @media (max-width: 480px) {
       #calculator-overlay {
         padding: 8px !important;
@@ -1687,12 +1824,13 @@
       sorted.forEach((e, idx) => {
         const tr = document.createElement('tr');
         const isExcl = excl.has(idx);
-        tr.className = isExcl ? 'bg-rose-950/20 hover:bg-rose-950/30 transition-all' : 'hover:bg-slate-800/40 transition-all';
+        tr.className = isExcl ? 'row-excluded' : '';
+        tr.style.cssText = isExcl ? 'background-color: rgba(244, 63, 94, 0.15) !important;' : '';
 
         const dieselVal = parseFloat(String(e.dieselAmount || e.amount || 0).replace(/[^0-9.\-]/g, '')) || 0;
         const statusBadge = isExcl
-          ? `<span class="px-2 py-0.5 text-[10px] font-bold bg-rose-950/80 text-rose-400 rounded border border-rose-500/30 inline-flex items-center gap-1 ml-1.5"><i class="fas fa-exclamation-triangle text-[9px]"></i> EXCLUDED</span>`
-          : `<span class="px-2 py-0.5 text-[10px] font-bold bg-emerald-950/80 text-emerald-400 rounded border border-emerald-500/30 inline-flex items-center gap-1 ml-1.5"><i class="fas fa-gas-pump text-[9px]"></i> DIESEL</span>`;
+          ? `<span style="background-color:rgba(244,63,94,0.15);color:#fb7185;border:1px solid rgba(244,63,94,0.3);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;margin-left:6px;display:inline-flex;align-items:center;gap:4px;"><i class="fas fa-exclamation-triangle" style="font-size:9px;"></i> EXCLUDED</span>`
+          : `<span style="background-color:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.3);padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;margin-left:6px;display:inline-flex;align-items:center;gap:4px;"><i class="fas fa-gas-pump" style="font-size:9px;"></i> DIESEL</span>`;
 
         const leftoverVal = calc.leftovers[idx];
         let leftoverHtml = '';
@@ -1700,26 +1838,26 @@
           const cost = leftoverVal * calc.activeRate;
           const formattedL = (leftoverVal >= 0 ? '+' : '') + leftoverVal.toFixed(2) + ' L';
           const formattedCost = (cost >= 0 ? '+' : '') + '₹' + Math.round(cost).toLocaleString('en-IN');
-          const colorClass = leftoverVal >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold';
-          leftoverHtml = `<span class="${colorClass}">${formattedL} / ${formattedCost}</span>`;
+          const color = leftoverVal >= 0 ? '#34d399' : '#f43f5e';
+          leftoverHtml = `<span style="color:${color} !important;font-weight:700;display:block;text-align:right;">${formattedL} / ${formattedCost}</span>`;
         } else {
-          leftoverHtml = `<span class="text-slate-500">-</span>`;
+          leftoverHtml = `<span style="color:#64748b;display:block;text-align:right;">-</span>`;
         }
 
         tr.innerHTML = `
-          <td class="px-3.5 py-2.5 font-semibold text-slate-300 text-center whitespace-nowrap">
-            <label class="inline-flex items-center justify-center gap-1.5 cursor-pointer select-none">
-              <input type="checkbox" class="rounded border-slate-700 text-rose-600 focus:ring-rose-500 w-3.5 h-3.5 cursor-pointer" ${isExcl ? 'checked' : ''} onchange="toggleDriverReportRowExclude(${idx}, this.checked)" title="Click to toggle Exclude">
-              <span>${idx + 1}</span>
+          <td style="text-align:center;padding:0.75rem 0.85rem;border-bottom:1px solid #1e293b;">
+            <label style="display:inline-flex;align-items:center;justify-content:center;gap:0.35rem;cursor:pointer;">
+              <input type="checkbox" style="width:14px;height:14px;cursor:pointer;accent-color:#e11d48;" ${isExcl ? 'checked' : ''} onchange="toggleDriverReportRowExclude(${idx}, this.checked)" title="Click to toggle Exclude">
+              <span style="color:#ffffff;font-weight:700;">${idx + 1}</span>
             </label>
           </td>
-          <td class="px-3.5 py-2.5 text-slate-200 whitespace-nowrap font-medium">${e.date || '-'}</td>
-          <td class="px-3.5 py-2.5 font-extrabold text-white whitespace-nowrap">${e.vehicleNo || reqData.vehicleNo}</td>
-          <td class="px-3.5 py-2.5 text-slate-300 whitespace-nowrap max-w-[140px] truncate uppercase" title="${e.fromLocation || e.from || ''}">${e.fromLocation || e.from || '-'}</td>
-          <td class="px-3.5 py-2.5 text-slate-300 whitespace-nowrap max-w-[140px] truncate uppercase" title="${e.lastLocation || e.to || e.last || ''}">${e.lastLocation || e.to || e.last || '-'}</td>
-          <td class="px-3.5 py-2.5 text-slate-200 whitespace-nowrap"><div class="inline-flex items-center gap-1.5">${e.currentKm || e.km || 0} ${statusBadge}</div></td>
-          <td class="px-3.5 py-2.5 text-right font-bold text-white whitespace-nowrap ${isExcl ? 'text-slate-500 line-through' : ''}">₹${Math.round(dieselVal).toLocaleString('en-IN')}</td>
-          <td class="px-3.5 py-2.5 text-right whitespace-nowrap">${leftoverHtml}</td>
+          <td style="color:#cbd5e1;font-weight:600;padding:0.75rem 0.85rem;border-bottom:1px solid #1e293b;">${e.date || '-'}</td>
+          <td style="color:#ffffff !important;font-weight:800;letter-spacing:0.025em;padding:0.75rem 0.85rem;border-bottom:1px solid #1e293b;">${e.vehicleNo || reqData.vehicleNo}</td>
+          <td style="color:#94a3b8;font-weight:600;text-transform:uppercase;max-width:140px;overflow:hidden;text-overflow:ellipsis;padding:0.75rem 0.85rem;border-bottom:1px solid #1e293b;" title="${e.fromLocation || e.from || ''}">${e.fromLocation || e.from || '-'}</td>
+          <td style="color:#94a3b8;font-weight:600;text-transform:uppercase;max-width:140px;overflow:hidden;text-overflow:ellipsis;padding:0.75rem 0.85rem;border-bottom:1px solid #1e293b;" title="${e.lastLocation || e.to || e.last || ''}">${e.lastLocation || e.to || e.last || '-'}</td>
+          <td style="color:#cbd5e1;padding:0.75rem 0.85rem;border-bottom:1px solid #1e293b;"><div style="display:inline-flex;align-items:center;gap:4px;"><span>${e.currentKm || e.km || 0}</span> ${statusBadge}</div></td>
+          <td style="text-align:right;padding:0.75rem 0.85rem;border-bottom:1px solid #1e293b;"><span style="color:#ffffff !important;font-weight:800;${isExcl ? 'text-decoration:line-through;color:#64748b !important;' : ''}">₹${Math.round(dieselVal).toLocaleString('en-IN')}</span></td>
+          <td style="padding:0.75rem 0.85rem;border-bottom:1px solid #1e293b;">${leftoverHtml}</td>
         `;
         fragment.appendChild(tr);
       });
@@ -1867,58 +2005,58 @@
           </div>
 
           <!-- MATCHING ENTRIES HISTORY TABLE (EXACT 3RD IMAGE DESIGN) -->
-          <div class="rounded-2xl border border-slate-800 bg-[#090e17] overflow-hidden shadow-2xl">
+          <div class="m-history-card">
             <!-- Header with Title and Export Buttons -->
-            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 px-4 py-3 bg-[#0d1527] border-b border-slate-800">
-              <div class="flex items-center gap-2.5">
-                <div class="w-8 h-8 rounded-xl bg-blue-500/15 text-blue-400 flex items-center justify-center text-sm font-black shadow-inner shrink-0">
+            <div class="m-history-header">
+              <div style="display:flex;align-items:center;gap:0.625rem;">
+                <div style="width:2rem;height:2rem;border-radius:0.75rem;background-color:rgba(59,130,246,0.2);color:#60a5fa;display:flex;align-items:center;justify-content:center;font-size:0.875rem;font-weight:900;flex-shrink:0;">
                   <i class="fas fa-list-ul"></i>
                 </div>
-                <h3 class="text-sm font-extrabold text-white flex items-center gap-2">
+                <h3 class="m-history-title">
                   Matching Entries History
                 </h3>
               </div>
               <!-- Action Buttons -->
-              <div class="flex items-center gap-2 flex-wrap w-full sm:w-auto justify-end">
-                <button type="button" onclick="exportDriverVehicleReportExcel()" class="px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-1.5 transition-all cursor-pointer">
+              <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+                <button type="button" onclick="exportDriverVehicleReportExcel()" class="m-history-btn-excel">
                   <i class="fas fa-file-excel"></i> Export Excel
                 </button>
-                <button type="button" onclick="exportDriverVehicleReportPDF()" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-md flex items-center gap-1.5 transition-all cursor-pointer">
+                <button type="button" onclick="exportDriverVehicleReportPDF()" class="m-history-btn-pdf">
                   <i class="fas fa-file-pdf"></i> Export PDF Report
                 </button>
               </div>
             </div>
 
             <!-- Mobile Swipe Hint Banner -->
-            <div class="px-4 py-1.5 bg-blue-500/10 border-b border-blue-500/20 flex items-center justify-between sm:hidden text-[10px] text-blue-400 font-bold">
-              <span><i class="fas fa-arrows-left-right mr-1"></i> Swipe left/right to view all columns</span>
-              <span class="text-slate-500 font-medium">⇄ Horizontal Scroll</span>
+            <div class="m-history-hint">
+              <span><i class="fas fa-arrows-left-right" style="margin-right:4px;"></i> Swipe left/right to view all columns</span>
+              <span style="color:#94a3b8;font-weight:500;">⇄ Horizontal Scroll</span>
             </div>
 
             <!-- Table Body with horizontal & vertical scroll -->
-            <div class="w-full overflow-x-auto max-h-[380px] overflow-y-auto scrollbar-thin" style="-webkit-overflow-scrolling: touch; overscroll-behavior-x: contain;">
-              <table class="w-full min-w-[760px] text-left border-collapse text-xs whitespace-nowrap text-slate-300">
-                <thead class="sticky top-0 z-10">
-                  <tr class="bg-[#0f172a] text-[11px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-800">
-                    <th class="px-3.5 py-2.5 text-center whitespace-nowrap w-16"># / EXCL</th>
-                    <th class="px-3.5 py-2.5 text-left whitespace-nowrap">DATE</th>
-                    <th class="px-3.5 py-2.5 text-left whitespace-nowrap">VEHICLE</th>
-                    <th class="px-3.5 py-2.5 text-left whitespace-nowrap">FROM</th>
-                    <th class="px-3.5 py-2.5 text-left whitespace-nowrap">LAST</th>
-                    <th class="px-3.5 py-2.5 text-left whitespace-nowrap">KM</th>
-                    <th class="px-3.5 py-2.5 text-right whitespace-nowrap">DIESEL (₹)</th>
-                    <th class="px-3.5 py-2.5 text-right whitespace-nowrap">EXTRA LEFT / AMT</th>
+            <div class="m-history-table-wrap">
+              <table class="m-history-table">
+                <thead>
+                  <tr>
+                    <th style="text-align:center;width:4.5rem;"># / EXCL</th>
+                    <th>DATE</th>
+                    <th>VEHICLE</th>
+                    <th>FROM</th>
+                    <th>LAST</th>
+                    <th>KM</th>
+                    <th style="text-align:right;">DIESEL (₹)</th>
+                    <th style="text-align:right;">EXTRA LEFT / AMT</th>
                   </tr>
                 </thead>
-                <tbody id="driver-report-entries-tbody" class="divide-y divide-slate-800/80 bg-[#090e17]">
+                <tbody id="driver-report-entries-tbody">
                 </tbody>
               </table>
             </div>
 
             <!-- Footer Summary -->
-            <div class="px-4 py-2.5 border-t border-slate-800 bg-[#0d1527] flex flex-wrap items-center justify-between text-xs text-slate-400 font-semibold gap-2">
-              <div id="driver-report-summary-text">Total Entries: ${filtered.length} | Total Fuel: ₹${Math.round(calc.totalDieselAmount).toLocaleString('en-IN')} | Total Run: ${Math.round(calc.totalKm).toLocaleString('en-IN')} KM</div>
-              <button type="button" onclick="goToEnterCodeSubTab()" class="text-xs font-bold text-blue-400 hover:text-blue-300 underline">
+            <div class="m-history-footer">
+              <div id="driver-report-summary-text" style="color:#94a3b8;font-weight:600;">Total Entries: ${filtered.length} | Total Fuel: ₹${Math.round(calc.totalDieselAmount).toLocaleString('en-IN')}</div>
+              <button type="button" onclick="goToEnterCodeSubTab()" style="color:#60a5fa;font-weight:700;background:none;border:none;cursor:pointer;text-decoration:underline;">
                 ← Check Another Code
               </button>
             </div>
