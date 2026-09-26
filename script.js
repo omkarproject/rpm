@@ -23089,6 +23089,8 @@ window.removeVehicleFromKmExclusion = function(vehNo) {
 const vehicleReportRequestsRef = db.ref('vehicle_report_requests');
 let vehicleReportRequestsMap = {};
 let currentRepReqFilter = 'all';
+let vehRepTimerInterval = null;
+let currentVehRepRejectKey = null;
 
 vehicleReportRequestsRef.on('value', snapshot => {
   vehicleReportRequestsMap = snapshot.val() || {};
@@ -23097,6 +23099,35 @@ vehicleReportRequestsRef.on('value', snapshot => {
     renderVehicleReportRequestsList();
   }
 });
+
+function startVehicleReportCountdownTimer() {
+  if (vehRepTimerInterval) clearInterval(vehRepTimerInterval);
+
+  const updateTimers = () => {
+    const timerEls = document.querySelectorAll('.live-24h-timer');
+    if (!timerEls || timerEls.length === 0) return;
+    const now = Date.now();
+    timerEls.forEach(el => {
+      const exp = parseInt(el.getAttribute('data-expiry') || '0', 10);
+      if (!exp || exp <= now) {
+        el.innerHTML = `<span class="text-rose-500 font-bold"><i class="fas fa-times-circle"></i> Expired (>24h)</span>`;
+        el.className = "live-24h-timer inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-500/10 text-slate-400 border border-slate-500/20";
+        return;
+      }
+      const diff = exp - now;
+      const hrs = Math.floor(diff / 3600000);
+      const mins = Math.floor((diff % 3600000) / 60000);
+      const secs = Math.floor((diff % 60000) / 1000);
+      const hrsStr = String(hrs).padStart(2, '0');
+      const minsStr = String(mins).padStart(2, '0');
+      const secsStr = String(secs).padStart(2, '0');
+      el.innerHTML = `<i class="fas fa-clock text-[10px] text-emerald-500 animate-pulse"></i> ${hrsStr}h ${minsStr}m ${secsStr}s remaining`;
+    });
+  };
+
+  updateTimers();
+  vehRepTimerInterval = setInterval(updateTimers, 1000);
+}
 
 function updateVehicleReportRequestsBadges() {
   const now = Date.now();
@@ -23122,7 +23153,7 @@ function updateVehicleReportRequestsBadges() {
 window.openVehicleReportRequestsModal = function() {
   const modal = document.getElementById('vehicle-report-requests-modal');
   const modalContent = document.getElementById('vehicle-report-requests-modal-content');
-  const searchInput = document.getElementById('vehicle-report-requests-search');
+  const searchInput = document.getElementById('rep-req-search-input') || document.getElementById('vehicle-report-requests-search');
   if (searchInput) searchInput.value = '';
 
   filterVehicleReportRequests('all');
@@ -23138,6 +23169,10 @@ window.closeVehicleReportRequestsModal = function() {
   const modal = document.getElementById('vehicle-report-requests-modal');
   const modalContent = document.getElementById('vehicle-report-requests-modal-content');
   if (!modal || !modalContent) return;
+  if (vehRepTimerInterval) {
+    clearInterval(vehRepTimerInterval);
+    vehRepTimerInterval = null;
+  }
   modalContent.classList.remove('scale-100');
   modalContent.classList.add('scale-95');
   modal.classList.add('opacity-0', 'pointer-events-none');
@@ -23145,21 +23180,21 @@ window.closeVehicleReportRequestsModal = function() {
 };
 
 window.filterVehicleReportRequests = function(filter) {
-  currentRepReqFilter = filter || 'all';
+  currentRepReqFilter = (filter || 'all').toLowerCase();
   const filterBtns = {
-    all: document.getElementById('rep-filter-btn-all'),
-    pending: document.getElementById('rep-filter-btn-pending'),
-    approved: document.getElementById('rep-filter-btn-approved'),
-    rejected: document.getElementById('rep-filter-btn-rejected')
+    all: document.getElementById('btn-rep-filter-all') || document.getElementById('rep-filter-btn-all'),
+    pending: document.getElementById('btn-rep-filter-pending') || document.getElementById('rep-filter-btn-pending'),
+    approved: document.getElementById('btn-rep-filter-approved') || document.getElementById('rep-filter-btn-approved'),
+    rejected: document.getElementById('btn-rep-filter-rejected') || document.getElementById('rep-filter-btn-rejected')
   };
 
   Object.keys(filterBtns).forEach(key => {
     const btn = filterBtns[key];
     if (!btn) return;
     if (key === currentRepReqFilter) {
-      btn.className = "px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-indigo-600 text-white shadow-sm";
+      btn.className = "px-3 py-1 rounded-lg bg-indigo-600 text-white shadow-sm font-black transition-all";
     } else {
-      btn.className = "px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700";
+      btn.className = "px-3 py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-all";
     }
   });
 
@@ -23170,7 +23205,8 @@ window.renderVehicleReportRequestsList = function() {
   const container = document.getElementById('vehicle-report-requests-list');
   if (!container) return;
 
-  const searchVal = (document.getElementById('vehicle-report-requests-search')?.value || '').trim().toLowerCase();
+  const searchInput = document.getElementById('rep-req-search-input') || document.getElementById('vehicle-report-requests-search');
+  const searchVal = (searchInput?.value || '').trim().toLowerCase();
   const now = Date.now();
 
   const reqs = Object.keys(vehicleReportRequestsMap || {}).map(k => ({
@@ -23179,7 +23215,8 @@ window.renderVehicleReportRequestsList = function() {
   })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
 
   const filtered = reqs.filter(r => {
-    const isExpired = r.expiresAt && r.expiresAt <= now;
+    const exp = r.expiresAt || (r.createdAt ? r.createdAt + 86400000 : 0);
+    const isExpired = exp && exp <= now;
     let status = r.status || 'pending';
     if (status === 'pending' && isExpired) status = 'expired';
 
@@ -23189,7 +23226,7 @@ window.renderVehicleReportRequestsList = function() {
 
     if (searchVal) {
       const matchVehicle = (r.vehicleNo || '').toLowerCase().includes(searchVal);
-      const matchName = (r.driverName || '').toLowerCase().includes(searchVal);
+      const matchName = (r.driverName || r.name || '').toLowerCase().includes(searchVal);
       const matchMobile = (r.mobile || '').toLowerCase().includes(searchVal);
       const matchCode = (r.code || r.key || '').toLowerCase().includes(searchVal);
       if (!matchVehicle && !matchName && !matchMobile && !matchCode) return false;
@@ -23210,7 +23247,8 @@ window.renderVehicleReportRequestsList = function() {
 
   container.innerHTML = '';
   filtered.forEach(req => {
-    const isExpired = req.expiresAt && req.expiresAt <= now;
+    const exp = req.expiresAt || (req.createdAt ? req.createdAt + 86400000 : 0);
+    const isExpired = exp && exp <= now;
     let status = req.status || 'pending';
     if (status === 'pending' && isExpired) status = 'expired';
 
@@ -23231,13 +23269,31 @@ window.renderVehicleReportRequestsList = function() {
       day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true
     }) : 'N/A';
 
-    let expiryInfo = '';
-    if (req.expiresAt) {
-      if (req.expiresAt > now) {
-        const hrsLeft = Math.round((req.expiresAt - now) / (1000 * 60 * 60));
-        expiryInfo = `<span class="text-[10px] text-slate-400 font-medium">⏱️ Expires in ~${hrsLeft}h</span>`;
+    // 24hr Live Countdown Timer Display for Approved requests
+    let timerOrExpiryBadge = '';
+    if (status === 'approved') {
+      const diff = exp - now;
+      if (diff > 0) {
+        const hrs = Math.floor(diff / 3600000);
+        const mins = Math.floor((diff % 3600000) / 60000);
+        const secs = Math.floor((diff % 60000) / 1000);
+        const formatted = `${String(hrs).padStart(2,'0')}h ${String(mins).padStart(2,'0')}m ${String(secs).padStart(2,'0')}s remaining`;
+        timerOrExpiryBadge = `
+          <span class="live-24h-timer inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-[11px] font-black bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 font-mono" data-expiry="${exp}">
+            <i class="fas fa-clock text-[10px] text-emerald-500 animate-pulse"></i> ${formatted}
+          </span>
+        `;
       } else {
-        expiryInfo = `<span class="text-[10px] text-rose-400 font-medium">Expired</span>`;
+        timerOrExpiryBadge = `
+          <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-500/10 text-slate-400 border border-slate-500/20">
+            ⌛ Expired (>24h)
+          </span>
+        `;
+      }
+    } else if (status === 'pending') {
+      if (exp && exp > now) {
+        const hrsLeft = Math.round((exp - now) / 3600000);
+        timerOrExpiryBadge = `<span class="text-[10px] text-slate-400 font-medium">⏱️ Expires in ~${hrsLeft}h</span>`;
       }
     }
 
@@ -23245,7 +23301,7 @@ window.renderVehicleReportRequestsList = function() {
     item.className = "p-4 rounded-2xl bg-slate-100/70 dark:bg-slate-900/70 border border-slate-200/60 dark:border-slate-800/60 hover:border-indigo-500/30 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4";
     
     item.innerHTML = `
-      <div class="flex items-start gap-3.5 flex-1">
+      <div class="flex items-start gap-3.5 flex-1 min-w-0">
         <div class="w-12 h-12 rounded-2xl bg-indigo-500/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex flex-col items-center justify-center font-black tracking-tight shrink-0 border border-indigo-500/20">
           <span class="text-[9px] uppercase font-bold text-slate-400">CODE</span>
           <span class="text-sm tracking-wider font-extrabold text-indigo-600 dark:text-indigo-400">${req.code || req.key}</span>
@@ -23256,12 +23312,12 @@ window.renderVehicleReportRequestsList = function() {
             <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${badgeBg}">
               ${badgeText}
             </span>
-            ${expiryInfo}
+            ${timerOrExpiryBadge}
           </div>
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] text-slate-600 dark:text-slate-300 mt-2">
             <div>
               <span class="text-slate-400 block text-[9px] font-semibold uppercase">Driver / User</span>
-              <span class="font-bold">${req.driverName || 'N/A'}</span>
+              <span class="font-bold truncate block">${req.driverName || req.name || 'N/A'}</span>
             </div>
             <div>
               <span class="text-slate-400 block text-[9px] font-semibold uppercase">Mobile No</span>
@@ -23273,9 +23329,14 @@ window.renderVehicleReportRequestsList = function() {
             </div>
             <div>
               <span class="text-slate-400 block text-[9px] font-semibold uppercase">Date Range</span>
-              <span class="font-bold text-emerald-600 dark:text-emerald-400">${req.dateRangeText || (req.dateMode === 'current_month' ? 'Current Month' : 'Custom')}</span>
+              <span class="font-bold text-emerald-600 dark:text-emerald-400">${req.dateRangeLabel || req.dateRangeText || (req.dateOption === 'current_month' || req.dateMode === 'current_month' ? 'Current Month' : 'Custom')}</span>
             </div>
           </div>
+          ${req.rejectReason ? `
+            <div class="text-[10px] text-rose-600 dark:text-rose-400 font-bold mt-2 p-2 rounded-xl bg-rose-500/10 border border-rose-500/20">
+              <i class="fas fa-ban mr-1 text-rose-500"></i> Rejection Reason: ${req.rejectReason}
+            </div>
+          ` : ''}
           <div class="text-[9px] text-slate-400 mt-2">
             Requested: ${createdTimeStr}
             ${req.approvedBy ? ` • Approved by: <span class="font-bold text-slate-600 dark:text-slate-300">${req.approvedBy}</span>` : ''}
@@ -23288,12 +23349,12 @@ window.renderVehicleReportRequestsList = function() {
           <button onclick="approveVehicleReportRequest('${req.key}')" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm hover:shadow transition-all flex items-center gap-1.5">
             <i class="fas fa-check"></i> Approve
           </button>
-          <button onclick="rejectVehicleReportRequest('${req.key}')" class="px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 font-bold text-xs transition-all flex items-center gap-1.5">
+          <button onclick="openVehicleReportRejectModal('${req.key}')" class="px-3.5 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500 text-rose-600 dark:text-rose-400 hover:text-white border border-rose-500/30 font-bold text-xs transition-all flex items-center gap-1.5">
             <i class="fas fa-times"></i> Reject
           </button>
         ` : (status === 'approved' ? `
-          <button onclick="rejectVehicleReportRequest('${req.key}')" class="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-rose-500/20 hover:text-rose-500 text-slate-500 text-[11px] font-semibold transition-all">
-            Revoke / Reject
+          <button onclick="openVehicleReportRejectModal('${req.key}')" class="px-3.5 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-black text-xs shadow-sm hover:shadow transition-all flex items-center gap-1.5" title="Reject request and immediately expire code">
+            <i class="fas fa-ban"></i> Reject & Expire
           </button>
         ` : (status === 'rejected' ? `
           <button onclick="approveVehicleReportRequest('${req.key}')" class="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-emerald-500/20 hover:text-emerald-500 text-slate-500 text-[11px] font-semibold transition-all">
@@ -23304,36 +23365,91 @@ window.renderVehicleReportRequestsList = function() {
     `;
     container.appendChild(item);
   });
+
+  startVehicleReportCountdownTimer();
+};
+
+window.openVehicleReportRejectModal = function(codeKey) {
+  currentVehRepRejectKey = codeKey;
+  const req = vehicleReportRequestsMap[codeKey] || {};
+  
+  const vehSpan = document.getElementById('veh-rep-reject-modal-vehicle');
+  if (vehSpan) vehSpan.textContent = req.vehicleNo || 'Vehicle';
+
+  const codeSpan = document.getElementById('veh-rep-reject-modal-code');
+  if (codeSpan) codeSpan.textContent = req.code || codeKey;
+
+  const reasonInput = document.getElementById('veh-rep-reject-reason-input');
+  if (reasonInput) reasonInput.value = '';
+
+  const modal = document.getElementById('vehicle-report-reject-modal');
+  if (modal) {
+    modal.classList.remove('hidden');
+    setTimeout(() => {
+      if (reasonInput) reasonInput.focus();
+    }, 100);
+  }
+};
+
+window.closeVehicleReportRejectModal = function() {
+  const modal = document.getElementById('vehicle-report-reject-modal');
+  if (modal) modal.classList.add('hidden');
+  currentVehRepRejectKey = null;
+};
+
+window.confirmRejectVehicleReportRequest = function() {
+  if (!currentVehRepRejectKey) return;
+  const codeKey = currentVehRepRejectKey;
+  
+  const reasonInput = document.getElementById('veh-rep-reject-reason-input');
+  const reason = reasonInput ? reasonInput.value.trim() : '';
+
+  if (!reason) {
+    if (typeof toast !== 'undefined' && toast.warn) {
+      toast.warn("Please enter a rejection reason.");
+    } else {
+      alert("Please enter a rejection reason.");
+    }
+    return;
+  }
+
+  const user = (typeof currentUser !== 'undefined' && currentUser && currentUser.name) ? currentUser.name : (getAuthSession('rpm_user_name') || 'Admin');
+
+  vehicleReportRequestsRef.child(codeKey).update({
+    status: 'rejected',
+    rejectReason: reason,
+    rejectedAt: Date.now(),
+    rejectedBy: user
+  }).then(() => {
+    if (typeof toast !== 'undefined' && toast.ok) {
+      toast.ok(`Report request ${codeKey} rejected & code expired.`);
+    }
+    closeVehicleReportRejectModal();
+  }).catch(err => {
+    if (typeof toast !== 'undefined' && toast.err) {
+      toast.err("Failed to reject request: " + err.message);
+    }
+  });
 };
 
 window.approveVehicleReportRequest = function(codeKey) {
   if (typeof checkAuth === 'function' && !checkAuth()) return;
-  const user = (typeof currentUser !== 'undefined' && currentUser && currentUser.name) ? currentUser.name : 'Admin';
+  const user = (typeof currentUser !== 'undefined' && currentUser && currentUser.name) ? currentUser.name : (getAuthSession('rpm_user_name') || 'Admin');
   
   vehicleReportRequestsRef.child(codeKey).update({
     status: 'approved',
     approvedAt: Date.now(),
-    approvedBy: user
+    approvedBy: user,
+    rejectReason: null
   }).then(() => {
-    if (typeof toast !== 'undefined' && toast.ok) toast.ok(`Report request ${codeKey} approved!`);
+    if (typeof toast !== 'undefined' && toast.ok) toast.ok(`Report request ${codeKey} approved! (Valid for 24h)`);
   }).catch(err => {
     if (typeof toast !== 'undefined' && toast.err) toast.err("Failed to approve request: " + err.message);
   });
 };
 
 window.rejectVehicleReportRequest = function(codeKey) {
-  if (typeof checkAuth === 'function' && !checkAuth()) return;
-  const user = (typeof currentUser !== 'undefined' && currentUser && currentUser.name) ? currentUser.name : 'Admin';
-
-  vehicleReportRequestsRef.child(codeKey).update({
-    status: 'rejected',
-    rejectedAt: Date.now(),
-    rejectedBy: user
-  }).then(() => {
-    if (typeof toast !== 'undefined' && toast.warn) toast.warn(`Report request ${codeKey} rejected.`);
-  }).catch(err => {
-    if (typeof toast !== 'undefined' && toast.err) toast.err("Failed to reject request: " + err.message);
-  });
+  openVehicleReportRejectModal(codeKey);
 };
 
 window.saveAutoApproveTimerSettings = function() {

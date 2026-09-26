@@ -423,10 +423,6 @@
 
           <!-- SUB-TAB A: Request Form -->
           <div id="report-sub-request-panel" class="space-y-3">
-            <p class="text-[11px] text-slate-500 leading-relaxed font-semibold">
-              Apne vehicle ki report dekhne ke liye request submit karein. Admin approval ke baad 5-digit code se report dekh sakte hain.
-            </p>
-
             <div>
               <label class="calc-label text-[11px] font-black uppercase text-slate-600">Vehicle No <span class="text-red-500">*</span></label>
               <input type="text" id="rep-req-vehicle" class="calc-input mt-1 uppercase" placeholder="e.g. MH04LY4608" autocomplete="off">
@@ -1528,8 +1524,14 @@
                 ❌ Request Rejected!
               </div>
               <p class="text-[11px] text-rose-600 font-medium leading-relaxed">
-                Aapki report request (<span class="font-bold">${reqData.vehicleNo}</span>) Admin dwara reject kar di gayi hai.
+                Aapki report request (<span class="font-bold">${reqData.vehicleNo}</span>) reject kar di gayi hai.
               </p>
+              ${reqData.rejectReason ? `
+                <div class="mt-2 text-[11px] font-bold text-rose-700 bg-white/90 p-2.5 rounded-xl border border-rose-200 text-left">
+                  <span class="text-rose-500 uppercase text-[9px] font-black block">Rejection Reason:</span>
+                  ${reqData.rejectReason}
+                </div>
+              ` : ''}
             </div>
           `;
           return;
