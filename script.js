@@ -20482,10 +20482,11 @@ function renderDriverRequestsList() {
   const userRole = (getAuthSession('rpm_user_role') || '').toLowerCase();
   const userEmail = (getAuthSession('rpm_user_email') || '').toLowerCase();
   const assignedVendor = getAssignedVendorName();
+  const isVendorRole = (userRole === 'vendor');
 
   const isStrictAdminRole = (
     (userRole === 'admin' || userRole === 'superadmin' || userEmail === ADMIN_EMAIL) &&
-    userRole !== 'vendor' &&
+    !isVendorRole &&
     userRole !== 'incharge' &&
     !assignedVendor
   );
@@ -21445,6 +21446,10 @@ function renderNotificationDropdown(actionRequests, pendingUsers = [], pendingVe
 
 function updateDriverRequestsBadges() {
   const now = Date.now();
+  const userRole = (getAuthSession('rpm_user_role') || '').toLowerCase();
+  const userEmail = (getAuthSession('rpm_user_email') || '').toLowerCase();
+  const isVendorRole = (userRole === 'vendor');
+
   const activeRequests = driverRequestsList.filter(r => {
     if (r.status === 'pending' || r.status === 'update_pending') return true;
     if (!r.submittedAt) return false;
@@ -21466,11 +21471,6 @@ function updateDriverRequestsBadges() {
   const filledCount = activeRequests.filter(r => r.status === 'filled' || r.status === 'update_rejected').length;
   const rejectedCount = activeRequests.filter(r => r.status === 'rejected').length;
   const updatePendingCount = activeRequests.filter(r => r.status === 'update_pending').length;
-
-  const userRole = (getAuthSession('rpm_user_role') || '').toLowerCase();
-  const userEmail = (getAuthSession('rpm_user_email') || '').toLowerCase();
-
-  const isVendorRole = (userRole === 'vendor');
 
   const currentIsAdmin = (
     (getAuthSession('rpm_is_admin') === '1' ||
