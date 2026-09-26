@@ -9279,7 +9279,7 @@ function refreshNotificationDropdownWithActiveTask() {
   updateDashboardActiveTaskKpi();
 
   if (typeof renderNotificationDropdown === 'function') {
-    renderNotificationDropdown(window.lastActionRequests || [], window.lastPendingUsers || []);
+    renderNotificationDropdown(window.lastActionRequests || [], window.lastPendingUsers || [], window.lastPendingVehicleReports || []);
   }
 }
 
@@ -20501,7 +20501,7 @@ function renderDriverRequestsList() {
   tbody.innerHTML = '';
 
   const now = Date.now();
-  const filtered = driverRequestsList.filter(r => {
+  let filtered = driverRequestsList.filter(r => {
     // Pending or Update-Pending requests MUST ALWAYS be shown regardless of age or missing timestamp
     if (r.status !== 'pending' && r.status !== 'update_pending') {
       const subTime = typeof r.submittedAt === 'number' ? r.submittedAt : (r.submittedAt ? new Date(r.submittedAt).getTime() : 0);
@@ -20515,6 +20515,33 @@ function renderDriverRequestsList() {
     const matchesStatus = statusFilter === 'ALL' || r.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  // Also include Vehicle Report Requests when statusFilter is 'pending', 'ALL', or 'rejected'
+  if (!isVendorRole && typeof vehicleReportRequestsMap !== 'undefined') {
+    const reportReqs = Object.keys(vehicleReportRequestsMap || {}).map(k => ({
+      key: k,
+      isVehicleReportRequest: true,
+      ...vehicleReportRequestsMap[k]
+    })).filter(r => {
+      let matchesReqStatus = false;
+      if (statusFilter === 'pending') {
+        matchesReqStatus = (r.status === 'pending' || !r.status) && (!r.expiresAt || r.expiresAt > now);
+      } else if (statusFilter === 'rejected') {
+        matchesReqStatus = (r.status === 'rejected');
+      } else if (statusFilter === 'ALL') {
+        matchesReqStatus = (r.status === 'pending' || !r.status) && (!r.expiresAt || r.expiresAt > now);
+      }
+      if (!matchesReqStatus) return false;
+      const matchesSearch = !searchQuery || 
+        String(r.vehicleNo || '').toUpperCase().includes(searchQuery) ||
+        String(r.code || r.key || '').toUpperCase().includes(searchQuery) ||
+        String(r.mobile || '').includes(searchQuery) ||
+        String(r.name || '').toUpperCase().includes(searchQuery);
+      return matchesSearch;
+    });
+
+    filtered = reportReqs.concat(filtered);
+  }
 
   if (filtered.length === 0) {
     tbody.innerHTML = `
@@ -20530,6 +20557,88 @@ function renderDriverRequestsList() {
   filtered.forEach(r => {
     const tr = document.createElement('tr');
     tr.className = "hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-all border-b border-slate-200/40 dark:border-slate-800/30";
+    
+    if (r.isVehicleReportRequest) {
+      const dateFormatted = r.requestedAt ? (typeof formatDateTime === 'function' ? formatDateTime(r.requestedAt) : new Date(r.requestedAt).toLocaleString('en-IN')) : '-';
+      let rangeText = '';
+      if (r.rangeType === 'current_month') {
+        rangeText = `Current Month (${r.rangeMonth || 'Active'})`;
+      } else {
+        rangeText = `${r.startDate || ''} to ${r.endDate || ''}`;
+      }
+
+      tr.innerHTML = `
+        <td class="px-3 py-4 w-10 text-center">
+          <span class="w-6 h-6 rounded-lg bg-indigo-500/10 text-indigo-500 flex items-center justify-center mx-auto text-xs" title="Vehicle Report Request">
+            <i class="fas fa-file-invoice"></i>
+          </span>
+        </td>
+        <td class="px-4 py-4 whitespace-nowrap">
+          <div class="text-xs font-bold text-slate-700 dark:text-slate-300">${dateFormatted}</div>
+          <div class="text-[9px] font-semibold text-slate-400 dark:text-slate-500 flex items-center gap-1 mt-0.5">
+            <i class="fas fa-clock text-amber-500"></i> Expires ~24h
+          </div>
+        </td>
+        <td class="px-5 py-4 whitespace-nowrap">
+          <div class="flex items-center gap-2">
+            <div>
+              <div class="font-extrabold text-blue-600 dark:text-blue-400 text-xs sm:text-sm tracking-wide uppercase">${r.vehicleNo || '-'}</div>
+              <div class="flex items-center gap-1.5 mt-1">
+                <span class="px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">REPORT REQUEST</span>
+                <span class="px-1.5 py-0.5 rounded-md text-[9px] font-mono font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">CODE: ${r.code || r.key}</span>
+              </div>
+            </div>
+          </div>
+        </td>
+        <td class="px-5 py-4 whitespace-nowrap">
+          <div class="text-xs font-bold text-slate-800 dark:text-slate-200">
+            <i class="fas fa-user text-[10px] text-slate-400 mr-1"></i>${r.name || 'User'}
+          </div>
+          <div class="text-[10px] font-semibold text-slate-400 dark:text-slate-500 mt-0.5">
+            <i class="fas fa-phone text-[9px] text-slate-400 mr-1"></i>${r.mobile || '-'}
+          </div>
+          <div class="text-[10px] font-bold text-indigo-400 mt-1 flex items-center gap-1">
+            <i class="fas fa-calendar-alt text-[9px]"></i> ${rangeText}
+          </div>
+        </td>
+        <td class="px-4 py-4 whitespace-nowrap text-center">
+          <span class="font-extrabold text-xs text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800/80 px-2 py-1 rounded-lg border border-slate-200/50 dark:border-slate-700/50">
+            ${r.currentKm ? `${Number(r.currentKm).toLocaleString('en-IN')} KM` : '-'}
+          </span>
+        </td>
+        <td class="px-4 py-4 whitespace-nowrap text-right">
+          <span class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+            Report Access
+          </span>
+        </td>
+        <td class="px-4 py-4 whitespace-nowrap">
+          <div class="text-xs font-bold text-slate-700 dark:text-slate-300">Matching Entries History</div>
+          ${r.status === 'rejected' && r.rejectReason ? `
+            <div class="text-[10px] text-rose-500 font-bold mt-1 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">
+              Reason: ${r.rejectReason}
+            </div>
+          ` : `
+            <div class="text-[10px] text-slate-400 italic mt-0.5">5-Digit Driver Code: ${r.code || r.key}</div>
+          `}
+        </td>
+        <td class="px-5 py-4 whitespace-nowrap text-center">
+          ${r.status === 'rejected' ? `
+            <span class="inline-flex px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-rose-500/10 text-rose-500 border border-rose-500/20">Rejected</span>
+          ` : `
+            <div class="flex items-center justify-center gap-1.5">
+              <button onclick="approveVehicleReportRequest('${r.code || r.key}')" class="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-black uppercase shadow-sm transition-all flex items-center gap-1">
+                <i class="fas fa-check text-[9px]"></i> Approve
+              </button>
+              <button onclick="openVehicleReportRejectModal('${r.code || r.key}')" class="px-3 py-1.5 bg-rose-500 hover:bg-rose-600 text-white rounded-lg text-[10px] font-black uppercase shadow-sm transition-all flex items-center gap-1">
+                <i class="fas fa-times text-[9px]"></i> Reject
+              </button>
+            </div>
+          `}
+        </td>
+      `;
+      tbody.appendChild(tr);
+      return;
+    }
     
     let statusActionHtml = '';
     if (r.status === 'pending') {
@@ -21067,16 +21176,17 @@ document.addEventListener('click', event => {
   }
 });
 
-function renderNotificationDropdown(actionRequests, pendingUsers = []) {
+function renderNotificationDropdown(actionRequests, pendingUsers = [], pendingVehicleReports = []) {
   window.lastActionRequests = actionRequests;
   window.lastPendingUsers = pendingUsers;
+  window.lastPendingVehicleReports = pendingVehicleReports;
 
   const listContainer = document.getElementById('notification-dropdown-list');
   const countBadge = document.getElementById('notification-dropdown-count');
   if (!listContainer) return;
   
   const hasActiveTask = !!(activeLiveTask && (activeLiveTask.status === 'running' || activeLiveTask.status === 'completed' || activeLiveTask.status === 'failed'));
-  const totalCount = actionRequests.length + pendingUsers.length + (hasActiveTask ? 1 : 0);
+  const totalCount = actionRequests.length + pendingUsers.length + pendingVehicleReports.length + (hasActiveTask ? 1 : 0);
   
   if (countBadge) {
     countBadge.textContent = totalCount;
@@ -21175,11 +21285,11 @@ function renderNotificationDropdown(actionRequests, pendingUsers = []) {
   
   let html = taskKpiHtml;
 
-  if (actionRequests.length === 0 && pendingUsers.length === 0 && hasActiveTask) {
+  if (actionRequests.length === 0 && pendingUsers.length === 0 && pendingVehicleReports.length === 0 && hasActiveTask) {
     html += `
       <div class="text-center py-5 text-slate-400 dark:text-slate-500 font-bold text-xs uppercase tracking-wider border-t border-slate-800/40">
         <i class="fas fa-check-circle text-xl text-emerald-500 mb-1.5 block"></i>
-        No Pending Driver Requests
+        No Pending Requests
       </div>
     `;
     listContainer.innerHTML = html;
@@ -21204,6 +21314,63 @@ function renderNotificationDropdown(actionRequests, pendingUsers = []) {
         <div class="flex gap-2">
           <button onclick="approveUser('${u._key}'); event.stopPropagation();" class="flex-1 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white text-xs font-black rounded-xl shadow-md transition-all">Approve User</button>
           <button onclick="deleteUser('${u._key}'); event.stopPropagation();" class="flex-1 py-1.5 bg-gradient-to-r from-rose-500 to-red-500 hover:from-rose-600 hover:to-red-600 text-white text-xs font-black rounded-xl shadow-md transition-all">Reject</button>
+        </div>
+      </div>
+    `;
+  });
+
+  // Render Pending Vehicle Report Requests
+  pendingVehicleReports.forEach(rep => {
+    const code = rep.code || rep.key;
+    const vehNo = rep.vehicleNo || 'Vehicle';
+    const driverName = rep.name || 'User';
+    const mobileNo = rep.mobile || '-';
+    const currentKm = rep.currentKm ? `${Number(rep.currentKm).toLocaleString('en-IN')} KM` : '-';
+    let dateRangeStr = '';
+    if (rep.rangeType === 'current_month') {
+      dateRangeStr = `Current Month (${rep.rangeMonth || 'Active'})`;
+    } else {
+      dateRangeStr = `${rep.startDate || ''} to ${rep.endDate || ''}`;
+    }
+
+    html += `
+      <div class="glass-panel p-5 rounded-2xl border border-indigo-500/30 dark:border-indigo-500/20 bg-indigo-500/5 shadow-[0_8px_20px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transition-all duration-300 relative" onclick="event.stopPropagation();">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-1.5">
+            <span class="text-xs font-black text-indigo-500 uppercase tracking-wider flex items-center gap-1.5">
+              <i class="fas fa-file-invoice"></i> Vehicle Report
+            </span>
+            <span class="px-2 py-0.5 rounded-full text-[9px] font-black bg-indigo-500/15 text-indigo-400 border border-indigo-500/30 uppercase tracking-wider">
+              Code: ${code}
+            </span>
+          </div>
+          <span class="text-[9px] font-extrabold px-2 py-0.5 bg-amber-500/10 text-amber-500 border border-amber-500/20 rounded-full uppercase flex items-center gap-1">
+            <i class="fas fa-clock text-[8px]"></i> Expires ~24h
+          </span>
+        </div>
+
+        <div class="text-[11px] text-slate-600 dark:text-slate-300 space-y-1 mb-3">
+          <div class="flex items-center justify-between">
+            <span class="font-extrabold text-sm text-slate-800 dark:text-white uppercase tracking-wide">${vehNo}</span>
+            <span class="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-md">${currentKm}</span>
+          </div>
+          <div class="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
+            <span><i class="fas fa-user mr-1"></i><strong class="text-slate-700 dark:text-slate-200">${driverName}</strong></span>
+            <span><i class="fas fa-phone mr-1"></i><strong class="text-slate-700 dark:text-slate-200">${mobileNo}</strong></span>
+          </div>
+          <div class="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 pt-0.5">
+            <i class="fas fa-calendar-alt text-indigo-500 dark:text-indigo-400"></i>
+            <span class="font-bold text-indigo-600 dark:text-indigo-300">${dateRangeStr}</span>
+          </div>
+        </div>
+
+        <div class="flex gap-2">
+          <button onclick="approveVehicleReportRequest('${code}'); event.stopPropagation();" class="flex-1 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white text-xs font-black rounded-xl shadow-md transition-all flex items-center justify-center gap-1">
+            <i class="fas fa-check text-[10px]"></i> Approve
+          </button>
+          <button onclick="openVehicleReportRejectModal('${code}'); event.stopPropagation();" class="flex-1 py-1.5 bg-gradient-to-r from-rose-500 to-red-500 hover:from-rose-600 hover:to-red-600 text-white text-xs font-black rounded-xl shadow-md transition-all flex items-center justify-center gap-1">
+            <i class="fas fa-times text-[10px]"></i> Reject
+          </button>
         </div>
       </div>
     `;
@@ -21286,7 +21453,14 @@ function updateDriverRequestsBadges() {
   });
 
   const pendingRequests = activeRequests.filter(r => r.status === 'pending');
-  const pendingCount = pendingRequests.length;
+  const pendingVehicleReports = (!isVendorRole && typeof vehicleReportRequestsMap !== 'undefined')
+    ? Object.keys(vehicleReportRequestsMap || {}).map(k => ({
+        key: k,
+        ...vehicleReportRequestsMap[k]
+      })).filter(r => (r.status === 'pending' || !r.status) && (!r.expiresAt || r.expiresAt > now))
+    : [];
+
+  const pendingCount = pendingRequests.length + pendingVehicleReports.length;
   
   const approvedCount = activeRequests.filter(r => r.status === 'approved').length;
   const filledCount = activeRequests.filter(r => r.status === 'filled' || r.status === 'update_rejected').length;
@@ -21316,7 +21490,8 @@ function updateDriverRequestsBadges() {
   // Render the notification pop preview dropdown for all non-vendor users (Admin, Incharge, Watcher, Users)
   renderNotificationDropdown(
     !isVendorRole ? pendingRequests.concat(activeRequests.filter(r => r.status === 'update_pending')) : [],
-    !isVendorRole ? pendingUsers : []
+    !isVendorRole ? pendingUsers : [],
+    !isVendorRole ? pendingVehicleReports : []
   );
 
   // Show notification bell button on desktop & mobile for all non-vendor users (Admin, Incharge, Watcher, Users)
@@ -23098,6 +23273,36 @@ vehicleReportRequestsRef.on('value', snapshot => {
   if (document.getElementById('vehicle-report-requests-modal') && !document.getElementById('vehicle-report-requests-modal').classList.contains('hidden')) {
     renderVehicleReportRequestsList();
   }
+  if (typeof updateDriverRequestsBadges === 'function') {
+    updateDriverRequestsBadges();
+  }
+  if (typeof renderDriverRequestsList === 'function') {
+    renderDriverRequestsList();
+  }
+});
+
+let isVehicleReportRequestsInitialLoad = false;
+vehicleReportRequestsRef.once('value', () => {
+  isVehicleReportRequestsInitialLoad = true;
+});
+vehicleReportRequestsRef.on('child_added', snapshot => {
+  if (typeof getAuthSession === 'function' && getAuthSession('rpm_logged_in') !== '1') return;
+  const userRole = (getAuthSession('rpm_user_role') || '').toLowerCase();
+  if (userRole === 'vendor') return;
+  const item = snapshot.val();
+  if (item && isVehicleReportRequestsInitialLoad && (item.status === 'pending' || !item.status)) {
+    if (typeof playChimeSound === 'function') playChimeSound();
+    if (typeof toast !== 'undefined' && toast.warn) {
+      toast.warn(`New Vehicle Report Request: ${item.vehicleNo || 'Vehicle'} (Code: ${item.code || snapshot.key})`);
+    }
+    if (typeof triggerNativeNotification === 'function') {
+      triggerNativeNotification(
+        'New Vehicle Report Request',
+        `Vehicle: ${item.vehicleNo || 'Vehicle'}\nRequester: ${item.name || 'User'} (${item.mobile || ''})\nCode: ${item.code || snapshot.key}`,
+        snapshot.key
+      );
+    }
+  }
 });
 
 function startVehicleReportCountdownTimer() {
@@ -23151,6 +23356,21 @@ function updateVehicleReportRequestsBadges() {
 }
 
 window.openVehicleReportRequestsModal = function() {
+  const userRole = (getAuthSession('rpm_user_role') || '').toLowerCase();
+  const userEmail = (getAuthSession('rpm_user_email') || '').toLowerCase();
+  const isAdmin = (
+    getAuthSession('rpm_is_admin') === '1' ||
+    userRole === 'admin' ||
+    userRole === 'superadmin' ||
+    userEmail === ADMIN_EMAIL
+  );
+  if (!isAdmin) {
+    if (typeof toast !== 'undefined' && toast.warn) {
+      toast.warn("Vehicle Report Requests panel is only accessible to Admin.");
+    }
+    return;
+  }
+
   const modal = document.getElementById('vehicle-report-requests-modal');
   const modalContent = document.getElementById('vehicle-report-requests-modal-content');
   const searchInput = document.getElementById('rep-req-search-input') || document.getElementById('vehicle-report-requests-search');
