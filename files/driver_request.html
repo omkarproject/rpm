@@ -82,6 +82,7 @@
       border: 1px solid #e2e8f0;
       color: #1e293b;
       transition: all 0.2s ease-in-out;
+      box-sizing: border-box;
     }
 
     .calc-input:focus {
@@ -101,6 +102,142 @@
       margin-bottom: 0.375rem;
     }
     
+    /* =========================================================
+       CALCULATOR & REPORT REQUEST MODAL - RESPONSIVE STYLES
+       ========================================================= */
+    #calculator-overlay {
+      position: fixed !important;
+      inset: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      z-index: 9999 !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      background-color: rgba(15, 23, 42, 0.78) !important;
+      backdrop-filter: blur(8px) !important;
+      -webkit-backdrop-filter: blur(8px) !important;
+      padding: 16px !important;
+      box-sizing: border-box !important;
+      transition: opacity 0.2s ease, visibility 0.2s ease;
+    }
+
+    #calculator-overlay.hidden {
+      display: none !important;
+      opacity: 0 !important;
+      visibility: hidden !important;
+      pointer-events: none !important;
+    }
+
+    .calc-modal-card {
+      background-color: #ffffff !important;
+      border: 1px solid #e2e8f0 !important;
+      width: 100% !important;
+      max-width: 440px !important; /* Constrained on desktop and tablet */
+      max-height: 86vh !important;
+      max-height: 86dvh !important;
+      border-radius: 1.5rem !important;
+      box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.35) !important;
+      display: flex !important;
+      flex-direction: column !important;
+      overflow: hidden !important;
+      margin: auto !important;
+      position: relative !important;
+      box-sizing: border-box !important;
+    }
+
+    .calc-modal-header {
+      padding: 14px 18px !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      border-bottom: 1px solid #f1f5f9 !important;
+      background-color: #ffffff !important;
+      flex-shrink: 0 !important;
+    }
+
+    .calc-modal-nav-tabs {
+      padding: 10px 18px 0 18px !important;
+      background-color: #ffffff !important;
+      flex-shrink: 0 !important;
+    }
+
+    .calc-modal-body {
+      padding: 14px 18px 24px 18px !important;
+      overflow-y: auto !important;
+      -webkit-overflow-scrolling: touch !important;
+      flex: 1 1 auto !important;
+      box-sizing: border-box !important;
+      overscroll-behavior: contain !important;
+    }
+
+    .calc-modal-body::-webkit-scrollbar {
+      width: 5px;
+    }
+    .calc-modal-body::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .calc-modal-body::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+
+    .report-date-radio-card {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.625rem 0.75rem;
+      border-radius: 0.75rem;
+      border: 1px solid #e2e8f0;
+      background-color: #f8fafc;
+      cursor: pointer;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #334155;
+      transition: all 0.15s ease;
+      box-sizing: border-box;
+    }
+    .report-date-radio-card:has(input:checked) {
+      border-color: #2563eb;
+      background-color: #eff6ff;
+      color: #1d4ed8;
+    }
+
+    .report-history-entries-scroll {
+      max-height: 280px;
+      overflow-y: auto;
+      padding-right: 4px;
+      box-sizing: border-box;
+    }
+    .report-history-entries-scroll::-webkit-scrollbar {
+      width: 4px;
+    }
+    .report-history-entries-scroll::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+
+    @media (max-width: 480px) {
+      #calculator-overlay {
+        padding: 8px !important;
+      }
+      .calc-modal-card {
+        max-width: 100% !important;
+        max-height: 92vh !important;
+        max-height: 92dvh !important;
+        border-radius: 1.25rem !important;
+      }
+      .calc-modal-header {
+        padding: 12px 14px !important;
+      }
+      .calc-modal-nav-tabs {
+        padding: 8px 14px 0 14px !important;
+      }
+      .calc-modal-body {
+        padding: 12px 14px 22px 14px !important;
+      }
+    }
+
     /* Auto scrollbar styles */
     ::-webkit-scrollbar {
       width: 6px;
@@ -183,203 +320,209 @@
   </div>
 
   <!-- Calculator & Report Request Modal Overlay -->
-  <div id="calculator-overlay" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm hidden transition-all duration-300">
-    <div class="bg-white border border-slate-200 w-full max-w-[440px] rounded-3xl p-5 sm:p-6 space-y-4 shadow-2xl mx-4 max-h-[92vh] overflow-y-auto">
-      <div class="flex justify-between items-center pb-2 border-b border-slate-100">
-        <h3 class="text-sm font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+  <div id="calculator-overlay" class="hidden">
+    <div class="calc-modal-card">
+      <!-- Fixed Header -->
+      <div class="calc-modal-header">
+        <h3 class="text-sm font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-2 m-0">
           <span id="calc-modal-main-title">🧮 Diesel Voucher Calculator</span>
         </h3>
-        <button type="button" onclick="closeCalculatorModal()" class="text-slate-400 hover:text-slate-600 w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center transition-all">
+        <button type="button" onclick="closeCalculatorModal()" class="text-slate-400 hover:text-slate-600 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-all border border-slate-200" title="Close">
           <i class="fas fa-times text-xs"></i>
         </button>
       </div>
 
       <!-- Main Navigation Tabs: Calculator vs Report Request -->
-      <div class="flex rounded-2xl bg-slate-100 p-1 gap-1">
-        <button type="button" id="btn-calc-tab-calc" onclick="switchCalcModalTab('calc')" class="flex-1 py-1.5 rounded-xl text-xs font-black transition-all bg-white text-slate-800 shadow-sm flex items-center justify-center gap-1.5">
-          <i class="fas fa-calculator text-orange-500"></i> Calculator
-        </button>
-        <button type="button" id="btn-calc-tab-report" onclick="switchCalcModalTab('report')" class="flex-1 py-1.5 rounded-xl text-xs font-bold transition-all text-slate-500 hover:text-slate-800 flex items-center justify-center gap-1.5">
-          <i class="fas fa-file-invoice text-blue-500"></i> Report Request
-        </button>
-      </div>
-
-      <!-- TAB 1: Existing Calculator View -->
-      <div id="calc-tab-calc-view" class="space-y-4">
-        <!-- Step 1: Vehicle No -->
-        <div>
-          <label class="calc-label text-xs font-black uppercase text-slate-500">1. Vehicle No</label>
-          <input type="text" id="calc-vehicle-no" class="calc-input mt-1 uppercase" placeholder="MH04LY4608" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" oninput="onCalcVehicleInput()">
-          <p id="calc-vehicle-hint" class="text-[10px] font-bold text-slate-400 mt-1">Vehicle no daalein - last trip KM apne aap aa jayega.</p>
-        </div>
-
-        <!-- Step 2: Vehicle Type -->
-        <div>
-          <label class="calc-label text-xs font-black uppercase text-slate-500">2. Vehicle Type</label>
-          <select id="calc-vtype" class="calc-input mt-1" onchange="runModalCalculation()">
-            <option value="">Select Vehicle Type</option>
-          </select>
-        </div>
-
-        <!-- Step 3: Last Trip KM (auto from data) -->
-        <div>
-          <label class="calc-label text-xs font-black uppercase text-slate-500">3. Last Trip KM (Auto)</label>
-          <input type="number" id="calc-start-km" class="calc-input mt-1" placeholder="Last recorded KM" oninput="runModalCalculation()">
-        </div>
-
-        <!-- Step 4: Current KM -->
-        <div>
-          <label class="calc-label text-xs font-black uppercase text-slate-500">4. Current KM</label>
-          <input type="number" id="calc-end-km" class="calc-input mt-1" placeholder="Enter current KM" oninput="runModalCalculation()">
-        </div>
-
-        <!-- Results Display -->
-        <div class="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-2">
-          <div class="flex justify-between text-xs">
-            <span class="text-slate-500 font-bold">Total KM:</span>
-            <span id="calc-res-totalkm" class="font-extrabold text-slate-800">0 KM</span>
-          </div>
-          <div class="flex justify-between text-xs">
-            <span class="text-slate-500 font-bold">Vehicle Avg (Mileage):</span>
-            <span id="calc-res-avg" class="font-extrabold text-slate-800">-</span>
-          </div>
-          <div class="flex justify-between text-xs">
-            <span class="text-slate-500 font-bold">Diesel Rate (Live):</span>
-            <span id="calc-res-rate" class="font-extrabold text-slate-800">₹--</span>
-          </div>
-          <div class="flex justify-between items-center text-xs">
-            <span class="text-slate-500 font-bold flex items-center gap-1.5">
-              Last Trip Amount:
-              <button type="button" onclick="editModalLastTripAmount()" class="text-blue-500 hover:text-blue-600 transition-all text-xs p-0.5" title="Edit Last Trip Amount">
-                <i class="fas fa-pencil-alt text-[10px]"></i>
-              </button>
-            </span>
-            <span id="calc-res-lastamt" class="font-extrabold text-slate-800">₹0</span>
-          </div>
-          <div class="flex justify-between text-xs">
-            <span class="text-slate-500 font-bold">Total KM Amount:</span>
-            <span id="calc-res-kmamt" class="font-extrabold text-slate-800">₹0</span>
-          </div>
-          <div class="flex justify-between text-sm pt-2 border-t border-slate-100">
-            <span id="calc-res-due-label" class="text-green-500 font-black uppercase tracking-wider text-xs">Total Due Amount:</span>
-            <span id="calc-res-due" class="font-black text-green-600">₹0</span>
-          </div>
+      <div class="calc-modal-nav-tabs">
+        <div class="flex rounded-xl bg-slate-100 p-1 gap-1 border border-slate-200/60">
+          <button type="button" id="btn-calc-tab-calc" onclick="switchCalcModalTab('calc')" class="flex-1 py-1.5 rounded-lg text-xs font-black transition-all bg-white text-slate-800 shadow-sm flex items-center justify-center gap-1.5">
+            <i class="fas fa-calculator text-orange-500"></i> Calculator
+          </button>
+          <button type="button" id="btn-calc-tab-report" onclick="switchCalcModalTab('report')" class="flex-1 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-500 hover:text-slate-800 flex items-center justify-center gap-1.5">
+            <i class="fas fa-file-invoice text-blue-500"></i> Report Request
+          </button>
         </div>
       </div>
 
-      <!-- TAB 2: Report Request View -->
-      <div id="calc-tab-report-view" class="space-y-4 hidden">
-        <!-- Sub-tabs: Request Vehicle Report vs Enter Code -->
-        <div class="flex border-b border-slate-200">
-          <button type="button" id="btn-rep-sub-request" onclick="switchReportSubTab('request')" class="flex-1 pb-2 text-xs font-black border-b-2 border-blue-600 text-blue-600 transition-all flex items-center justify-center gap-1">
-            <i class="fas fa-edit"></i> Request Vehicle Report
-          </button>
-          <button type="button" id="btn-rep-sub-code" onclick="switchReportSubTab('code')" class="flex-1 pb-2 text-xs font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-600 transition-all flex items-center justify-center gap-1">
-            <i class="fas fa-key"></i> Enter Code
-          </button>
+      <!-- Scrollable Modal Body -->
+      <div class="calc-modal-body">
+        <!-- TAB 1: Existing Calculator View -->
+        <div id="calc-tab-calc-view" class="space-y-3.5">
+          <!-- Step 1: Vehicle No -->
+          <div>
+            <label class="calc-label text-xs font-black uppercase text-slate-500">1. Vehicle No</label>
+            <input type="text" id="calc-vehicle-no" class="calc-input mt-1 uppercase" placeholder="MH04LY4608" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" oninput="onCalcVehicleInput()">
+            <p id="calc-vehicle-hint" class="text-[10px] font-bold text-slate-400 mt-1">Vehicle no daalein - last trip KM apne aap aa jayega.</p>
+          </div>
+
+          <!-- Step 2: Vehicle Type -->
+          <div>
+            <label class="calc-label text-xs font-black uppercase text-slate-500">2. Vehicle Type</label>
+            <select id="calc-vtype" class="calc-input mt-1" onchange="runModalCalculation()">
+              <option value="">Select Vehicle Type</option>
+            </select>
+          </div>
+
+          <!-- Step 3: Last Trip KM (auto from data) -->
+          <div>
+            <label class="calc-label text-xs font-black uppercase text-slate-500">3. Last Trip KM (Auto)</label>
+            <input type="number" id="calc-start-km" class="calc-input mt-1" placeholder="Last recorded KM" oninput="runModalCalculation()">
+          </div>
+
+          <!-- Step 4: Current KM -->
+          <div>
+            <label class="calc-label text-xs font-black uppercase text-slate-500">4. Current KM</label>
+            <input type="number" id="calc-end-km" class="calc-input mt-1" placeholder="Enter current KM" oninput="runModalCalculation()">
+          </div>
+
+          <!-- Results Display -->
+          <div class="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-2">
+            <div class="flex justify-between text-xs">
+              <span class="text-slate-500 font-bold">Total KM:</span>
+              <span id="calc-res-totalkm" class="font-extrabold text-slate-800">0 KM</span>
+            </div>
+            <div class="flex justify-between text-xs">
+              <span class="text-slate-500 font-bold">Vehicle Avg (Mileage):</span>
+              <span id="calc-res-avg" class="font-extrabold text-slate-800">-</span>
+            </div>
+            <div class="flex justify-between text-xs">
+              <span class="text-slate-500 font-bold">Diesel Rate (Live):</span>
+              <span id="calc-res-rate" class="font-extrabold text-slate-800">₹--</span>
+            </div>
+            <div class="flex justify-between items-center text-xs">
+              <span class="text-slate-500 font-bold flex items-center gap-1.5">
+                Last Trip Amount:
+                <button type="button" onclick="editModalLastTripAmount()" class="text-blue-500 hover:text-blue-600 transition-all text-xs p-0.5" title="Edit Last Trip Amount">
+                  <i class="fas fa-pencil-alt text-[10px]"></i>
+                </button>
+              </span>
+              <span id="calc-res-lastamt" class="font-extrabold text-slate-800">₹0</span>
+            </div>
+            <div class="flex justify-between text-xs">
+              <span class="text-slate-500 font-bold">Total KM Amount:</span>
+              <span id="calc-res-kmamt" class="font-extrabold text-slate-800">₹0</span>
+            </div>
+            <div class="flex justify-between text-sm pt-2 border-t border-slate-100">
+              <span id="calc-res-due-label" class="text-green-500 font-black uppercase tracking-wider text-xs">Total Due Amount:</span>
+              <span id="calc-res-due" class="font-black text-green-600">₹0</span>
+            </div>
+          </div>
         </div>
 
-        <!-- SUB-TAB A: Request Form -->
-        <div id="report-sub-request-panel" class="space-y-3">
-          <p class="text-[11px] text-slate-500 leading-relaxed font-semibold">
-            Apne vehicle ki report dekhne ke liye request submit karein. Admin approval ke baad 5-digit code se report dekh sakte hain.
-          </p>
-
-          <div>
-            <label class="calc-label text-[11px] font-black uppercase text-slate-600">Vehicle No <span class="text-red-500">*</span></label>
-            <input type="text" id="rep-req-vehicle" class="calc-input mt-1 uppercase" placeholder="e.g. MH04LY4608" autocomplete="off">
-          </div>
-
-          <div>
-            <label class="calc-label text-[11px] font-black uppercase text-slate-600">Current KM <span class="text-red-500">*</span></label>
-            <input type="number" id="rep-req-km" class="calc-input mt-1" placeholder="Enter Current Odometer KM">
-          </div>
-
-          <div>
-            <label class="calc-label text-[11px] font-black uppercase text-slate-600">Your Name <span class="text-red-500">*</span></label>
-            <input type="text" id="rep-req-name" class="calc-input mt-1" placeholder="Enter Driver / Requester Name">
-          </div>
-
-          <div>
-            <label class="calc-label text-[11px] font-black uppercase text-slate-600">Mobile Number <span class="text-red-500">*</span></label>
-            <input type="tel" id="rep-req-mobile" class="calc-input mt-1" placeholder="10-digit Mobile No" maxlength="10">
-          </div>
-
-          <!-- Date Selection Options -->
-          <div class="space-y-2 pt-1">
-            <label class="calc-label text-[11px] font-black uppercase text-slate-600">Select Date Range <span class="text-red-500">*</span></label>
-            <div class="grid grid-cols-2 gap-2">
-              <label class="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 bg-slate-50/50 cursor-pointer has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50/40 transition-all">
-                <input type="radio" name="rep-date-option" value="current_month" checked onchange="toggleReportDateInputs(this.value)" class="text-blue-600 focus:ring-blue-500">
-                <span class="text-xs font-bold text-slate-700">Current Month</span>
-              </label>
-              <label class="flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 bg-slate-50/50 cursor-pointer has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50/40 transition-all">
-                <input type="radio" name="rep-date-option" value="custom" onchange="toggleReportDateInputs(this.value)" class="text-blue-600 focus:ring-blue-500">
-                <span class="text-xs font-bold text-slate-700">Custom Date</span>
-              </label>
-            </div>
-
-            <!-- Custom Date Inputs (hidden by default) -->
-            <div id="rep-custom-date-container" class="grid grid-cols-2 gap-2 pt-1 hidden">
-              <div>
-                <label class="text-[10px] font-bold text-slate-500">From Date</label>
-                <input type="date" id="rep-req-from-date" class="calc-input mt-0.5 text-xs">
-              </div>
-              <div>
-                <label class="text-[10px] font-bold text-slate-500">To Date</label>
-                <input type="date" id="rep-req-to-date" class="calc-input mt-0.5 text-xs">
-              </div>
-            </div>
-          </div>
-
-          <div class="pt-2">
-            <button type="button" id="btn-submit-rep-request" onclick="submitVehicleReportRequest()" class="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-2">
-              <i class="fas fa-paper-plane"></i> Submit Request
+        <!-- TAB 2: Report Request View -->
+        <div id="calc-tab-report-view" class="space-y-3.5 hidden">
+          <!-- Sub-tabs: Request Vehicle Report vs Enter Code -->
+          <div class="flex border-b border-slate-200">
+            <button type="button" id="btn-rep-sub-request" onclick="switchReportSubTab('request')" class="flex-1 pb-2 text-xs font-black border-b-2 border-blue-600 text-blue-600 transition-all flex items-center justify-center gap-1">
+              <i class="fas fa-edit"></i> Request Vehicle Report
+            </button>
+            <button type="button" id="btn-rep-sub-code" onclick="switchReportSubTab('code')" class="flex-1 pb-2 text-xs font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-600 transition-all flex items-center justify-center gap-1">
+              <i class="fas fa-key"></i> Enter Code
             </button>
           </div>
 
-          <!-- Code Generated Success Banner (Initially Hidden) -->
-          <div id="rep-code-success-box" class="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-2 hidden">
-            <div class="text-xs font-extrabold text-emerald-800">✅ Request Submitted Successfully!</div>
-            <p class="text-[11px] text-emerald-700 font-medium">Aapka 5-Digit Code yeh hai. Ise copy karke sambhalke rakhein:</p>
-            <div class="flex items-center justify-center gap-2 py-1">
-              <span id="rep-generated-code-display" class="font-mono text-2xl font-black text-emerald-700 tracking-widest bg-white px-4 py-1.5 rounded-xl border border-emerald-300 shadow-sm">-----</span>
-              <button type="button" onclick="copyGeneratedReportCode()" class="w-9 h-9 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center transition-all shadow-sm" title="Copy Code">
-                <i class="fas fa-copy text-sm"></i>
-              </button>
-            </div>
-            <p class="text-[10px] text-slate-500 font-semibold leading-tight">
-              ⏳ Admin se approve hone ke baad 'Enter Code' me mobile number aur yeh 5 digit code daalkar report dekhein. (Valid for 24 Hours)
+          <!-- SUB-TAB A: Request Form -->
+          <div id="report-sub-request-panel" class="space-y-3">
+            <p class="text-[11px] text-slate-500 leading-relaxed font-semibold">
+              Apne vehicle ki report dekhne ke liye request submit karein. Admin approval ke baad 5-digit code se report dekh sakte hain.
             </p>
-            <div class="pt-1">
-              <button type="button" onclick="goToEnterCodeSubTab()" class="text-xs font-bold text-blue-600 hover:text-blue-700 underline">
-                Go to Enter Code →
+
+            <div>
+              <label class="calc-label text-[11px] font-black uppercase text-slate-600">Vehicle No <span class="text-red-500">*</span></label>
+              <input type="text" id="rep-req-vehicle" class="calc-input mt-1 uppercase" placeholder="e.g. MH04LY4608" autocomplete="off">
+            </div>
+
+            <div>
+              <label class="calc-label text-[11px] font-black uppercase text-slate-600">Current KM <span class="text-red-500">*</span></label>
+              <input type="number" id="rep-req-km" class="calc-input mt-1" placeholder="Enter Current Odometer KM">
+            </div>
+
+            <div>
+              <label class="calc-label text-[11px] font-black uppercase text-slate-600">Your Name <span class="text-red-500">*</span></label>
+              <input type="text" id="rep-req-name" class="calc-input mt-1" placeholder="Enter Driver / Requester Name">
+            </div>
+
+            <div>
+              <label class="calc-label text-[11px] font-black uppercase text-slate-600">Mobile Number <span class="text-red-500">*</span></label>
+              <input type="tel" id="rep-req-mobile" class="calc-input mt-1" placeholder="10-digit Mobile No" maxlength="10">
+            </div>
+
+            <!-- Date Selection Options -->
+            <div class="space-y-2 pt-1">
+              <label class="calc-label text-[11px] font-black uppercase text-slate-600">Select Date Range <span class="text-red-500">*</span></label>
+              <div class="grid grid-cols-2 gap-2">
+                <label id="rep-radio-card-current" class="report-date-radio-card border-blue-500 bg-blue-50/50 text-blue-700">
+                  <input type="radio" name="rep-date-option" value="current_month" checked onchange="toggleReportDateInputs(this.value)">
+                  <span>Current Month</span>
+                </label>
+                <label id="rep-radio-card-custom" class="report-date-radio-card">
+                  <input type="radio" name="rep-date-option" value="custom" onchange="toggleReportDateInputs(this.value)">
+                  <span>Custom Date</span>
+                </label>
+              </div>
+
+              <!-- Custom Date Inputs (hidden by default) -->
+              <div id="rep-custom-date-container" class="grid grid-cols-2 gap-2 pt-1 hidden">
+                <div>
+                  <label class="text-[10px] font-bold text-slate-500">From Date</label>
+                  <input type="date" id="rep-req-from-date" class="calc-input mt-0.5 text-xs">
+                </div>
+                <div>
+                  <label class="text-[10px] font-bold text-slate-500">To Date</label>
+                  <input type="date" id="rep-req-to-date" class="calc-input mt-0.5 text-xs">
+                </div>
+              </div>
+            </div>
+
+            <div class="pt-2">
+              <button type="button" id="btn-submit-rep-request" onclick="submitVehicleReportRequest()" class="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-2">
+                <i class="fas fa-paper-plane"></i> Submit Request
               </button>
             </div>
-          </div>
-        </div>
 
-        <!-- SUB-TAB B: Enter Code Form & History Display -->
-        <div id="report-sub-code-panel" class="space-y-3 hidden">
-          <div>
-            <label class="calc-label text-[11px] font-black uppercase text-slate-600">Mobile Number <span class="text-red-500">*</span></label>
-            <input type="tel" id="rep-code-mobile" class="calc-input mt-1" placeholder="Enter 10-digit Mobile No" maxlength="10">
+            <!-- Code Generated Success Banner (Initially Hidden) -->
+            <div id="rep-code-success-box" class="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-center space-y-2 hidden">
+              <div class="text-xs font-extrabold text-emerald-800">✅ Request Submitted Successfully!</div>
+              <p class="text-[11px] text-emerald-700 font-medium">Aapka 5-Digit Code yeh hai. Ise copy karke sambhalke rakhein:</p>
+              <div class="flex items-center justify-center gap-2 py-1">
+                <span id="rep-generated-code-display" class="font-mono text-2xl font-black text-emerald-700 tracking-widest bg-white px-4 py-1.5 rounded-xl border border-emerald-300 shadow-sm">-----</span>
+                <button type="button" onclick="copyGeneratedReportCode()" class="w-9 h-9 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center transition-all shadow-sm" title="Copy Code">
+                  <i class="fas fa-copy text-sm"></i>
+                </button>
+              </div>
+              <p class="text-[10px] text-slate-500 font-semibold leading-tight">
+                ⏳ Admin se approve hone ke baad 'Enter Code' me mobile number aur yeh 5 digit code daalkar report dekhein. (Valid for 24 Hours)
+              </p>
+              <div class="pt-1">
+                <button type="button" onclick="goToEnterCodeSubTab()" class="text-xs font-bold text-blue-600 hover:text-blue-700 underline">
+                  Go to Enter Code →
+                </button>
+              </div>
+            </div>
           </div>
 
-          <div>
-            <label class="calc-label text-[11px] font-black uppercase text-slate-600">5-Digit Code <span class="text-red-500">*</span></label>
-            <input type="text" id="rep-code-val" class="calc-input mt-1 font-mono tracking-widest text-center text-base font-black uppercase" placeholder="XXXXX" maxlength="5">
-          </div>
+          <!-- SUB-TAB B: Enter Code Form & History Display -->
+          <div id="report-sub-code-panel" class="space-y-3 hidden">
+            <div>
+              <label class="calc-label text-[11px] font-black uppercase text-slate-600">Mobile Number <span class="text-red-500">*</span></label>
+              <input type="tel" id="rep-code-mobile" class="calc-input mt-1" placeholder="Enter 10-digit Mobile No" maxlength="10">
+            </div>
 
-          <div>
-            <button type="button" id="btn-fetch-rep-by-code" onclick="fetchReportByCode()" class="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-black text-xs uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-2">
-              <i class="fas fa-search"></i> View Vehicle Report
-            </button>
-          </div>
+            <div>
+              <label class="calc-label text-[11px] font-black uppercase text-slate-600">5-Digit Code <span class="text-red-500">*</span></label>
+              <input type="text" id="rep-code-val" class="calc-input mt-1 font-mono tracking-widest text-center text-base font-black uppercase" placeholder="XXXXX" maxlength="5">
+            </div>
 
-          <!-- Status & History Container -->
-          <div id="rep-code-status-container" class="space-y-3 pt-2 hidden">
-            <!-- Dynamically populated status card or entries report -->
+            <div>
+              <button type="button" id="btn-fetch-rep-by-code" onclick="fetchReportByCode()" class="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-black text-xs uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-2">
+                <i class="fas fa-search"></i> View Vehicle Report
+              </button>
+            </div>
+
+            <!-- Status & History Container -->
+            <div id="rep-code-status-container" class="space-y-3 pt-2 hidden">
+              <!-- Dynamically populated status card or entries report -->
+            </div>
           </div>
         </div>
       </div>
@@ -1143,6 +1286,17 @@
         if (val === 'custom') customContainer.classList.remove('hidden');
         else customContainer.classList.add('hidden');
       }
+      const cardCurrent = document.getElementById('rep-radio-card-current');
+      const cardCustom = document.getElementById('rep-radio-card-custom');
+      if (cardCurrent && cardCustom) {
+        if (val === 'custom') {
+          cardCurrent.className = "report-date-radio-card";
+          cardCustom.className = "report-date-radio-card border-blue-500 bg-blue-50/50 text-blue-700";
+        } else {
+          cardCustom.className = "report-date-radio-card";
+          cardCurrent.className = "report-date-radio-card border-blue-500 bg-blue-50/50 text-blue-700";
+        }
+      }
     };
 
     window.goToEnterCodeSubTab = function(code, mobile) {
@@ -1504,7 +1658,7 @@
           </div>
 
           <!-- Entries List Container -->
-          <div class="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+          <div class="report-history-entries-scroll space-y-2">
       `;
 
       filtered.forEach((e, idx) => {
