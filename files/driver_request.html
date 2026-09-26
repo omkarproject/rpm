@@ -1073,6 +1073,8 @@
     const driverVehicleTypesMap = {};
     const vehicleToTypeMap = {};
     window.allLoadedEntries = [];
+    let lastLiveLoadedVehicle = '';
+    let calcLastTripAmount = 0;
 
     // Hydrate vehicleAutofillMap from persistent cache immediately (0ms instant startup)
     try {
@@ -1332,7 +1334,7 @@
       document.getElementById('req-vehicle-state').value = "MH";
       setAutofillLock('req-vtype', false);
       setAutofillLock('req-vendor', false);
-      if (typeof lastLiveLoadedVehicle !== 'undefined') lastLiveLoadedVehicle = '';
+      lastLiveLoadedVehicle = '';
     }
     setDefaults();
 
@@ -2264,8 +2266,6 @@
       }
     };
 
-    let calcLastTripAmount = 0;
-
     // Helper: Find accurate latest completed trip (KM and Amount) from live entries and driver requests
     function getVehicleLatestTrip(cleanNo) {
       if (!cleanNo) return null;
@@ -2669,7 +2669,6 @@
     // Fetches live from Firebase silently in background without screen blocking overlay.
     // Instant 0ms response from persistent cache and fast updates from live data.
     let vehicleFetchToken = 0;
-    let lastLiveLoadedVehicle = '';
     let isFetchingLiveVehicle = false;
 
     function showVehicleLoadingOverlay(vehicleNo) {
