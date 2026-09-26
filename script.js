@@ -17498,7 +17498,7 @@ function compressAndSendImage(file, sendCallback) {
   reader.onload = function(event) {
     const img = new Image();
     img.onload = function() {
-      const maxDim = 600;
+      const maxDim = 1440;
       let width = img.width;
       let height = img.height;
       
@@ -17516,10 +17516,28 @@ function compressAndSendImage(file, sendCallback) {
       canvas.width = width;
       canvas.height = height;
       const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, 0, 0, width, height);
       
       try {
-        const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        function getBytes(url) {
+          if (!url) return 0;
+          const idx = url.indexOf(',');
+          const b64 = idx >= 0 ? url.slice(idx + 1) : url;
+          return Math.round((b64.length * 3) / 4);
+        }
+        let q = 0.82;
+        let compressedDataUrl = canvas.toDataURL('image/jpeg', q);
+        let bytes = getBytes(compressedDataUrl);
+        if (bytes > 200 * 1024) {
+          for (let i = 0; i < 4; i++) {
+            if (bytes <= 200 * 1024) break;
+            q = Math.max(0.62, q - 0.08);
+            compressedDataUrl = canvas.toDataURL('image/jpeg', q);
+            bytes = getBytes(compressedDataUrl);
+          }
+        }
         sendCallback(compressedDataUrl);
       } catch (err) {
         console.error("Error compressing image:", err);
@@ -21804,7 +21822,7 @@ function compressAndPreviewFillReceipt(img) {
 
   let width = img.naturalWidth || img.width;
   let height = img.naturalHeight || img.height;
-  const maxDim = 480;
+  const maxDim = 1440;
   if (width > maxDim || height > maxDim) {
     if (width > height) {
       height = Math.round((height * maxDim) / width);
@@ -21816,9 +21834,38 @@ function compressAndPreviewFillReceipt(img) {
   }
   canvas.width = width;
   canvas.height = height;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(img, 0, 0, width, height);
 
-  capturedReceiptBase64 = canvas.toDataURL('image/jpeg', 0.35);
+  function getBytes(url) {
+    if (!url) return 0;
+    const idx = url.indexOf(',');
+    const b64 = idx >= 0 ? url.slice(idx + 1) : url;
+    return Math.round((b64.length * 3) / 4);
+  }
+
+  let q = 0.82;
+  let dataUrl = canvas.toDataURL('image/jpeg', q);
+  let bytes = getBytes(dataUrl);
+  const minTarget = 100 * 1024;
+  const maxTarget = 200 * 1024;
+
+  if (bytes > maxTarget) {
+    for (let i = 0; i < 4; i++) {
+      if (bytes <= maxTarget) break;
+      q = Math.max(0.62, q - 0.08);
+      dataUrl = canvas.toDataURL('image/jpeg', q);
+      bytes = getBytes(dataUrl);
+    }
+  } else if (bytes < minTarget) {
+    const tryUrl = canvas.toDataURL('image/jpeg', 0.92);
+    if (getBytes(tryUrl) <= maxTarget) {
+      dataUrl = tryUrl;
+    }
+  }
+
+  capturedReceiptBase64 = dataUrl;
 
   if (fillCameraStream) {
     fillCameraStream.getTracks().forEach(t => t.stop());
@@ -23614,7 +23661,7 @@ function nextReceiptPhoto() {
   resetReceiptImageTransform();
 }
 
-function compressReceiptImage(file, minTargetBytes = 6 * 1024, maxTargetBytes = 15 * 1024) {
+function compressReceiptImage(file, minTargetBytes = 100 * 1024, maxTargetBytes = 200 * 1024) {
   return new Promise((resolve, reject) => {
     if (!file) return resolve(null);
     const reader = new FileReader();
@@ -23628,8 +23675,8 @@ function compressReceiptImage(file, minTargetBytes = 6 * 1024, maxTargetBytes = 
             return resolve(e.target.result);
           }
 
-          // Max dimension: 480px preserves clarity for numbers & slips while keeping file strictly 6KB - 15KB
-          const MAX_INIT_DIM = 480;
+          // Max dimension: 1440px provides razor-sharp clarity for numbers, meter digits & slips while keeping file within 100KB - 200KB
+          const MAX_INIT_DIM = 1440;
           let w = origW;
           let h = origH;
           if (w > MAX_INIT_DIM || h > MAX_INIT_DIM) {
@@ -23646,6 +23693,8 @@ function compressReceiptImage(file, minTargetBytes = 6 * 1024, maxTargetBytes = 
           let ctx = canvas.getContext('2d');
           canvas.width = w;
           canvas.height = h;
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(img, 0, 0, w, h);
 
           function getBytes(url) {
@@ -23655,19 +23704,55 @@ function compressReceiptImage(file, minTargetBytes = 6 * 1024, maxTargetBytes = 
             return Math.round((b64.length * 3) / 4);
           }
 
-          // Initial pass with quality 0.35 for lightweight 6KB - 15KB footprint
-          let q = 0.35;
+          // Initial pass with quality 0.82 for crisp 100KB - 200KB photo
+          let q = 0.82;
           let dataUrl = canvas.toDataURL('image/jpeg', q);
           let currentBytes = getBytes(dataUrl);
 
-          // If already in target range, perfect!
+          // If already in target range (100KB - 200KB), perfect!
           if (currentBytes <= maxTargetBytes && currentBytes >= minTargetBytes) {
             return resolve(dataUrl);
           }
 
-          // If smaller than 10KB, try slightly higher quality (0.68) if under maxTargetBytes
+          // If larger than 200KB, adaptively bring into 100KB - 200KB range
+          if (currentBytes > maxTargetBytes) {
+            let bestUrl = dataUrl;
+            for (let iter = 0; iter < 5; iter++) {
+              if (currentBytes <= maxTargetBytes && currentBytes >= minTargetBytes) {
+                bestUrl = dataUrl;
+                break;
+              }
+
+              if (currentBytes > maxTargetBytes) {
+                if (q > 0.65) {
+                  const ratio = Math.sqrt((165 * 1024) / currentBytes);
+                  q = Math.max(0.60, Math.min(q - 0.06, q * ratio));
+                  dataUrl = canvas.toDataURL('image/jpeg', q);
+                  currentBytes = getBytes(dataUrl);
+                } else {
+                  w = Math.max(960, Math.round(w * 0.88));
+                  h = Math.max(960, Math.round(h * 0.88));
+                  canvas.width = w;
+                  canvas.height = h;
+                  ctx = canvas.getContext('2d');
+                  ctx.imageSmoothingEnabled = true;
+                  ctx.imageSmoothingQuality = 'high';
+                  ctx.drawImage(img, 0, 0, w, h);
+                  q = 0.78;
+                  dataUrl = canvas.toDataURL('image/jpeg', q);
+                  currentBytes = getBytes(dataUrl);
+                }
+                if (currentBytes <= maxTargetBytes) {
+                  bestUrl = dataUrl;
+                }
+              }
+            }
+            return resolve(bestUrl);
+          }
+
+          // If smaller than 100KB, boost quality up to 0.94 for maximum clarity
           if (currentBytes < minTargetBytes) {
-            const highQUrl = canvas.toDataURL('image/jpeg', 0.68);
+            const highQUrl = canvas.toDataURL('image/jpeg', 0.92);
             const highQBytes = getBytes(highQUrl);
             if (highQBytes <= maxTargetBytes) {
               return resolve(highQUrl);
@@ -23675,59 +23760,7 @@ function compressReceiptImage(file, minTargetBytes = 6 * 1024, maxTargetBytes = 
             return resolve(dataUrl);
           }
 
-          // If larger than 20KB, perform adaptive passes to bring strictly into 10KB - 20KB
-          let bestUrl = dataUrl;
-          for (let iter = 0; iter < 6; iter++) {
-            if (currentBytes <= maxTargetBytes && currentBytes >= minTargetBytes) {
-              bestUrl = dataUrl;
-              break;
-            }
-
-            if (currentBytes > maxTargetBytes) {
-              if (q > 0.35) {
-                const ratio = Math.sqrt((15 * 1024) / currentBytes);
-                q = Math.max(0.30, Math.min(q - 0.08, q * ratio));
-                dataUrl = canvas.toDataURL('image/jpeg', q);
-                currentBytes = getBytes(dataUrl);
-              } else {
-                w = Math.max(380, Math.round(w * 0.85));
-                h = Math.max(380, Math.round(h * 0.85));
-                canvas.width = w;
-                canvas.height = h;
-                ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0, w, h);
-                q = 0.45;
-                dataUrl = canvas.toDataURL('image/jpeg', q);
-                currentBytes = getBytes(dataUrl);
-              }
-              if (currentBytes <= maxTargetBytes) {
-                bestUrl = dataUrl;
-              }
-            } else if (currentBytes < minTargetBytes) {
-              const tryQ = Math.min(0.65, q + 0.06);
-              const tryUrl = canvas.toDataURL('image/jpeg', tryQ);
-              const tryBytes = getBytes(tryUrl);
-              if (tryBytes <= maxTargetBytes) {
-                bestUrl = tryUrl;
-              } else {
-                bestUrl = dataUrl;
-              }
-              break;
-            }
-          }
-
-          // Safety guard: guarantee strictly <= maxTargetBytes (20KB)
-          if (getBytes(bestUrl) > maxTargetBytes) {
-            w = Math.round(w * 0.75);
-            h = Math.round(h * 0.75);
-            canvas.width = w;
-            canvas.height = h;
-            ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, w, h);
-            bestUrl = canvas.toDataURL('image/jpeg', 0.35);
-          }
-
-          resolve(bestUrl);
+          resolve(dataUrl);
         } catch (err) {
           console.error("Error in compressReceiptImage:", err);
           resolve(e.target.result);
