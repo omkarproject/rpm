@@ -23085,6 +23085,257 @@ window.removeVehicleFromKmExclusion = function(vehNo) {
     });
 };
 
+// === Vehicle Report Requests Manager ===
+const vehicleReportRequestsRef = db.ref('vehicle_report_requests');
+let vehicleReportRequestsMap = {};
+let currentRepReqFilter = 'all';
+
+vehicleReportRequestsRef.on('value', snapshot => {
+  vehicleReportRequestsMap = snapshot.val() || {};
+  updateVehicleReportRequestsBadges();
+  if (document.getElementById('vehicle-report-requests-modal') && !document.getElementById('vehicle-report-requests-modal').classList.contains('hidden')) {
+    renderVehicleReportRequestsList();
+  }
+});
+
+function updateVehicleReportRequestsBadges() {
+  const now = Date.now();
+  const allReqs = Object.values(vehicleReportRequestsMap || {});
+  const pendingCount = allReqs.filter(r => r && (r.status === 'pending' || !r.status) && (!r.expiresAt || r.expiresAt > now)).length;
+  
+  const badgeMain = document.getElementById('badge-report-requests-pending');
+  if (badgeMain) {
+    if (pendingCount > 0) {
+      badgeMain.textContent = pendingCount;
+      badgeMain.classList.remove('hidden');
+    } else {
+      badgeMain.classList.add('hidden');
+    }
+  }
+
+  const badgeModal = document.getElementById('rep-req-modal-pending-count');
+  if (badgeModal) {
+    badgeModal.textContent = `${pendingCount} Pending`;
+  }
+}
+
+window.openVehicleReportRequestsModal = function() {
+  const modal = document.getElementById('vehicle-report-requests-modal');
+  const modalContent = document.getElementById('vehicle-report-requests-modal-content');
+  const searchInput = document.getElementById('vehicle-report-requests-search');
+  if (searchInput) searchInput.value = '';
+
+  filterVehicleReportRequests('all');
+
+  modal.classList.remove('hidden');
+  modal.offsetHeight;
+  modal.classList.remove('opacity-0', 'pointer-events-none');
+  modalContent.classList.remove('scale-95');
+  modalContent.classList.add('scale-100');
+};
+
+window.closeVehicleReportRequestsModal = function() {
+  const modal = document.getElementById('vehicle-report-requests-modal');
+  const modalContent = document.getElementById('vehicle-report-requests-modal-content');
+  if (!modal || !modalContent) return;
+  modalContent.classList.remove('scale-100');
+  modalContent.classList.add('scale-95');
+  modal.classList.add('opacity-0', 'pointer-events-none');
+  setTimeout(() => modal.classList.add('hidden'), 300);
+};
+
+window.filterVehicleReportRequests = function(filter) {
+  currentRepReqFilter = filter || 'all';
+  const filterBtns = {
+    all: document.getElementById('rep-filter-btn-all'),
+    pending: document.getElementById('rep-filter-btn-pending'),
+    approved: document.getElementById('rep-filter-btn-approved'),
+    rejected: document.getElementById('rep-filter-btn-rejected')
+  };
+
+  Object.keys(filterBtns).forEach(key => {
+    const btn = filterBtns[key];
+    if (!btn) return;
+    if (key === currentRepReqFilter) {
+      btn.className = "px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-indigo-600 text-white shadow-sm";
+    } else {
+      btn.className = "px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700";
+    }
+  });
+
+  renderVehicleReportRequestsList();
+};
+
+window.renderVehicleReportRequestsList = function() {
+  const container = document.getElementById('vehicle-report-requests-list');
+  if (!container) return;
+
+  const searchVal = (document.getElementById('vehicle-report-requests-search')?.value || '').trim().toLowerCase();
+  const now = Date.now();
+
+  const reqs = Object.keys(vehicleReportRequestsMap || {}).map(k => ({
+    key: k,
+    ...vehicleReportRequestsMap[k]
+  })).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+  const filtered = reqs.filter(r => {
+    const isExpired = r.expiresAt && r.expiresAt <= now;
+    let status = r.status || 'pending';
+    if (status === 'pending' && isExpired) status = 'expired';
+
+    if (currentRepReqFilter === 'pending' && (status !== 'pending' || isExpired)) return false;
+    if (currentRepReqFilter === 'approved' && status !== 'approved') return false;
+    if (currentRepReqFilter === 'rejected' && status !== 'rejected') return false;
+
+    if (searchVal) {
+      const matchVehicle = (r.vehicleNo || '').toLowerCase().includes(searchVal);
+      const matchName = (r.driverName || '').toLowerCase().includes(searchVal);
+      const matchMobile = (r.mobile || '').toLowerCase().includes(searchVal);
+      const matchCode = (r.code || r.key || '').toLowerCase().includes(searchVal);
+      if (!matchVehicle && !matchName && !matchMobile && !matchCode) return false;
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div class="p-8 text-center bg-slate-100/50 dark:bg-slate-900/50 rounded-2xl border border-slate-200/40 dark:border-slate-800/40">
+        <i class="fas fa-file-invoice text-slate-400 text-3xl mb-2"></i>
+        <div class="text-xs font-bold text-slate-500">No report requests found</div>
+        <div class="text-[10px] text-slate-400 mt-1">Vehicle report requests submitted by drivers will appear here.</div>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = '';
+  filtered.forEach(req => {
+    const isExpired = req.expiresAt && req.expiresAt <= now;
+    let status = req.status || 'pending';
+    if (status === 'pending' && isExpired) status = 'expired';
+
+    let badgeBg = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
+    let badgeText = '⏳ Pending Approval';
+    if (status === 'approved') {
+      badgeBg = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
+      badgeText = '✅ Approved';
+    } else if (status === 'rejected') {
+      badgeBg = 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20';
+      badgeText = '❌ Rejected';
+    } else if (status === 'expired') {
+      badgeBg = 'bg-slate-500/10 text-slate-500 border-slate-500/20';
+      badgeText = '⌛ Expired (>24h)';
+    }
+
+    const createdTimeStr = req.createdAt ? new Date(req.createdAt).toLocaleString('en-IN', {
+      day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true
+    }) : 'N/A';
+
+    let expiryInfo = '';
+    if (req.expiresAt) {
+      if (req.expiresAt > now) {
+        const hrsLeft = Math.round((req.expiresAt - now) / (1000 * 60 * 60));
+        expiryInfo = `<span class="text-[10px] text-slate-400 font-medium">⏱️ Expires in ~${hrsLeft}h</span>`;
+      } else {
+        expiryInfo = `<span class="text-[10px] text-rose-400 font-medium">Expired</span>`;
+      }
+    }
+
+    const item = document.createElement('div');
+    item.className = "p-4 rounded-2xl bg-slate-100/70 dark:bg-slate-900/70 border border-slate-200/60 dark:border-slate-800/60 hover:border-indigo-500/30 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4";
+    
+    item.innerHTML = `
+      <div class="flex items-start gap-3.5 flex-1">
+        <div class="w-12 h-12 rounded-2xl bg-indigo-500/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex flex-col items-center justify-center font-black tracking-tight shrink-0 border border-indigo-500/20">
+          <span class="text-[9px] uppercase font-bold text-slate-400">CODE</span>
+          <span class="text-sm tracking-wider font-extrabold text-indigo-600 dark:text-indigo-400">${req.code || req.key}</span>
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="flex flex-wrap items-center gap-2 mb-1">
+            <span class="text-sm font-black text-slate-800 dark:text-slate-100 tracking-wider font-mono">${req.vehicleNo || 'N/A'}</span>
+            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${badgeBg}">
+              ${badgeText}
+            </span>
+            ${expiryInfo}
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] text-slate-600 dark:text-slate-300 mt-2">
+            <div>
+              <span class="text-slate-400 block text-[9px] font-semibold uppercase">Driver / User</span>
+              <span class="font-bold">${req.driverName || 'N/A'}</span>
+            </div>
+            <div>
+              <span class="text-slate-400 block text-[9px] font-semibold uppercase">Mobile No</span>
+              <span class="font-mono font-bold">${req.mobile || 'N/A'}</span>
+            </div>
+            <div>
+              <span class="text-slate-400 block text-[9px] font-semibold uppercase">Current KM</span>
+              <span class="font-bold text-indigo-600 dark:text-indigo-400">${req.currentKm ? Number(req.currentKm).toLocaleString() + ' KM' : 'N/A'}</span>
+            </div>
+            <div>
+              <span class="text-slate-400 block text-[9px] font-semibold uppercase">Date Range</span>
+              <span class="font-bold text-emerald-600 dark:text-emerald-400">${req.dateRangeText || (req.dateMode === 'current_month' ? 'Current Month' : 'Custom')}</span>
+            </div>
+          </div>
+          <div class="text-[9px] text-slate-400 mt-2">
+            Requested: ${createdTimeStr}
+            ${req.approvedBy ? ` • Approved by: <span class="font-bold text-slate-600 dark:text-slate-300">${req.approvedBy}</span>` : ''}
+            ${req.rejectedBy ? ` • Rejected by: <span class="font-bold text-slate-600 dark:text-slate-300">${req.rejectedBy}</span>` : ''}
+          </div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0 md:self-center">
+        ${status === 'pending' ? `
+          <button onclick="approveVehicleReportRequest('${req.key}')" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm hover:shadow transition-all flex items-center gap-1.5">
+            <i class="fas fa-check"></i> Approve
+          </button>
+          <button onclick="rejectVehicleReportRequest('${req.key}')" class="px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 font-bold text-xs transition-all flex items-center gap-1.5">
+            <i class="fas fa-times"></i> Reject
+          </button>
+        ` : (status === 'approved' ? `
+          <button onclick="rejectVehicleReportRequest('${req.key}')" class="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-rose-500/20 hover:text-rose-500 text-slate-500 text-[11px] font-semibold transition-all">
+            Revoke / Reject
+          </button>
+        ` : (status === 'rejected' ? `
+          <button onclick="approveVehicleReportRequest('${req.key}')" class="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-emerald-500/20 hover:text-emerald-500 text-slate-500 text-[11px] font-semibold transition-all">
+            Re-Approve
+          </button>
+        ` : ''))}
+      </div>
+    `;
+    container.appendChild(item);
+  });
+};
+
+window.approveVehicleReportRequest = function(codeKey) {
+  if (typeof checkAuth === 'function' && !checkAuth()) return;
+  const user = (typeof currentUser !== 'undefined' && currentUser && currentUser.name) ? currentUser.name : 'Admin';
+  
+  vehicleReportRequestsRef.child(codeKey).update({
+    status: 'approved',
+    approvedAt: Date.now(),
+    approvedBy: user
+  }).then(() => {
+    if (typeof toast !== 'undefined' && toast.ok) toast.ok(`Report request ${codeKey} approved!`);
+  }).catch(err => {
+    if (typeof toast !== 'undefined' && toast.err) toast.err("Failed to approve request: " + err.message);
+  });
+};
+
+window.rejectVehicleReportRequest = function(codeKey) {
+  if (typeof checkAuth === 'function' && !checkAuth()) return;
+  const user = (typeof currentUser !== 'undefined' && currentUser && currentUser.name) ? currentUser.name : 'Admin';
+
+  vehicleReportRequestsRef.child(codeKey).update({
+    status: 'rejected',
+    rejectedAt: Date.now(),
+    rejectedBy: user
+  }).then(() => {
+    if (typeof toast !== 'undefined' && toast.warn) toast.warn(`Report request ${codeKey} rejected.`);
+  }).catch(err => {
+    if (typeof toast !== 'undefined' && toast.err) toast.err("Failed to reject request: " + err.message);
+  });
+};
+
 window.saveAutoApproveTimerSettings = function() {
   const masterEnabled = document.getElementById('timer-master-toggle')?.checked ?? true;
   const normalToggle = document.getElementById('timer-normal-toggle')?.checked ?? true;
