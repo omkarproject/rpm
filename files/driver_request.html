@@ -1970,6 +1970,26 @@
       return null;
     }
 
+    // Live listener for Vendor Due Permissions
+    let vendorDuePermissions = {};
+    db.ref('config/vendor_due_permissions').on('value', snapshot => {
+      vendorDuePermissions = snapshot.val() || {};
+      if (typeof updateMonthlyDueDisplay === 'function') {
+        updateMonthlyDueDisplay();
+      }
+    });
+
+    function isVendorDuePermitted(vendorName) {
+      if (!vendorName) return false;
+      const vName = String(vendorName).trim().toUpperCase();
+      const sanitizedKey = vName.replace(/[.#$[\]/]/g, '_');
+      if (vendorDuePermissions && vendorDuePermissions[sanitizedKey] !== undefined) {
+        return !!vendorDuePermissions[sanitizedKey];
+      }
+      // Default ON for RPM LOGISTICS PVT.LTD.
+      return vName.includes('RPM LOGISTICS') || vName.includes('RPMLOGISTICS');
+    }
+
 function showDueBreakdownModal() {
   const state = document.getElementById('req-vehicle-state').value.trim();
   const district = document.getElementById('req-vehicle-district').value.trim();
@@ -1980,6 +2000,12 @@ function showDueBreakdownModal() {
   const km = kmInput ? kmInput.value.trim() : '';
   const vtypeSelect = document.getElementById('req-vtype');
   const vtype = vtypeSelect ? vtypeSelect.value.trim() : '';
+
+  let currentVendor = (document.getElementById('req-vendor')?.value || '').trim();
+  if (!currentVendor && vehicle && vehicleAutofillMap[vehicle]?.vendorName) {
+    currentVendor = vehicleAutofillMap[vehicle].vendorName;
+  }
+  if (!isVendorDuePermitted(currentVendor)) return;
 
   const details = getVehicleMonthlyDueDetails(vehicle, km, vtype);
   if (!details) return;
@@ -2031,6 +2057,17 @@ function closeDueBreakdownModal() {
       const badge = document.getElementById('monthly-due-badge');
 
       if (!badge) return;
+
+      let currentVendor = (document.getElementById('req-vendor')?.value || '').trim();
+      if (!currentVendor && vehicle && vehicleAutofillMap[vehicle]?.vendorName) {
+        currentVendor = vehicleAutofillMap[vehicle].vendorName;
+      }
+
+      // Check if vendor has permission to display monthly due
+      if (!isVendorDuePermitted(currentVendor)) {
+        badge.classList.add('hidden');
+        return;
+      }
 
       if (vehicle && km) {
         const dueVal = calculateMonthlyTotal(vehicle);

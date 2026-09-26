@@ -22779,9 +22779,14 @@ window.saveDriverRequestMobileNumber = function() {
     .catch(error => toast.err(`Update failed: ${error.message}`));
 };
 
-// === Vendor KM Photo Permission Manager ===
+// === Vendor KM/Due Permission Manager ===
 const vendorKmPhotoPermissionsRef = db.ref('config/vendor_km_photo_permissions');
 let vendorKmPhotoPermissions = {};
+
+const vendorDuePermissionsRef = db.ref('config/vendor_due_permissions');
+let vendorDuePermissions = {};
+
+let currentVendorPermTab = 'km'; // 'km' or 'due'
 
 vendorKmPhotoPermissionsRef.on('value', snapshot => {
   vendorKmPhotoPermissions = snapshot.val() || {};
@@ -22790,13 +22795,51 @@ vendorKmPhotoPermissionsRef.on('value', snapshot => {
   }
 });
 
+vendorDuePermissionsRef.on('value', snapshot => {
+  vendorDuePermissions = snapshot.val() || {};
+  if (document.getElementById('vendor-km-permission-modal') && !document.getElementById('vendor-km-permission-modal').classList.contains('hidden')) {
+    renderVendorKmPermissionList();
+  }
+});
+
+window.switchVendorPermissionTab = function(tab) {
+  currentVendorPermTab = tab;
+  const btnKm = document.getElementById('tab-btn-perm-km');
+  const btnDue = document.getElementById('tab-btn-perm-due');
+  const descEl = document.getElementById('vendor-km-perm-desc');
+
+  if (tab === 'km') {
+    if (btnKm) {
+      btnKm.className = "flex-1 pb-2.5 text-xs font-black text-purple-600 dark:text-purple-400 border-b-2 border-purple-600 dark:border-purple-400 flex items-center justify-center gap-1.5 transition-all";
+    }
+    if (btnDue) {
+      btnDue.className = "flex-1 pb-2.5 text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 border-b-2 border-transparent flex items-center justify-center gap-1.5 transition-all";
+    }
+    if (descEl) {
+      descEl.textContent = "Select which vendors require drivers to take an odometer (KM) photo before submitting the driver request form.";
+    }
+  } else {
+    if (btnKm) {
+      btnKm.className = "flex-1 pb-2.5 text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 border-b-2 border-transparent flex items-center justify-center gap-1.5 transition-all";
+    }
+    if (btnDue) {
+      btnDue.className = "flex-1 pb-2.5 text-xs font-black text-purple-600 dark:text-purple-400 border-b-2 border-purple-600 dark:border-purple-400 flex items-center justify-center gap-1.5 transition-all";
+    }
+    if (descEl) {
+      descEl.textContent = "Select which vendors display the Monthly Due / Deficit amount on the driver request form.";
+    }
+  }
+
+  renderVendorKmPermissionList();
+};
+
 window.openVendorKmPermissionModal = function() {
   const modal = document.getElementById('vendor-km-permission-modal');
   const modalContent = document.getElementById('vendor-km-permission-modal-content');
   const searchInput = document.getElementById('vendor-km-perm-search');
   if (searchInput) searchInput.value = '';
   
-  renderVendorKmPermissionList();
+  switchVendorPermissionTab(currentVendorPermTab || 'km');
 
   modal.classList.remove('hidden');
   modal.offsetHeight;
@@ -22841,29 +22884,48 @@ window.renderVendorKmPermissionList = function() {
     const safeName = vName.replace(/'/g, "\\'");
     
     let isChecked = false;
-    if (vendorKmPhotoPermissions[sanitizedKey] !== undefined) {
-      isChecked = !!vendorKmPhotoPermissions[sanitizedKey];
-    } else if (vName === 'RPM LOGISTICS PVT.LTD.') {
-      isChecked = true;
+    let iconClass = '';
+    let statusText = '';
+    let changeHandler = '';
+
+    if (currentVendorPermTab === 'km') {
+      if (vendorKmPhotoPermissions[sanitizedKey] !== undefined) {
+        isChecked = !!vendorKmPhotoPermissions[sanitizedKey];
+      } else if (vName === 'RPM LOGISTICS PVT.LTD.') {
+        isChecked = true;
+      }
+      iconClass = isChecked ? 'fa-camera text-purple-500' : 'fa-camera-slash text-slate-400';
+      statusText = isChecked ? '📷 KM Photo Required' : '⚡ Direct Submit (No Photo)';
+      changeHandler = `toggleVendorKmPermission('${safeName}', this.checked)`;
+    } else {
+      // Due tab
+      if (vendorDuePermissions[sanitizedKey] !== undefined) {
+        isChecked = !!vendorDuePermissions[sanitizedKey];
+      } else if (vName === 'RPM LOGISTICS PVT.LTD.') {
+        isChecked = true; // Default ON for RPM LOGISTICS
+      }
+      iconClass = isChecked ? 'fa-receipt text-emerald-500' : 'fa-eye-slash text-slate-400';
+      statusText = isChecked ? '💰 Show Due / Deficit' : '👁️‍🗨️ Hide Due (Disabled)';
+      changeHandler = `toggleVendorDuePermission('${safeName}', this.checked)`;
     }
 
     const row = document.createElement('div');
     row.className = "flex items-center justify-between p-3 rounded-2xl bg-slate-100/60 dark:bg-slate-900/60 border border-slate-200/40 dark:border-slate-800/40 hover:border-purple-500/30 transition-all";
     row.innerHTML = `
       <div class="flex items-center gap-2.5">
-        <div class="w-7 h-7 rounded-lg ${isChecked ? 'bg-purple-500/10 text-purple-500' : 'bg-slate-200 dark:bg-slate-800 text-slate-400'} flex items-center justify-center text-xs font-bold">
-          <i class="fas ${isChecked ? 'fa-camera' : 'fa-camera-slash'}"></i>
+        <div class="w-7 h-7 rounded-lg ${isChecked ? (currentVendorPermTab === 'due' ? 'bg-emerald-500/10' : 'bg-purple-500/10') : 'bg-slate-200 dark:bg-slate-800'} flex items-center justify-center text-xs font-bold">
+          <i class="fas ${iconClass}"></i>
         </div>
         <div>
           <div class="text-xs font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-tight">${vName}</div>
-          <div class="text-[9px] font-bold ${isChecked ? 'text-purple-600 dark:text-purple-400' : 'text-slate-400'}">
-            ${isChecked ? '📷 KM Photo Required' : '⚡ Direct Submit (No Photo)'}
+          <div class="text-[9px] font-bold ${isChecked ? (currentVendorPermTab === 'due' ? 'text-emerald-600 dark:text-emerald-400' : 'text-purple-600 dark:text-purple-400') : 'text-slate-400'}">
+            ${statusText}
           </div>
         </div>
       </div>
       <label class="relative inline-flex items-center cursor-pointer">
-        <input type="checkbox" class="sr-only peer" ${isChecked ? 'checked' : ''} onchange="toggleVendorKmPermission('${safeName}', this.checked)">
-        <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:after:border-slate-600 peer-checked:bg-purple-600"></div>
+        <input type="checkbox" class="sr-only peer" ${isChecked ? 'checked' : ''} onchange="${changeHandler}">
+        <div class="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-800 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:after:border-slate-600 ${currentVendorPermTab === 'due' ? 'peer-checked:bg-emerald-600' : 'peer-checked:bg-purple-600'}"></div>
       </label>
     `;
     container.appendChild(row);
@@ -22879,6 +22941,22 @@ window.toggleVendorKmPermission = function(vendorName, isChecked) {
   vendorKmPhotoPermissionsRef.child(sanitizedKey).set(isChecked)
     .then(() => {
       toast.ok(`Vendor ${vendorName}: KM Photo ${isChecked ? 'Enabled (ON)' : 'Disabled (OFF)'}`);
+    })
+    .catch(err => {
+      toast.err("Failed to update permission: " + err.message);
+      renderVendorKmPermissionList();
+    });
+};
+
+window.toggleVendorDuePermission = function(vendorName, isChecked) {
+  if (!checkAuth()) {
+    renderVendorKmPermissionList();
+    return;
+  }
+  const sanitizedKey = vendorName.replace(/[.#$[\]/]/g, '_');
+  vendorDuePermissionsRef.child(sanitizedKey).set(isChecked)
+    .then(() => {
+      toast.ok(`Vendor ${vendorName}: Due Display ${isChecked ? 'Enabled (Show)' : 'Disabled (Hide)'}`);
     })
     .catch(err => {
       toast.err("Failed to update permission: " + err.message);

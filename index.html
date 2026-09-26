@@ -3462,13 +3462,13 @@
                 </div>
               </button>
 
-              <button onclick="openVendorKmPermissionModal()" class="admin-only w-full lg:flex-1 lg:max-w-[190px] text-left p-2.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 transition-all flex items-center gap-3">
+              <button onclick="openVendorKmPermissionModal()" class="admin-only w-full lg:flex-1 lg:max-w-[200px] text-left p-2.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 transition-all flex items-center gap-3" title="Vendor KM Photo & Due Permission Settings">
                 <div class="w-8 h-8 rounded-lg bg-purple-500/20 flex items-center justify-center text-purple-500">
-                  <i class="fas fa-camera text-sm"></i>
+                  <i class="fas fa-sliders-h text-sm"></i>
                 </div>
                 <div>
-                  <div class="text-[9px] font-extrabold text-purple-600/80 dark:text-purple-400/80 uppercase tracking-wider">KM Permission</div>
-                  <div class="text-xs font-bold text-purple-700 dark:text-purple-300">Manager Perm.</div>
+                  <div class="text-[9px] font-extrabold text-purple-600/80 dark:text-purple-400/80 uppercase tracking-wider">KM / Due Perm.</div>
+                  <div class="text-xs font-bold text-purple-700 dark:text-purple-300">Vendor KM/Due</div>
                 </div>
               </button>
 
@@ -5722,22 +5722,33 @@
     </div>
   </div>
 
-  <!-- Vendor KM Photo Permission Modal -->
+  <!-- Vendor KM & Due Permission Modal -->
   <div id="vendor-km-permission-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in opacity-0 pointer-events-none transition-all duration-300">
     <div class="glass-panel w-full max-w-md rounded-3xl border border-slate-200/50 dark:border-slate-800/50 shadow-2xl overflow-hidden transform scale-95 transition-all duration-300" id="vendor-km-permission-modal-content">
       <div class="p-4 border-b border-slate-200/40 dark:border-slate-800/40 flex justify-between items-center bg-purple-500/10">
         <h3 class="text-sm font-black text-purple-600 dark:text-purple-400 uppercase tracking-wider flex items-center gap-2">
-          <i class="fas fa-camera"></i> Vendor KM Photo Permission
+          <i class="fas fa-sliders-h"></i> Vendor KM/Due Permission
         </h3>
         <button onclick="closeVendorKmPermissionModal()" class="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-100 hover:bg-rose-100 dark:bg-slate-800 dark:hover:bg-rose-900/30 text-slate-500 hover:text-rose-500 transition-colors">
           <i class="fas fa-times"></i>
         </button>
       </div>
+
+      <!-- Tabs Header -->
+      <div class="px-5 pt-3 flex gap-2 border-b border-slate-200/30 dark:border-slate-800/30 bg-slate-50/50 dark:bg-slate-900/20">
+        <button id="tab-btn-perm-km" onclick="switchVendorPermissionTab('km')" class="flex-1 pb-2.5 text-xs font-black text-purple-600 dark:text-purple-400 border-b-2 border-purple-600 dark:border-purple-400 flex items-center justify-center gap-1.5 transition-all">
+          <i class="fas fa-camera"></i> KM Photo
+        </button>
+        <button id="tab-btn-perm-due" onclick="switchVendorPermissionTab('due')" class="flex-1 pb-2.5 text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 border-b-2 border-transparent flex items-center justify-center gap-1.5 transition-all">
+          <i class="fas fa-receipt"></i> Due Show/Hide
+        </button>
+      </div>
+
       <div class="p-5 space-y-4">
         <div>
           <input type="text" id="vendor-km-perm-search" class="calc-input bg-slate-100/50 dark:bg-slate-900/50 w-full text-xs font-bold" placeholder="Search Vendor..." oninput="renderVendorKmPermissionList()">
         </div>
-        <p class="text-[11px] text-slate-500 dark:text-slate-400 font-semibold leading-relaxed">
+        <p id="vendor-km-perm-desc" class="text-[11px] text-slate-500 dark:text-slate-400 font-semibold leading-relaxed">
           Select which vendors require drivers to take an odometer (KM) photo before submitting the driver request form.
         </p>
         
