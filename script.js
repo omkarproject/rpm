@@ -21759,6 +21759,17 @@ function showApprovalPreview(type) {
         `;
       }
 
+      const fromLoc = String(r.fromLocation || r.from_location || r.from || '').trim().toUpperCase();
+      const lastLoc = String(r.lastLocation || r.last_location || r.toLocation || r.to || '').trim().toUpperCase();
+      let routeHtml = '-';
+      if (fromLoc && lastLoc) {
+        routeHtml = `<span class="text-slate-800 dark:text-slate-200 font-bold">${fromLoc}</span> <span class="text-slate-400 dark:text-slate-500 font-normal mx-0.5">➔</span> <span class="text-slate-800 dark:text-slate-200 font-bold">${lastLoc}</span>`;
+      } else if (fromLoc) {
+        routeHtml = `<span class="text-slate-800 dark:text-slate-200 font-bold">${fromLoc}</span>`;
+      } else if (lastLoc) {
+        routeHtml = `<span class="text-slate-400 dark:text-slate-500 font-normal mr-0.5">➔</span> <span class="text-slate-800 dark:text-slate-200 font-bold">${lastLoc}</span>`;
+      }
+
       tr.innerHTML = `
         <td class="px-3.5 py-3 whitespace-nowrap">
           <div class="flex items-center gap-1.5">
@@ -21767,6 +21778,12 @@ function showApprovalPreview(type) {
               <div class="font-extrabold text-blue-600 dark:text-blue-400 text-xs sm:text-sm tracking-wide uppercase">${r.vehicleNo || '-'}</div>
               <div class="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase">${r.vehicleType || '-'}</div>
             </div>
+          </div>
+        </td>
+        <td class="px-3.5 py-3 text-xs whitespace-nowrap">
+          <div class="flex items-center gap-1.5">
+            ${(fromLoc || lastLoc) ? '<i class="fas fa-map-marker-alt text-[10px] text-rose-500/80"></i>' : ''}
+            <div>${routeHtml}</div>
           </div>
         </td>
         <td class="px-3.5 py-3 whitespace-nowrap">
