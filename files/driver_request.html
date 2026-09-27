@@ -1932,6 +1932,19 @@
       if (dKm) dKm.textContent = `${Math.round(calc.totalKm).toLocaleString('en-IN')} KM`;
       const dLit = document.getElementById('driver-rep-kpi-litres');
       if (dLit) dLit.textContent = `${calc.totalLitres.toFixed(1)} L`;
+      const dDue = document.getElementById('driver-rep-kpi-due');
+      if (dDue) {
+        const isDue = (calc.dueVal || 0) >= 0;
+        const dueAbs = Math.abs(Math.round(calc.dueVal || 0)).toLocaleString('en-IN');
+        dDue.textContent = `${isDue ? 'Due: ₹' : 'Overdue: -₹'}${dueAbs}`;
+        dDue.className = `text-sm font-black ${isDue ? 'text-emerald-600' : 'text-rose-600'}`;
+      }
+      const dDueBadge = document.getElementById('driver-rep-kpi-due-badge');
+      if (dDueBadge) {
+        const isDue = (calc.dueVal || 0) >= 0;
+        dDueBadge.textContent = isDue ? 'DUE' : 'OVERDUE';
+        dDueBadge.className = `text-[9px] font-black px-1.5 py-0.5 rounded ${isDue ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`;
+      }
       const dAvg = document.getElementById('driver-rep-kpi-avg');
       if (dAvg) dAvg.textContent = `${calc.avgMileage} km/l`;
 
@@ -2088,8 +2101,11 @@
               <div id="driver-rep-kpi-litres" class="text-sm font-black text-slate-800">${calc.totalLitres.toFixed(1)} L</div>
             </div>
             <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
-              <div class="text-[10px] text-slate-400 font-bold uppercase">Avg Mileage</div>
-              <div id="driver-rep-kpi-avg" class="text-sm font-black text-slate-800">${calc.avgMileage} km/l</div>
+              <div class="text-[10px] text-slate-400 font-bold uppercase flex items-center justify-between">
+                <span>Due / Overdue</span>
+                <span id="driver-rep-kpi-due-badge" class="text-[9px] font-black px-1.5 py-0.5 rounded ${(calc.dueVal || 0) >= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">${(calc.dueVal || 0) >= 0 ? 'DUE' : 'OVERDUE'}</span>
+              </div>
+              <div id="driver-rep-kpi-due" class="text-sm font-black ${(calc.dueVal || 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}">${(calc.dueVal || 0) >= 0 ? 'Due: ₹' : 'Overdue: -₹'}${Math.abs(Math.round(calc.dueVal || 0)).toLocaleString('en-IN')}</div>
             </div>
           </div>
 
@@ -2157,11 +2173,13 @@
       const dateRange = reqData.dateRangeLabel || 'Report';
 
       if (typeof XLSX !== 'undefined') {
+        const isDueExp = (calc.dueVal || 0) >= 0;
+        const dueTextExp = isDueExp ? `Due: Rs. ${Math.abs(Math.round(calc.dueVal))}` : `Overdue: -Rs. ${Math.abs(Math.round(calc.dueVal))}`;
         const aoa = [
           ["RPM LOGISTICS PVT. LTD."],
           ["VEHICLE DIESEL REPORT - MATCHING ENTRIES HISTORY"],
           [`Vehicle: ${vehicle}`, `Date Range: ${dateRange}`, `Code: ${reqData.code}`],
-          [`Total Diesel: Rs. ${Math.round(calc.totalDieselAmount)}`, `Total KM: ${calc.totalKm} KM`, `Total Litres: ${calc.totalLitres.toFixed(1)} L`, `Avg Mileage: ${calc.avgMileage} km/l`],
+          [`Total Diesel: Rs. ${Math.round(calc.totalDieselAmount)}`, `Total KM: ${calc.totalKm} KM`, `Total Litres: ${calc.totalLitres.toFixed(1)} L`, dueTextExp],
           [],
           ["#", "Date", "Vehicle", "From Location", "Last Location", "KM", "Diesel (Rs)", "Extra Left / Cost", "Status"]
         ];
@@ -2227,7 +2245,9 @@
         doc.setFontSize(10);
         doc.setFont('helvetica', 'normal');
         doc.text(`Vehicle: ${vehicle} | Date Range: ${dateRange} | Code: ${reqData.code}`, 14, 22);
-        doc.text(`Total Diesel: Rs. ${Math.round(calc.totalDieselAmount)} | Total KM: ${calc.totalKm} KM | Litres: ${calc.totalLitres.toFixed(1)} L | Avg: ${calc.avgMileage} km/l`, 14, 28);
+        const isDuePdf = (calc.dueVal || 0) >= 0;
+        const dueTextPdf = isDuePdf ? `Due: Rs. ${Math.abs(Math.round(calc.dueVal))}` : `Overdue: -Rs. ${Math.abs(Math.round(calc.dueVal))}`;
+        doc.text(`Total Diesel: Rs. ${Math.round(calc.totalDieselAmount)} | Total KM: ${calc.totalKm} KM | Litres: ${calc.totalLitres.toFixed(1)} L | ${dueTextPdf}`, 14, 28);
 
         const body = sorted.map((e, idx) => {
           const isExcl = window.driverReportExcludedIndices && window.driverReportExcludedIndices.has(idx);
