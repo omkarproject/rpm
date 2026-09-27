@@ -1155,13 +1155,13 @@
                 lastAmount: r.dieselAmount || ''
               };
             } else {
-              if (r.vehicleType && !vehicleAutofillMap[v].vehicleType) {
+              if (r.vehicleType) {
                 vehicleAutofillMap[v].vehicleType = r.vehicleType.trim().toUpperCase();
               }
-              if (r.vendorName && !vehicleAutofillMap[v].vendorName) {
+              if (r.vendorName) {
                 vehicleAutofillMap[v].vendorName = r.vendorName.trim().toUpperCase();
               }
-              if (r.currentKm && (!vehicleAutofillMap[v].currentKm || parseFloat(r.currentKm) > parseFloat(vehicleAutofillMap[v].currentKm))) {
+              if (r.currentKm && parseFloat(r.currentKm) > 0) {
                 vehicleAutofillMap[v].currentKm = r.currentKm;
                 if (r.dieselAmount) vehicleAutofillMap[v].lastAmount = r.dieselAmount;
               } else if (r.dieselAmount && !vehicleAutofillMap[v].lastAmount) {
@@ -2266,7 +2266,7 @@
       }
     };
 
-    // Helper: Find accurate latest completed trip (KM and Amount) from live entries and driver requests
+    // Helper: Find accurate latest completed trip (Vehicle Type, Vendor Name, KM, and Amount) from live entries and driver requests
     function getVehicleLatestTrip(cleanNo) {
       if (!cleanNo) return null;
       cleanNo = cleanVehicleNo(cleanNo);
@@ -2278,27 +2278,35 @@
         if (!dStr) return 0;
         if (typeof parseDateStr === 'function') {
           const res = parseDateStr(dStr);
-          if (res) return res.getTime();
+          if (res && typeof res.getTime === 'function') return res.getTime();
         }
-        const parts = String(dStr).split('-');
-        if (parts.length === 3) {
-          if (parts[0].length === 4) return new Date(parts[0], parts[1] - 1, parts[2]).getTime();
-          return new Date(parts[2], parts[1] - 1, parts[0]).getTime();
+        const s = String(dStr).trim().split(/[\/\-\.]/);
+        if (s.length === 3) {
+          const p0 = parseInt(s[0]), p1 = parseInt(s[1]), p2 = parseInt(s[2]);
+          if (!isNaN(p0) && !isNaN(p1) && !isNaN(p2)) {
+            if (s[0].length === 4) {
+              return new Date(p0, p1 - 1, p2).getTime();
+            } else {
+              return new Date(p2, p1 - 1, p0).getTime();
+            }
+          }
         }
-        return 0;
+        const d = new Date(dStr);
+        return isNaN(d) ? 0 : d.getTime();
       };
 
       const getScore = (dateStr, timeStr, respOrSub) => {
+        if (typeof respOrSub === 'number' && respOrSub > 1000000000000) {
+          return respOrSub;
+        }
         const d = parseSafeDate(dateStr);
         let tMs = 0;
         if (timeStr) {
           const [h, m] = String(timeStr).split(':').map(Number);
           if (!isNaN(h) && !isNaN(m)) tMs = (h * 60 + m) * 60 * 1000;
         }
-        if (typeof respOrSub === 'number' && respOrSub > 1000000000000) {
-          return respOrSub;
-        }
-        return d + tMs + (parseInt(respOrSub) || 0);
+        const respNum = parseInt(respOrSub) || 0;
+        return d + tMs + respNum;
       };
 
       // 1. Check allLoadedEntries / allEntriesCache (from live entries)
@@ -2312,20 +2320,26 @@
           const v = cleanVehicleNo(e.vehicleNo || e.vehicle_no || e.vehicle || e.truckNo || e.vehicleNumber);
           if (v !== cleanNo) return;
           const km = parseFloat(String(e.currentKm || e.endKm || e.km || 0).replace(/[^0-9.]/g, '')) || 0;
-          if (km <= 10) return;
           const amt = parseFloat(String(e.dieselAmount || e.amount || 0).replace(/[^0-9.]/g, '')) || 0;
+          const respNum = parseInt(e.responseNumber) || 0;
           const score = getScore(e.date, e.time, e.responseNumber);
+          const vType = String(e.vehicleType || e.vehicle_type || e.type || '').trim().toUpperCase();
+          const vVendor = String(e.vendorName || e.vendor_name || e.vendor || '').trim().toUpperCase();
+          const vFrom = String(e.fromLocation || e.from_location || e.from || '').trim();
+          const vLast = String(e.lastLocation || e.last_location || e.toLocation || e.to || '').trim();
+
           candidates.push({
             source: 'ledger',
             km,
             amt,
             date: e.date || '',
             time: e.time || '',
+            respNum: respNum,
             score,
-            vehicleType: e.vehicleType || '',
-            vendorName: e.vendorName || '',
-            fromLocation: e.fromLocation || '',
-            lastLocation: e.lastLocation || ''
+            vehicleType: vType,
+            vendorName: vVendor,
+            fromLocation: vFrom,
+            lastLocation: vLast
           });
         });
       }
@@ -2337,39 +2351,78 @@
           const v = cleanVehicleNo(r.vehicleNo || r.vehicle_no || r.vehicle);
           if (v !== cleanNo) return;
           const km = parseFloat(String(r.currentKm || 0).replace(/[^0-9.]/g, '')) || 0;
-          if (km <= 10) return;
           const amt = parseFloat(String(r.dieselAmount || 0).replace(/[^0-9.]/g, '')) || 0;
-          const score = typeof r.submittedAt === 'number' && r.submittedAt > 0
+          const subTs = typeof r.submittedAt === 'number' && r.submittedAt > 0
             ? r.submittedAt
-            : getScore(r.date, r.time, 0);
+            : (typeof r.processedAt === 'number' && r.processedAt > 0 ? r.processedAt : getScore(r.date, r.time, 0));
+          const vType = String(r.vehicleType || r.vehicle_type || r.type || '').trim().toUpperCase();
+          const vVendor = String(r.vendorName || r.vendor_name || r.vendor || '').trim().toUpperCase();
+          const vFrom = String(r.fromLocation || r.from_location || r.from || '').trim();
+          const vLast = String(r.lastLocation || r.last_location || r.toLocation || r.to || '').trim();
+
           candidates.push({
             source: 'request',
             km,
             amt,
             date: r.date || '',
             time: r.time || '',
-            score,
-            vehicleType: r.vehicleType || '',
-            vendorName: r.vendorName || '',
-            fromLocation: r.fromLocation || '',
-            lastLocation: r.lastLocation || ''
+            respNum: 0,
+            score: subTs,
+            vehicleType: vType,
+            vendorName: vVendor,
+            fromLocation: vFrom,
+            lastLocation: vLast
           });
         });
       }
 
       if (candidates.length > 0) {
+        // Sort strictly by newest first (highest timestamp/score, then highest ledger response number)
         candidates.sort((a, b) => {
-          const timeDiff = b.score - a.score;
-          if (Math.abs(timeDiff) > 60000) return timeDiff;
+          if (b.score !== a.score) return b.score - a.score;
+          if (b.respNum && a.respNum && b.respNum !== a.respNum) return b.respNum - a.respNum;
           if (b.km !== a.km) return b.km - a.km;
           return b.amt - a.amt;
         });
-        return candidates[0];
+
+        // The very first candidate is the latest trip!
+        const latest = candidates[0];
+
+        // Find the latest non-empty vehicleType and vendorName from the most recent trips
+        let latestType = '';
+        let latestVendor = '';
+        let latestKm = 0;
+        let latestAmt = 0;
+        let latestFrom = '';
+        let latestLast = '';
+
+        for (const c of candidates) {
+          if (!latestType && c.vehicleType) latestType = c.vehicleType;
+          if (!latestVendor && c.vendorName) latestVendor = c.vendorName;
+          if (!latestKm && c.km > 10) latestKm = c.km;
+          if (!latestAmt && c.amt > 0) latestAmt = c.amt;
+          if (!latestFrom && c.fromLocation) latestFrom = c.fromLocation;
+          if (!latestLast && c.lastLocation) latestLast = c.lastLocation;
+          if (latestType && latestVendor && latestKm && latestAmt) break;
+        }
+
+        return {
+          source: latest.source,
+          date: latest.date,
+          time: latest.time,
+          score: latest.score,
+          vehicleType: latestType || latest.vehicleType || '',
+          vendorName: latestVendor || latest.vendorName || '',
+          km: latestKm || latest.km || 0,
+          amt: latestAmt || latest.amt || 0,
+          fromLocation: latestFrom || latest.fromLocation || '',
+          lastLocation: latestLast || latest.lastLocation || ''
+        };
       }
 
       // 3. Fallback to vehicleAutofillMap if no entries found
       const m = vehicleAutofillMap[cleanNo];
-      if (m && (m.currentKm || m.lastAmount)) {
+      if (m && (m.vehicleType || m.vendorName || m.currentKm || m.lastAmount)) {
         return {
           source: 'cache',
           km: parseFloat(String(m.currentKm || 0).replace(/[^0-9.]/g, '')) || 0,
@@ -2723,12 +2776,12 @@
       const trip = typeof getVehicleLatestTrip === 'function' ? getVehicleLatestTrip(cleanNo) : null;
 
       const prevData = vehicleAutofillMap[cleanNo] || {};
-      let bestKm = (trip && trip.km > 0) ? trip.km : (prevData.currentKm || '');
+      let bestKm = (trip && trip.km > 10) ? trip.km : (prevData.currentKm || '');
       let bestAmount = (trip && trip.amt > 0) ? trip.amt : (prevData.lastAmount || '');
-      let matchedVehicleType = (trip && trip.vehicleType) || prevData.vehicleType || vehicleToTypeMap[cleanNo] || '';
-      let matchedVendorName = (trip && trip.vendorName) || prevData.vendorName || '';
-      let matchedFromLoc = (trip && trip.fromLocation) || prevData.fromLocation || '';
-      let matchedLastLoc = (trip && trip.lastLocation) || prevData.lastLocation || '';
+      let matchedVehicleType = (trip && trip.vehicleType) ? trip.vehicleType : (prevData.vehicleType || vehicleToTypeMap[cleanNo] || '');
+      let matchedVendorName = (trip && trip.vendorName) ? trip.vendorName : (prevData.vendorName || '');
+      let matchedFromLoc = (trip && trip.fromLocation) ? trip.fromLocation : (prevData.fromLocation || '');
+      let matchedLastLoc = (trip && trip.lastLocation) ? trip.lastLocation : (prevData.lastLocation || '');
 
       if (matchedVehicleType) {
         vehicleToTypeMap[cleanNo] = matchedVehicleType;
@@ -2786,11 +2839,14 @@
 
       // Pre-apply authoritative latest trip if already available so user has immediate feedback
       const trip = typeof getVehicleLatestTrip === 'function' ? getVehicleLatestTrip(cleanNo) : null;
-      if (trip && trip.km > 0) {
+      if (trip) {
         if (!vehicleAutofillMap[cleanNo]) vehicleAutofillMap[cleanNo] = {};
-        vehicleAutofillMap[cleanNo].currentKm = trip.km;
+        if (trip.km > 10) vehicleAutofillMap[cleanNo].currentKm = trip.km;
         if (trip.amt > 0) vehicleAutofillMap[cleanNo].lastAmount = trip.amt;
-        if (trip.vehicleType) vehicleAutofillMap[cleanNo].vehicleType = trip.vehicleType;
+        if (trip.vehicleType) {
+          vehicleAutofillMap[cleanNo].vehicleType = trip.vehicleType;
+          vehicleToTypeMap[cleanNo] = trip.vehicleType;
+        }
         if (trip.vendorName) vehicleAutofillMap[cleanNo].vendorName = trip.vendorName;
         if (trip.fromLocation) vehicleAutofillMap[cleanNo].fromLocation = trip.fromLocation;
         if (trip.lastLocation) vehicleAutofillMap[cleanNo].lastLocation = trip.lastLocation;
@@ -2822,21 +2878,23 @@
                 window.allLoadedEntries = summaryData.currentMonthEntries;
               }
             }
-            if (summaryData.vehicleType) vehicleToTypeMap[cleanNo] = summaryData.vehicleType;
 
             // Re-check getVehicleLatestTrip to ensure fresh ledger/request entries take precedence over stale summaryData!
             const freshTrip = typeof getVehicleLatestTrip === 'function' ? getVehicleLatestTrip(cleanNo) : null;
+            const finalType = (freshTrip && freshTrip.vehicleType) ? freshTrip.vehicleType : (summaryData.vehicleType || vehicleAutofillMap[cleanNo]?.vehicleType || '');
+            const finalVendor = (freshTrip && freshTrip.vendorName) ? freshTrip.vendorName : (summaryData.vendorName || vehicleAutofillMap[cleanNo]?.vendorName || '');
             const finalKm = (freshTrip && freshTrip.km > 0) ? freshTrip.km : (summaryData.currentKm || vehicleAutofillMap[cleanNo]?.currentKm || '');
             const finalAmt = (freshTrip && freshTrip.amt > 0) ? freshTrip.amt : (summaryData.lastAmount !== undefined ? summaryData.lastAmount : (summaryData.lastDieselAmount !== undefined ? summaryData.lastDieselAmount : (vehicleAutofillMap[cleanNo]?.lastAmount || 0)));
 
             vehicleAutofillMap[cleanNo] = Object.assign({}, vehicleAutofillMap[cleanNo] || {}, {
-              vehicleType: (freshTrip && freshTrip.vehicleType) || summaryData.vehicleType || (vehicleAutofillMap[cleanNo]?.vehicleType || ''),
-              vendorName: (freshTrip && freshTrip.vendorName) || summaryData.vendorName || (vehicleAutofillMap[cleanNo]?.vendorName || ''),
+              vehicleType: finalType,
+              vendorName: finalVendor,
               currentKm: finalKm,
               firstKm: summaryData.firstKm,
               totalDieselAmount: summaryData.totalDieselAmount,
               lastAmount: finalAmt
             });
+            if (finalType) vehicleToTypeMap[cleanNo] = finalType;
             try {
               localStorage.setItem('rpm_veh_cache_v2', JSON.stringify(vehicleAutofillMap));
             } catch(e){}
@@ -2909,16 +2967,45 @@
       return false;
     }
 
-    // Applies vehicle type + vendor for a vehicle number
+    // Applies vehicle type + vendor for a vehicle number based on the vehicle's LAST TRIP
     function applyVehicleAutofillFields(cleanVal) {
       if (!cleanVal) {
         setAutofillLock('req-vtype', false);
         setAutofillLock('req-vendor', false);
         return;
       }
+      cleanVal = cleanVehicleNo(cleanVal);
+
+      // ALWAYS consult getVehicleLatestTrip first for the authoritative last trip details!
+      const trip = typeof getVehicleLatestTrip === 'function' ? getVehicleLatestTrip(cleanVal) : null;
       const match = vehicleAutofillMap[cleanVal] || {};
+
+      // Prioritize the last trip's Vehicle Type & Vendor Name over stale cached values!
+      const knownType = (trip && trip.vehicleType) ? trip.vehicleType : (match.vehicleType || vehicleToTypeMap[cleanVal] || '');
+      const knownVendor = (trip && trip.vendorName) ? trip.vendorName : (match.vendorName || '');
+
+      // Keep vehicleAutofillMap and vehicleToTypeMap in sync with the last trip
+      if (!vehicleAutofillMap[cleanVal]) vehicleAutofillMap[cleanVal] = {};
+      if (knownType) {
+        vehicleAutofillMap[cleanVal].vehicleType = knownType;
+        vehicleToTypeMap[cleanVal] = knownType;
+      }
+      if (knownVendor) {
+        vehicleAutofillMap[cleanVal].vendorName = knownVendor;
+      }
+      if (trip && trip.km > 10) {
+        vehicleAutofillMap[cleanVal].currentKm = trip.km;
+      }
+      if (trip && trip.amt > 0) {
+        vehicleAutofillMap[cleanVal].lastAmount = trip.amt;
+      }
+
+      // Persist to local storage so future lookups are up-to-date with the last trip
+      try {
+        localStorage.setItem('rpm_veh_cache_v2', JSON.stringify(vehicleAutofillMap));
+      } catch(e) {}
+
       const vtypeSelect = document.getElementById('req-vtype');
-      const knownType = match.vehicleType || vehicleToTypeMap[cleanVal] || '';
       if (vtypeSelect) {
         if (knownType) {
           if (!selectOptionLoose(vtypeSelect, knownType)) {
@@ -2935,7 +3022,6 @@
       }
 
       const vendorSelect = document.getElementById('req-vendor');
-      const knownVendor = match.vendorName || '';
       if (vendorSelect) {
         if (knownVendor) {
           if (!selectOptionLoose(vendorSelect, knownVendor)) {
@@ -2952,16 +3038,10 @@
       }
 
       // Prefill Start KM from true latest trip
-      const trip = typeof getVehicleLatestTrip === 'function' ? getVehicleLatestTrip(cleanVal) : null;
       const latestKm = (trip && trip.km > 0) ? trip.km : (match.currentKm || '');
       const startKmInput = document.getElementById('req-start-km');
       if (startKmInput && latestKm) {
         startKmInput.value = latestKm;
-      }
-      if (trip && trip.amt > 0) {
-        if (!vehicleAutofillMap[cleanVal]) vehicleAutofillMap[cleanVal] = {};
-        vehicleAutofillMap[cleanVal].lastAmount = trip.amt;
-        if (latestKm) vehicleAutofillMap[cleanVal].currentKm = latestKm;
       }
 
       if (typeof updateMonthlyDueDisplay === 'function') updateMonthlyDueDisplay();
