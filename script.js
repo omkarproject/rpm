@@ -21761,17 +21761,17 @@ function showApprovalPreview(type) {
 
       const fromLoc = String(r.fromLocation || r.from_location || r.from || '').trim().toUpperCase();
       const lastLoc = String(r.lastLocation || r.last_location || r.toLocation || r.to || '').trim().toUpperCase();
-      let routeHtml = '-';
+      let routeHtml = '<span class="text-slate-400 font-semibold">-</span>';
       if (fromLoc && lastLoc) {
-        routeHtml = `<span class="text-slate-800 dark:text-slate-200 font-bold">${fromLoc}</span> <span class="text-slate-400 dark:text-slate-500 font-normal mx-0.5">➔</span> <span class="text-slate-800 dark:text-slate-200 font-bold">${lastLoc}</span>`;
+        routeHtml = `<div class="flex items-center gap-1.5 font-bold whitespace-nowrap"><i class="fas fa-map-marker-alt text-[10px] text-rose-500 flex-shrink-0"></i><span class="text-blue-600 dark:text-blue-400 font-extrabold">${fromLoc}</span><i class="fas fa-arrow-right text-[9px] text-slate-400 mx-0.5"></i><span class="text-emerald-600 dark:text-emerald-400 font-extrabold">${lastLoc}</span></div>`;
       } else if (fromLoc) {
-        routeHtml = `<span class="text-slate-800 dark:text-slate-200 font-bold">${fromLoc}</span>`;
+        routeHtml = `<div class="flex items-center gap-1.5 font-bold whitespace-nowrap"><i class="fas fa-map-marker-alt text-[10px] text-rose-500 flex-shrink-0"></i><span class="text-blue-600 dark:text-blue-400 font-extrabold">${fromLoc}</span></div>`;
       } else if (lastLoc) {
-        routeHtml = `<span class="text-slate-400 dark:text-slate-500 font-normal mr-0.5">➔</span> <span class="text-slate-800 dark:text-slate-200 font-bold">${lastLoc}</span>`;
+        routeHtml = `<div class="flex items-center gap-1.5 font-bold whitespace-nowrap"><i class="fas fa-map-marker-alt text-[10px] text-rose-500 flex-shrink-0"></i><i class="fas fa-arrow-right text-[9px] text-slate-400 mr-0.5"></i><span class="text-emerald-600 dark:text-emerald-400 font-extrabold">${lastLoc}</span></div>`;
       }
 
       tr.innerHTML = `
-        <td class="px-3.5 py-3 whitespace-nowrap">
+        <td class="px-3.5 py-3 whitespace-nowrap min-w-[140px]">
           <div class="flex items-center gap-1.5">
             ${mapIconHtml}
             <div>
@@ -21780,20 +21780,17 @@ function showApprovalPreview(type) {
             </div>
           </div>
         </td>
-        <td class="px-3.5 py-3 text-xs whitespace-nowrap">
-          <div class="flex items-center gap-1.5">
-            ${(fromLoc || lastLoc) ? '<i class="fas fa-map-marker-alt text-[10px] text-rose-500/80"></i>' : ''}
-            <div>${routeHtml}</div>
-          </div>
+        <td class="px-3.5 py-3 text-xs whitespace-nowrap min-w-[200px]">
+          ${routeHtml}
         </td>
-        <td class="px-3.5 py-3 whitespace-nowrap">
+        <td class="px-3.5 py-3 whitespace-nowrap min-w-[120px]">
           <div class="text-xs font-bold text-slate-700 dark:text-slate-300">${dateStr}</div>
           <div class="text-[10px] font-semibold text-slate-400 dark:text-slate-500">${timeStr}</div>
         </td>
-        <td class="px-3.5 py-3 whitespace-nowrap text-right font-black text-xs sm:text-sm text-emerald-600 dark:text-emerald-400">
+        <td class="px-3.5 py-3 whitespace-nowrap min-w-[110px] text-right font-black text-xs sm:text-sm text-emerald-600 dark:text-emerald-400">
           ${diesel}
         </td>
-        <td class="px-3.5 py-3 text-xs max-w-[180px] sm:max-w-[240px]">
+        <td class="px-3.5 py-3 text-xs min-w-[160px] max-w-[240px]">
           <div class="font-bold text-slate-800 dark:text-slate-200 truncate" title="${vendorStr}">${vendorStr}</div>
           ${statusInfoHtml}
           ${noteStr ? `<div class="text-[10px] text-slate-400 truncate italic mt-0.5" title="${noteStr}">${noteStr}</div>` : ''}

@@ -5342,7 +5342,7 @@
 
   <!-- MODAL: APPROVAL PREVIEW -->
   <div id="approval-preview-modal" class="fixed inset-0 bg-slate-900/60 dark:bg-black/80 flex items-center justify-center z-50 hidden backdrop-blur-sm p-2 sm:p-4">
-    <div class="glass-panel w-full max-w-3xl mx-auto rounded-2xl sm:rounded-3xl border border-white/10 dark:border-white/5 flex flex-col shadow-2xl overflow-hidden max-h-[90vh]">
+    <div class="glass-panel w-full max-w-4xl mx-auto rounded-2xl sm:rounded-3xl border border-white/10 dark:border-white/5 flex flex-col shadow-2xl overflow-hidden max-h-[90vh]">
       <!-- Modal Header -->
       <div class="flex items-center justify-between border-b border-slate-200/50 dark:border-slate-800/40 px-4 py-3 sm:px-6 sm:py-4">
         <h2 class="text-sm sm:text-lg font-extrabold text-slate-800 dark:text-white flex items-center gap-2">
@@ -5356,14 +5356,14 @@
       <!-- Modal Body -->
       <div class="p-3 sm:p-6 overflow-y-auto max-h-[75vh]">
         <div class="overflow-x-auto scrollbar-thin">
-          <table class="w-full text-left border-collapse min-w-[620px]">
+          <table class="w-full text-left border-collapse" style="table-layout: auto !important; min-width: 720px;">
             <thead>
               <tr class="bg-slate-100/60 dark:bg-slate-900/60 text-slate-500 dark:text-slate-400 font-extrabold text-[10px] sm:text-[11px] uppercase tracking-wider border-b border-slate-200/60 dark:border-slate-800/40">
-                <th class="px-3.5 py-3 whitespace-nowrap">Vehicle Detail</th>
-                <th class="px-3.5 py-3 whitespace-nowrap">From / Last Location</th>
-                <th class="px-3.5 py-3 whitespace-nowrap">Date & Time</th>
-                <th class="px-3.5 py-3 whitespace-nowrap text-right">Diesel Amount</th>
-                <th class="px-3.5 py-3 whitespace-nowrap">Vendor & Note</th>
+                <th class="px-3.5 py-3 whitespace-nowrap min-w-[140px]">Vehicle Detail</th>
+                <th class="px-3.5 py-3 whitespace-nowrap min-w-[200px]">From / Last Location</th>
+                <th class="px-3.5 py-3 whitespace-nowrap min-w-[120px]">Date & Time</th>
+                <th class="px-3.5 py-3 whitespace-nowrap min-w-[110px] text-right">Diesel Amount</th>
+                <th class="px-3.5 py-3 whitespace-nowrap min-w-[160px]">Vendor & Note</th>
               </tr>
             </thead>
             <tbody id="approval-preview-tbody" class="divide-y divide-slate-100 dark:divide-slate-800/40 text-xs text-slate-700 dark:text-slate-300">
