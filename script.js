@@ -23400,7 +23400,28 @@ function startVehicleReportCountdownTimer() {
 function updateVehicleReportRequestsBadges() {
   const now = Date.now();
   const allReqs = Object.values(vehicleReportRequestsMap || {});
-  const pendingCount = allReqs.filter(r => r && (r.status === 'pending' || !r.status) && (!r.expiresAt || r.expiresAt > now)).length;
+  
+  const pendingCount = allReqs.filter(r => {
+    if (!r) return false;
+    const exp = r.expiresAt || (r.createdAt ? r.createdAt + 86400000 : 0);
+    const isExpired = exp && exp <= now;
+    return (r.status === 'pending' || !r.status) && !isExpired;
+  }).length;
+
+  const approvedCount = allReqs.filter(r => {
+    if (!r) return false;
+    const exp = r.expiresAt || (r.createdAt ? r.createdAt + 86400000 : 0);
+    const isExpired = exp && exp <= now;
+    return r.status === 'approved' && !isExpired;
+  }).length;
+
+  const rejectedCount = allReqs.filter(r => {
+    if (!r) return false;
+    const exp = r.expiresAt || (r.createdAt ? r.createdAt + 86400000 : 0);
+    const isExpired = exp && exp <= now;
+    // Expired (>24h) requests automatically belong in the Rejected list
+    return r.status === 'rejected' || isExpired;
+  }).length;
   
   const badgeMain = document.getElementById('badge-report-requests-pending');
   if (badgeMain) {
@@ -23412,10 +23433,17 @@ function updateVehicleReportRequestsBadges() {
     }
   }
 
-  const badgeModal = document.getElementById('rep-req-modal-pending-count');
-  if (badgeModal) {
-    badgeModal.textContent = `${pendingCount} Pending`;
-  }
+  const badgeModalPending = document.getElementById('rep-req-modal-pending-count');
+  if (badgeModalPending) badgeModalPending.textContent = pendingCount;
+
+  const badgeModalApproved = document.getElementById('rep-req-modal-approved-count');
+  if (badgeModalApproved) badgeModalApproved.textContent = approvedCount;
+
+  const badgeModalRejected = document.getElementById('rep-req-modal-rejected-count');
+  if (badgeModalRejected) badgeModalRejected.textContent = rejectedCount;
+
+  const badgeModalAll = document.getElementById('rep-req-modal-all-count');
+  if (badgeModalAll) badgeModalAll.textContent = allReqs.length;
 }
 
 window.openVehicleReportRequestsModal = function() {
@@ -23501,11 +23529,15 @@ window.renderVehicleReportRequestsList = function() {
     const exp = r.expiresAt || (r.createdAt ? r.createdAt + 86400000 : 0);
     const isExpired = exp && exp <= now;
     let status = r.status || 'pending';
-    if (status === 'pending' && isExpired) status = 'expired';
 
-    if (currentRepReqFilter === 'pending' && (status !== 'pending' || isExpired)) return false;
-    if (currentRepReqFilter === 'approved' && status !== 'approved') return false;
-    if (currentRepReqFilter === 'rejected' && status !== 'rejected') return false;
+    if (currentRepReqFilter === 'pending') {
+      if (status !== 'pending' || isExpired) return false;
+    } else if (currentRepReqFilter === 'approved') {
+      if (status !== 'approved' || isExpired) return false;
+    } else if (currentRepReqFilter === 'rejected') {
+      // User request: 24hr expired ho to rejected me chalaa jaaye / dikhe
+      if (status !== 'rejected' && !isExpired) return false;
+    }
 
     if (searchVal) {
       const matchVehicle = (r.vehicleNo || '').toLowerCase().includes(searchVal);
@@ -23522,7 +23554,7 @@ window.renderVehicleReportRequestsList = function() {
       <div class="p-8 text-center bg-slate-100/50 dark:bg-slate-900/50 rounded-2xl border border-slate-200/40 dark:border-slate-800/40">
         <i class="fas fa-file-invoice text-slate-400 text-3xl mb-2"></i>
         <div class="text-xs font-bold text-slate-500">No report requests found</div>
-        <div class="text-[10px] text-slate-400 mt-1">Vehicle report requests submitted by drivers will appear here.</div>
+        <div class="text-[10px] text-slate-400 mt-1">Vehicle report requests will appear here.</div>
       </div>
     `;
     return;
@@ -23533,27 +23565,32 @@ window.renderVehicleReportRequestsList = function() {
     const exp = req.expiresAt || (req.createdAt ? req.createdAt + 86400000 : 0);
     const isExpired = exp && exp <= now;
     let status = req.status || 'pending';
-    if (status === 'pending' && isExpired) status = 'expired';
 
     let badgeBg = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
     let badgeText = '⏳ Pending Approval';
-    if (status === 'approved') {
+    if (isExpired) {
+      badgeBg = 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20';
+      badgeText = '⌛ Expired (>24h)';
+    } else if (status === 'approved') {
       badgeBg = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
       badgeText = '✅ Approved';
     } else if (status === 'rejected') {
       badgeBg = 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20';
       badgeText = '❌ Rejected';
-    } else if (status === 'expired') {
-      badgeBg = 'bg-slate-500/10 text-slate-500 border-slate-500/20';
-      badgeText = '⌛ Expired (>24h)';
     }
 
     const createdTimeStr = formatVehicleReportSubmissionDate(req);
     const dateRangeDisplay = formatVehicleReportDateRange(req);
 
-    // 24hr Live Countdown Timer Display for Approved requests
+    // Live countdown timer or expiry badge
     let timerOrExpiryBadge = '';
-    if (status === 'approved') {
+    if (isExpired) {
+      timerOrExpiryBadge = `
+        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20">
+          <i class="fas fa-history text-[9px] mr-1"></i> Validity Ended
+        </span>
+      `;
+    } else if (status === 'approved') {
       const diff = exp - now;
       if (diff > 0) {
         const hrs = Math.floor(diff / 3600000);
@@ -23565,18 +23602,28 @@ window.renderVehicleReportRequestsList = function() {
             <i class="fas fa-clock text-[10px] text-emerald-500 animate-pulse"></i> ${formatted}
           </span>
         `;
-      } else {
-        timerOrExpiryBadge = `
-          <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-500/10 text-slate-400 border border-slate-500/20">
-            ⌛ Expired (>24h)
-          </span>
-        `;
       }
     } else if (status === 'pending') {
       if (exp && exp > now) {
         const hrsLeft = Math.round((exp - now) / 3600000);
         timerOrExpiryBadge = `<span class="text-[10px] text-slate-400 font-medium">⏱️ Expires in ~${hrsLeft}h</span>`;
       }
+    }
+
+    let reasonBlock = '';
+    if (req.rejectReason) {
+      reasonBlock = `
+        <div class="text-[10px] text-rose-600 dark:text-rose-400 font-bold mt-2 p-2 rounded-xl bg-rose-500/10 border border-rose-500/20">
+          <i class="fas fa-ban mr-1 text-rose-500"></i> Rejection Reason: ${req.rejectReason}
+        </div>
+      `;
+    } else if (isExpired) {
+      reasonBlock = `
+        <div class="text-[10px] text-rose-600 dark:text-rose-400 font-bold mt-2 p-2 rounded-xl bg-rose-500/10 border border-rose-500/20 flex flex-wrap items-center justify-between gap-1">
+          <span><i class="fas fa-clock mr-1 text-rose-500"></i> Expired: 24h validity has ended</span>
+          <span class="text-[9px] text-slate-400">Click Re-Approve to grant another 24 hours</span>
+        </div>
+      `;
     }
 
     const item = document.createElement('div');
@@ -23614,20 +23661,21 @@ window.renderVehicleReportRequestsList = function() {
               <span class="font-bold text-emerald-600 dark:text-emerald-400">${dateRangeDisplay}</span>
             </div>
           </div>
-          ${req.rejectReason ? `
-            <div class="text-[10px] text-rose-600 dark:text-rose-400 font-bold mt-2 p-2 rounded-xl bg-rose-500/10 border border-rose-500/20">
-              <i class="fas fa-ban mr-1 text-rose-500"></i> Rejection Reason: ${req.rejectReason}
-            </div>
-          ` : ''}
+          ${reasonBlock}
           <div class="text-[9px] text-slate-400 mt-2">
             Requested: ${createdTimeStr}
             ${req.approvedBy ? ` • Approved by: <span class="font-bold text-slate-600 dark:text-slate-300">${req.approvedBy}</span>` : ''}
             ${req.rejectedBy ? ` • Rejected by: <span class="font-bold text-slate-600 dark:text-slate-300">${req.rejectedBy}</span>` : ''}
+            ${req.generatedByAdmin ? ` • <span class="font-bold text-indigo-500">Created by Admin</span>` : ''}
           </div>
         </div>
       </div>
       <div class="flex items-center gap-2 shrink-0 md:self-center">
-        ${status === 'pending' ? `
+        ${isExpired ? `
+          <button onclick="approveVehicleReportRequest('${req.key}')" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm hover:shadow transition-all flex items-center gap-1.5" title="Re-approve request for 24 hours">
+            <i class="fas fa-redo-alt"></i> Re-Approve (24h)
+          </button>
+        ` : (status === 'pending' ? `
           <button onclick="approveVehicleReportRequest('${req.key}')" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm hover:shadow transition-all flex items-center gap-1.5">
             <i class="fas fa-check"></i> Approve
           </button>
@@ -23639,10 +23687,10 @@ window.renderVehicleReportRequestsList = function() {
             <i class="fas fa-ban"></i> Reject & Expire
           </button>
         ` : (status === 'rejected' ? `
-          <button onclick="approveVehicleReportRequest('${req.key}')" class="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-emerald-500/20 hover:text-emerald-500 text-slate-500 text-[11px] font-semibold transition-all">
-            Re-Approve
+          <button onclick="approveVehicleReportRequest('${req.key}')" class="px-3.5 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-emerald-500/20 hover:text-emerald-500 text-slate-500 text-xs font-bold transition-all flex items-center gap-1.5">
+            <i class="fas fa-redo-alt"></i> Re-Approve (24h)
           </button>
-        ` : ''))}
+        ` : '')))}
       </div>
     `;
     container.appendChild(item);
@@ -23717,12 +23765,14 @@ window.confirmRejectVehicleReportRequest = function() {
 window.approveVehicleReportRequest = function(codeKey) {
   if (typeof checkAuth === 'function' && !checkAuth()) return;
   const user = (typeof currentUser !== 'undefined' && currentUser && currentUser.name) ? currentUser.name : (getAuthSession('rpm_user_name') || 'Admin');
+  const now = Date.now();
   
   vehicleReportRequestsRef.child(codeKey).update({
     status: 'approved',
-    approvedAt: Date.now(),
+    approvedAt: now,
     approvedBy: user,
-    rejectReason: null
+    rejectReason: null,
+    expiresAt: now + 24 * 60 * 60 * 1000 // Grants fresh 24 hours validity
   }).then(() => {
     if (typeof toast !== 'undefined' && toast.ok) toast.ok(`Report request ${codeKey} approved! (Valid for 24h)`);
   }).catch(err => {
@@ -23732,6 +23782,290 @@ window.approveVehicleReportRequest = function(codeKey) {
 
 window.rejectVehicleReportRequest = function(codeKey) {
   openVehicleReportRejectModal(codeKey);
+};
+
+// === Admin Direct Report Code Generation ===
+let lastAdminGeneratedReportData = null;
+
+window.openAdminGenerateReportCodeModal = function() {
+  const modal = document.getElementById('admin-generate-report-code-modal');
+  const modalContent = document.getElementById('admin-generate-report-code-modal-content');
+  if (!modal || !modalContent) return;
+
+  const formView = document.getElementById('admin-gen-form-view');
+  const successView = document.getElementById('admin-gen-success-view');
+  if (formView) formView.classList.remove('hidden');
+  if (successView) successView.classList.add('hidden');
+
+  const vehInput = document.getElementById('admin-gen-veh-no');
+  const kmInput = document.getElementById('admin-gen-current-km');
+  const nameInput = document.getElementById('admin-gen-driver-name');
+  const mobInput = document.getElementById('admin-gen-mobile');
+  const optMonth = document.getElementById('admin-gen-opt-month');
+  const customDiv = document.getElementById('admin-gen-custom-dates');
+  const fromInput = document.getElementById('admin-gen-from-date');
+  const toInput = document.getElementById('admin-gen-to-date');
+
+  if (vehInput) vehInput.value = '';
+  if (kmInput) kmInput.value = '';
+  if (nameInput) nameInput.value = '';
+  if (mobInput) mobInput.value = '';
+  if (optMonth) optMonth.checked = true;
+  if (customDiv) customDiv.classList.add('hidden');
+
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = String(today.getMonth() + 1).padStart(2, '0');
+  const d = String(today.getDate()).padStart(2, '0');
+  if (fromInput) fromInput.value = `${y}-${m}-01`;
+  if (toInput) toInput.value = `${y}-${m}-${d}`;
+
+  populateAdminGenVehicles();
+
+  modal.classList.remove('hidden');
+  modal.offsetHeight;
+  modal.classList.remove('opacity-0', 'pointer-events-none');
+  modalContent.classList.remove('scale-95');
+  modalContent.classList.add('scale-100');
+
+  setTimeout(() => {
+    if (vehInput) vehInput.focus();
+  }, 100);
+};
+
+window.closeAdminGenerateReportCodeModal = function() {
+  const modal = document.getElementById('admin-generate-report-code-modal');
+  const modalContent = document.getElementById('admin-generate-report-code-modal-content');
+  if (!modal || !modalContent) return;
+
+  modalContent.classList.remove('scale-100');
+  modalContent.classList.add('scale-95');
+  modal.classList.add('opacity-0', 'pointer-events-none');
+  setTimeout(() => modal.classList.add('hidden'), 300);
+};
+
+window.populateAdminGenVehicles = function() {
+  const datalist = document.getElementById('admin-gen-vehicles-datalist');
+  if (!datalist) return;
+  datalist.innerHTML = '';
+  const pool = (typeof historyEntries !== 'undefined' && Array.isArray(historyEntries)) ? historyEntries : [];
+  const set = new Set();
+  pool.forEach(e => {
+    const v = (e.vehicleNo || e.vehicle || '').trim().toUpperCase();
+    if (v) set.add(v);
+  });
+  Object.values(vehicleReportRequestsMap || {}).forEach(r => {
+    const v = (r.vehicleNo || '').trim().toUpperCase();
+    if (v) set.add(v);
+  });
+  const sorted = Array.from(set).sort();
+  const frag = document.createDocumentFragment();
+  sorted.forEach(v => {
+    const opt = document.createElement('option');
+    opt.value = v;
+    frag.appendChild(opt);
+  });
+  datalist.appendChild(frag);
+};
+
+window.toggleAdminGenDateInputs = function() {
+  const customDiv = document.getElementById('admin-gen-custom-dates');
+  const optCustom = document.getElementById('admin-gen-opt-custom');
+  if (!customDiv || !optCustom) return;
+  if (optCustom.checked) {
+    customDiv.classList.remove('hidden');
+  } else {
+    customDiv.classList.add('hidden');
+  }
+};
+
+window.resetAdminGenerateReportCodeForm = function() {
+  const formView = document.getElementById('admin-gen-form-view');
+  const successView = document.getElementById('admin-gen-success-view');
+  if (formView) formView.classList.remove('hidden');
+  if (successView) successView.classList.add('hidden');
+  const vehInput = document.getElementById('admin-gen-veh-no');
+  if (vehInput) {
+    vehInput.value = '';
+    vehInput.focus();
+  }
+  const kmInput = document.getElementById('admin-gen-current-km');
+  if (kmInput) kmInput.value = '';
+  const nameInput = document.getElementById('admin-gen-driver-name');
+  if (nameInput) nameInput.value = '';
+  const mobInput = document.getElementById('admin-gen-mobile');
+  if (mobInput) mobInput.value = '';
+};
+
+window.submitAdminGenerateReportCode = function() {
+  const vehInput = document.getElementById('admin-gen-veh-no');
+  const kmInput = document.getElementById('admin-gen-current-km');
+  const nameInput = document.getElementById('admin-gen-driver-name');
+  const mobInput = document.getElementById('admin-gen-mobile');
+  const optCustom = document.getElementById('admin-gen-opt-custom');
+  const fromInput = document.getElementById('admin-gen-from-date');
+  const toInput = document.getElementById('admin-gen-to-date');
+  const submitBtn = document.getElementById('btn-admin-submit-gen-code');
+
+  const vehicleNo = (vehInput?.value || '').trim().toUpperCase();
+  const currentKm = (kmInput?.value || '').trim();
+  const driverName = (nameInput?.value || '').trim() || 'Driver';
+  const mobile = (mobInput?.value || '').trim().replace(/\D/g, '');
+  const isCustom = optCustom ? optCustom.checked : false;
+
+  if (!vehicleNo) {
+    if (typeof toast !== 'undefined' && toast.warn) toast.warn("Please enter Vehicle Number.");
+    else alert("Please enter Vehicle Number.");
+    if (vehInput) vehInput.focus();
+    return;
+  }
+
+  if (!mobile || mobile.length !== 10) {
+    if (typeof toast !== 'undefined' && toast.warn) toast.warn("Please enter a valid 10-digit Mobile Number.");
+    else alert("Please enter a valid 10-digit Mobile Number.");
+    if (mobInput) mobInput.focus();
+    return;
+  }
+
+  let fromDate = '';
+  let toDate = '';
+  let dateOption = 'current_month';
+  let dateRangeLabel = 'Current Month';
+
+  if (isCustom) {
+    fromDate = (fromInput?.value || '').trim();
+    toDate = (toInput?.value || '').trim();
+    if (!fromDate || !toDate) {
+      if (typeof toast !== 'undefined' && toast.warn) toast.warn("Please select both From Date and To Date for Custom Range.");
+      else alert("Please select both From Date and To Date.");
+      return;
+    }
+    if (fromDate > toDate) {
+      if (typeof toast !== 'undefined' && toast.warn) toast.warn("From Date cannot be later than To Date.");
+      else alert("From Date cannot be later than To Date.");
+      return;
+    }
+    dateOption = 'custom';
+    dateRangeLabel = `${fromDate} to ${toDate}`;
+  }
+
+  let code = '';
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const candidate = String(Math.floor(10000 + Math.random() * 90000));
+    if (!vehicleReportRequestsMap || !vehicleReportRequestsMap[candidate]) {
+      code = candidate;
+      break;
+    }
+  }
+  if (!code) code = String(Math.floor(10000 + Math.random() * 90000));
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = `<i class="fas fa-spinner fa-spin mr-1"></i> Generating Code...`;
+  }
+
+  const now = Date.now();
+  const adminUser = (typeof currentUser !== 'undefined' && currentUser && currentUser.name) ? currentUser.name : (getAuthSession('rpm_user_name') || 'Admin');
+  const expiresAt = now + 24 * 60 * 60 * 1000;
+
+  const payload = {
+    code: code,
+    vehicleNo: vehicleNo,
+    currentKm: currentKm ? String(currentKm) : '',
+    name: driverName,
+    driverName: driverName,
+    mobile: mobile,
+    dateOption: dateOption,
+    dateRangeLabel: dateRangeLabel,
+    fromDate: fromDate,
+    toDate: toDate,
+    status: 'approved',
+    approvedBy: adminUser,
+    approvedAt: now,
+    createdAt: now,
+    requestedAt: now,
+    submittedAt: now,
+    expiresAt: expiresAt,
+    generatedByAdmin: true
+  };
+
+  vehicleReportRequestsRef.child(code).set(payload)
+    .then(() => {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `<i class="fas fa-check-circle"></i> Generate 5-Digit Code & Approve`;
+      }
+
+      lastAdminGeneratedReportData = payload;
+
+      const formView = document.getElementById('admin-gen-form-view');
+      const successView = document.getElementById('admin-gen-success-view');
+      const codeEl = document.getElementById('admin-gen-result-code');
+      const metaEl = document.getElementById('admin-gen-result-meta');
+
+      if (codeEl) codeEl.textContent = code;
+      if (metaEl) {
+        metaEl.innerHTML = `
+          <div><span class="text-slate-400">Vehicle:</span> <span class="font-bold text-slate-800 dark:text-slate-100">${vehicleNo}</span></div>
+          <div><span class="text-slate-400">Driver:</span> <span class="font-bold">${driverName}</span> • <span class="text-slate-400">Mobile:</span> <span class="font-mono font-bold">${mobile}</span></div>
+          ${currentKm ? `<div><span class="text-slate-400">Current KM:</span> <span class="font-bold text-indigo-500">${Number(currentKm).toLocaleString()} KM</span></div>` : ''}
+          <div><span class="text-slate-400">Range:</span> <span class="font-bold text-emerald-500">${dateRangeLabel}</span></div>
+        `;
+      }
+
+      if (formView) formView.classList.add('hidden');
+      if (successView) successView.classList.remove('hidden');
+
+      if (typeof toast !== 'undefined' && toast.ok) {
+        toast.ok(`Report Code ${code} created & approved for ${vehicleNo}!`);
+      }
+
+      vehicleReportRequestsMap[code] = payload;
+      updateVehicleReportRequestsBadges();
+      renderVehicleReportRequestsList();
+    })
+    .catch(err => {
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = `<i class="fas fa-check-circle"></i> Generate 5-Digit Code & Approve`;
+      }
+      if (typeof toast !== 'undefined' && toast.err) {
+        toast.err("Error creating report code: " + err.message);
+      } else {
+        alert("Error: " + err.message);
+      }
+    });
+};
+
+window.shareGeneratedCodeOnWhatsApp = function() {
+  if (!lastAdminGeneratedReportData) return;
+  const d = lastAdminGeneratedReportData;
+  const msg = `*RPM Transport - Vehicle Report Access*\nHello *${d.driverName || 'Driver'}*,\n\nAapke vehicle *${d.vehicleNo}* ki report access code generate ho gaya hai:\n\n📋 *Vehicle No:* ${d.vehicleNo}\n🔑 *5-Digit Code:* ${d.code}\n📱 *Registered Mobile:* ${d.mobile}\n📅 *Date Range:* ${d.dateRangeLabel}\n⏳ *Validity:* 24 Hours\n\nDriver Portal me apna Mobile No (${d.mobile}) aur Code (${d.code}) enter karke report dekh sakte hain.`;
+  const url = `https://wa.me/91${d.mobile}?text=${encodeURIComponent(msg)}`;
+  window.open(url, '_blank');
+};
+
+window.copyGeneratedCodeOnly = function() {
+  if (!lastAdminGeneratedReportData || !lastAdminGeneratedReportData.code) return;
+  const code = lastAdminGeneratedReportData.code;
+  navigator.clipboard.writeText(code).then(() => {
+    if (typeof toast !== 'undefined' && toast.ok) toast.ok(`Code ${code} copied to clipboard!`);
+    else alert(`Code ${code} copied!`);
+  }).catch(() => {
+    alert(`Code: ${code}`);
+  });
+};
+
+window.copyGeneratedFullMessage = function() {
+  if (!lastAdminGeneratedReportData) return;
+  const d = lastAdminGeneratedReportData;
+  const msg = `*RPM Transport - Vehicle Report Access*\nHello *${d.driverName || 'Driver'}*,\n\nAapke vehicle *${d.vehicleNo}* ki report access code generate ho gaya hai:\n\n📋 *Vehicle No:* ${d.vehicleNo}\n🔑 *5-Digit Code:* ${d.code}\n📱 *Registered Mobile:* ${d.mobile}\n📅 *Date Range:* ${d.dateRangeLabel}\n⏳ *Validity:* 24 Hours\n\nDriver Portal me apna Mobile No (${d.mobile}) aur Code (${d.code}) enter karke report dekh sakte hain.`;
+  navigator.clipboard.writeText(msg).then(() => {
+    if (typeof toast !== 'undefined' && toast.ok) toast.ok("Report access details copied to clipboard!");
+    else alert("Details copied to clipboard!");
+  }).catch(() => {
+    alert(msg);
+  });
 };
 
 window.saveAutoApproveTimerSettings = function() {
