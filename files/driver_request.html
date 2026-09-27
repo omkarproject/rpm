@@ -2266,11 +2266,149 @@
       }
     };
 
+    // Helper: Find exact latest entry in Diesel Records (entries ledger)
+    function getVehicleLastDieselRecord(cleanNo) {
+      if (!cleanNo) return null;
+      cleanNo = cleanVehicleNo(cleanNo);
+      if (!cleanNo) return null;
+
+      let list = [];
+      if (Array.isArray(window.allLoadedEntries) && window.allLoadedEntries.length > 0) {
+        list = window.allLoadedEntries;
+      } else if (typeof allEntriesCache !== 'undefined' && Array.isArray(allEntriesCache) && allEntriesCache.length > 0) {
+        list = allEntriesCache;
+      }
+
+      if ((!list || list.length === 0) && window.parent && Array.isArray(window.parent.historyEntries) && window.parent.historyEntries.length > 0) {
+        list = window.parent.historyEntries;
+      }
+
+      if (!list || list.length === 0) {
+        try {
+          const c = localStorage.getItem('rpm_cache_entries_slim') || localStorage.getItem('rpm_cache_entries');
+          if (c) {
+            const parsed = JSON.parse(c);
+            if (Array.isArray(parsed)) list = parsed;
+            else if (parsed && typeof parsed === 'object') list = Object.values(parsed);
+          }
+        } catch(e) {}
+      }
+
+      if (!Array.isArray(list) || list.length === 0) return null;
+
+      const matched = [];
+      for (let i = 0; i < list.length; i++) {
+        const e = list[i];
+        if (!e) continue;
+        const v = cleanVehicleNo(e.vehicleNo || e.vehicle_no || e.vehicle || e.truckNo || e.vehicleNumber);
+        if (v === cleanNo) matched.push(e);
+      }
+
+      if (matched.length === 0) return null;
+
+      const parseSafeDate = (dStr) => {
+        if (!dStr) return 0;
+        if (typeof parseDateStr === 'function') {
+          const res = parseDateStr(dStr);
+          if (res && typeof res.getTime === 'function') return res.getTime();
+        }
+        const s = String(dStr).trim().split(/[\/\-\.]/);
+        if (s.length === 3) {
+          const p0 = parseInt(s[0]), p1 = parseInt(s[1]), p2 = parseInt(s[2]);
+          if (!isNaN(p0) && !isNaN(p1) && !isNaN(p2)) {
+            if (s[0].length === 4) {
+              return new Date(p0, p1 - 1, p2).getTime();
+            } else {
+              return new Date(p2, p1 - 1, p0).getTime();
+            }
+          }
+        }
+        const d = new Date(dStr);
+        return isNaN(d) ? 0 : d.getTime();
+      };
+
+      const getEntryScore = (e) => {
+        const respNum = parseInt(e.responseNumber) || 0;
+        const d = parseSafeDate(e.date);
+        let tMs = 0;
+        if (e.time) {
+          const [h, m] = String(e.time).split(':').map(Number);
+          if (!isNaN(h) && !isNaN(m)) tMs = (h * 60 + m) * 60 * 1000;
+        }
+        return { respNum, dateTime: d + tMs };
+      };
+
+      matched.sort((a, b) => {
+        const scoreA = getEntryScore(a);
+        const scoreB = getEntryScore(b);
+        if (scoreB.respNum && scoreA.respNum && scoreB.respNum !== scoreA.respNum) {
+          return scoreB.respNum - scoreA.respNum;
+        }
+        if (scoreB.dateTime !== scoreA.dateTime) {
+          return scoreB.dateTime - scoreA.dateTime;
+        }
+        return (scoreB.respNum || 0) - (scoreA.respNum || 0);
+      });
+
+      const latest = matched[0];
+      let latestType = String(latest.vehicleType || latest.vehicle_type || latest.type || '').trim().toUpperCase();
+      let latestVendor = String(latest.vendorName || latest.vendor_name || latest.vendor || '').trim().toUpperCase();
+      let latestKm = parseFloat(String(latest.currentKm || latest.endKm || latest.km || 0).replace(/[^0-9.]/g, '')) || 0;
+      let latestAmt = parseFloat(String(latest.dieselAmount || latest.amount || 0).replace(/[^0-9.]/g, '')) || 0;
+      let latestFrom = String(latest.fromLocation || latest.from_location || latest.from || '').trim();
+      let latestLast = String(latest.lastLocation || latest.last_location || latest.toLocation || latest.to || '').trim();
+
+      if (!latestType || !latestVendor || !latestKm || !latestAmt) {
+        for (let i = 0; i < matched.length; i++) {
+          const cur = matched[i];
+          const curType = String(cur.vehicleType || cur.vehicle_type || cur.type || '').trim().toUpperCase();
+          const curVendor = String(cur.vendorName || cur.vendor_name || cur.vendor || '').trim().toUpperCase();
+          const curKm = parseFloat(String(cur.currentKm || cur.endKm || cur.km || 0).replace(/[^0-9.]/g, '')) || 0;
+          const curAmt = parseFloat(String(cur.dieselAmount || cur.amount || 0).replace(/[^0-9.]/g, '')) || 0;
+          if (!latestType && curType) latestType = curType;
+          if (!latestVendor && curVendor) latestVendor = curVendor;
+          if (!latestKm && curKm > 10) latestKm = curKm;
+          if (!latestAmt && curAmt > 0) latestAmt = curAmt;
+          if (latestType && latestVendor && latestKm && latestAmt) break;
+        }
+      }
+
+      return {
+        source: 'diesel_records',
+        responseNumber: latest.responseNumber,
+        date: latest.date || '',
+        time: latest.time || '',
+        vehicleType: latestType,
+        vendorName: latestVendor,
+        km: latestKm,
+        amt: latestAmt,
+        fromLocation: latestFrom,
+        lastLocation: latestLast
+      };
+    }
+
     // Helper: Find accurate latest completed trip (Vehicle Type, Vendor Name, KM, and Amount) from live entries and driver requests
     function getVehicleLatestTrip(cleanNo) {
       if (!cleanNo) return null;
       cleanNo = cleanVehicleNo(cleanNo);
       if (!cleanNo) return null;
+
+      // 1. Highest Priority: exact latest entry in Diesel Records (entries ledger)
+      const lastDiesel = getVehicleLastDieselRecord(cleanNo);
+      if (lastDiesel) {
+        return {
+          source: 'diesel_records',
+          date: lastDiesel.date,
+          time: lastDiesel.time,
+          score: 9999999999999,
+          vehicleType: lastDiesel.vehicleType || '',
+          vendorName: lastDiesel.vendorName || '',
+          km: lastDiesel.km || 0,
+          amt: lastDiesel.amt || 0,
+          fromLocation: lastDiesel.fromLocation || '',
+          lastLocation: lastDiesel.lastLocation || ''
+        };
+      }
 
       const candidates = [];
 
@@ -2967,7 +3105,7 @@
       return false;
     }
 
-    // Applies vehicle type + vendor for a vehicle number based on the vehicle's LAST TRIP
+    // Applies vehicle type + vendor for a vehicle number based on the vehicle's LAST DIESEL RECORD / TRIP
     function applyVehicleAutofillFields(cleanVal) {
       if (!cleanVal) {
         setAutofillLock('req-vtype', false);
@@ -2976,15 +3114,17 @@
       }
       cleanVal = cleanVehicleNo(cleanVal);
 
-      // ALWAYS consult getVehicleLatestTrip first for the authoritative last trip details!
+      // 1. Highest priority: exact latest entry in Diesel Records!
+      const lastDiesel = typeof getVehicleLastDieselRecord === 'function' ? getVehicleLastDieselRecord(cleanVal) : null;
+      // 2. Fallback: getVehicleLatestTrip
       const trip = typeof getVehicleLatestTrip === 'function' ? getVehicleLatestTrip(cleanVal) : null;
       const match = vehicleAutofillMap[cleanVal] || {};
 
-      // Prioritize the last trip's Vehicle Type & Vendor Name over stale cached values!
-      const knownType = (trip && trip.vehicleType) ? trip.vehicleType : (match.vehicleType || vehicleToTypeMap[cleanVal] || '');
-      const knownVendor = (trip && trip.vendorName) ? trip.vendorName : (match.vendorName || '');
+      // Prioritize Diesel Records last entry > trip > match
+      const knownType = (lastDiesel && lastDiesel.vehicleType) ? lastDiesel.vehicleType : ((trip && trip.vehicleType) ? trip.vehicleType : (match.vehicleType || vehicleToTypeMap[cleanVal] || ''));
+      const knownVendor = (lastDiesel && lastDiesel.vendorName) ? lastDiesel.vendorName : ((trip && trip.vendorName) ? trip.vendorName : (match.vendorName || ''));
 
-      // Keep vehicleAutofillMap and vehicleToTypeMap in sync with the last trip
+      // Keep vehicleAutofillMap and vehicleToTypeMap in sync with the last diesel record
       if (!vehicleAutofillMap[cleanVal]) vehicleAutofillMap[cleanVal] = {};
       if (knownType) {
         vehicleAutofillMap[cleanVal].vehicleType = knownType;
@@ -2993,14 +3133,16 @@
       if (knownVendor) {
         vehicleAutofillMap[cleanVal].vendorName = knownVendor;
       }
-      if (trip && trip.km > 10) {
-        vehicleAutofillMap[cleanVal].currentKm = trip.km;
+      const effectiveKm = (lastDiesel && lastDiesel.km > 10) ? lastDiesel.km : ((trip && trip.km > 10) ? trip.km : 0);
+      if (effectiveKm > 10) {
+        vehicleAutofillMap[cleanVal].currentKm = effectiveKm;
       }
-      if (trip && trip.amt > 0) {
-        vehicleAutofillMap[cleanVal].lastAmount = trip.amt;
+      const effectiveAmt = (lastDiesel && lastDiesel.amt > 0) ? lastDiesel.amt : ((trip && trip.amt > 0) ? trip.amt : 0);
+      if (effectiveAmt > 0) {
+        vehicleAutofillMap[cleanVal].lastAmount = effectiveAmt;
       }
 
-      // Persist to local storage so future lookups are up-to-date with the last trip
+      // Persist to local storage so future lookups are up-to-date with the last diesel record
       try {
         localStorage.setItem('rpm_veh_cache_v2', JSON.stringify(vehicleAutofillMap));
       } catch(e) {}
@@ -3037,8 +3179,8 @@
         }
       }
 
-      // Prefill Start KM from true latest trip
-      const latestKm = (trip && trip.km > 0) ? trip.km : (match.currentKm || '');
+      // Prefill Start KM from true latest diesel record or trip
+      const latestKm = (lastDiesel && lastDiesel.km > 0) ? lastDiesel.km : ((trip && trip.km > 0) ? trip.km : (match.currentKm || ''));
       const startKmInput = document.getElementById('req-start-km');
       if (startKmInput && latestKm) {
         startKmInput.value = latestKm;
@@ -3070,8 +3212,9 @@
           lastLiveLoadedVehicle = fullVeh;
           lastVehicleQuery = fullVeh;
           const cached = vehicleAutofillMap[fullVeh];
+          const lastDiesel = typeof getVehicleLastDieselRecord === 'function' ? getVehicleLastDieselRecord(fullVeh) : null;
           const trip = typeof getVehicleLatestTrip === 'function' ? getVehicleLatestTrip(fullVeh) : null;
-          if ((cached && (cached.vehicleType || cached.vendorName)) || (trip && (trip.vehicleType || trip.vendorName))) {
+          if ((lastDiesel && (lastDiesel.vehicleType || lastDiesel.vendorName)) || (cached && (cached.vehicleType || cached.vendorName)) || (trip && (trip.vehicleType || trip.vendorName))) {
             applyVehicleAutofillFields(fullVeh);
           } else {
             // New or unknown vehicle so far -> keep unlocked!
