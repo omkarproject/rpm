@@ -23332,6 +23332,7 @@ let currentVehRepRejectKey = null;
 
 vehicleReportRequestsRef.on('value', snapshot => {
   vehicleReportRequestsMap = snapshot.val() || {};
+  cleanOldRejectedVehicleReportRequests();
   updateVehicleReportRequestsBadges();
   if (document.getElementById('vehicle-report-requests-modal') && !document.getElementById('vehicle-report-requests-modal').classList.contains('hidden')) {
     renderVehicleReportRequestsList();
@@ -23397,29 +23398,77 @@ function startVehicleReportCountdownTimer() {
   vehRepTimerInterval = setInterval(updateTimers, 1000);
 }
 
+// Automatically delete rejected and expired vehicle report requests older than 1 week (7 days)
+function cleanOldRejectedVehicleReportRequests() {
+  if (!vehicleReportRequestsMap) return;
+  const now = Date.now();
+  const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  const updates = {};
+  let count = 0;
+
+  Object.keys(vehicleReportRequestsMap).forEach(key => {
+    const r = vehicleReportRequestsMap[key];
+    if (!r) return;
+
+    const exp = r.expiresAt || (r.createdAt ? r.createdAt + 86400000 : 0);
+    const isExpired = exp && exp <= now;
+    const isRejected = (r.status === 'rejected' || isExpired);
+
+    if (isRejected) {
+      const baseTime = r.rejectedAt || (isExpired ? exp : (r.createdAt || r.submittedAt || 0));
+      if (baseTime > 0 && (now - baseTime) >= ONE_WEEK_MS) {
+        updates[key] = null;
+        count++;
+      }
+    }
+  });
+
+  if (count > 0) {
+    vehicleReportRequestsRef.update(updates)
+      .then(() => {
+        console.log(`[Vehicle Report Requests] Auto-deleted ${count} rejected/expired request(s) older than 1 week.`);
+      })
+      .catch(err => {
+        console.warn("[Vehicle Report Requests] Auto-delete error:", err);
+      });
+  }
+}
+
 function updateVehicleReportRequestsBadges() {
   const now = Date.now();
+  const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
   const allReqs = Object.values(vehicleReportRequestsMap || {});
   
-  const pendingCount = allReqs.filter(r => {
+  // Filter out any rejected/expired requests older than 1 week so they disappear from badges
+  const validReqs = allReqs.filter(r => {
     if (!r) return false;
+    const exp = r.expiresAt || (r.createdAt ? r.createdAt + 86400000 : 0);
+    const isExpired = exp && exp <= now;
+    const isRejected = (r.status === 'rejected' || isExpired);
+    if (isRejected) {
+      const baseTime = r.rejectedAt || (isExpired ? exp : (r.createdAt || r.submittedAt || 0));
+      if (baseTime > 0 && (now - baseTime) >= ONE_WEEK_MS) {
+        return false; // Disappears after 1 week
+      }
+    }
+    return true;
+  });
+
+  const pendingCount = validReqs.filter(r => {
     const exp = r.expiresAt || (r.createdAt ? r.createdAt + 86400000 : 0);
     const isExpired = exp && exp <= now;
     return (r.status === 'pending' || !r.status) && !isExpired;
   }).length;
 
-  const approvedCount = allReqs.filter(r => {
-    if (!r) return false;
+  const approvedCount = validReqs.filter(r => {
     const exp = r.expiresAt || (r.createdAt ? r.createdAt + 86400000 : 0);
     const isExpired = exp && exp <= now;
     return r.status === 'approved' && !isExpired;
   }).length;
 
-  const rejectedCount = allReqs.filter(r => {
-    if (!r) return false;
+  const rejectedCount = validReqs.filter(r => {
     const exp = r.expiresAt || (r.createdAt ? r.createdAt + 86400000 : 0);
     const isExpired = exp && exp <= now;
-    // Expired (>24h) requests automatically belong in the Rejected list
     return r.status === 'rejected' || isExpired;
   }).length;
   
@@ -23443,7 +23492,7 @@ function updateVehicleReportRequestsBadges() {
   if (badgeModalRejected) badgeModalRejected.textContent = rejectedCount;
 
   const badgeModalAll = document.getElementById('rep-req-modal-all-count');
-  if (badgeModalAll) badgeModalAll.textContent = allReqs.length;
+  if (badgeModalAll) badgeModalAll.textContent = validReqs.length;
 }
 
 window.openVehicleReportRequestsModal = function() {
@@ -23461,6 +23510,8 @@ window.openVehicleReportRequestsModal = function() {
     }
     return;
   }
+
+  cleanOldRejectedVehicleReportRequests();
 
   const modal = document.getElementById('vehicle-report-requests-modal');
   const modalContent = document.getElementById('vehicle-report-requests-modal-content');
@@ -23519,6 +23570,7 @@ window.renderVehicleReportRequestsList = function() {
   const searchInput = document.getElementById('rep-req-search-input') || document.getElementById('vehicle-report-requests-search');
   const searchVal = (searchInput?.value || '').trim().toLowerCase();
   const now = Date.now();
+  const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
   const reqs = Object.keys(vehicleReportRequestsMap || {}).map(k => ({
     key: k,
@@ -23529,6 +23581,15 @@ window.renderVehicleReportRequestsList = function() {
     const exp = r.expiresAt || (r.createdAt ? r.createdAt + 86400000 : 0);
     const isExpired = exp && exp <= now;
     let status = r.status || 'pending';
+    const isRejected = (status === 'rejected' || isExpired);
+
+    // Auto-disappear / delete after 1 week in rejected/expired state
+    if (isRejected) {
+      const baseTime = r.rejectedAt || (isExpired ? exp : (r.createdAt || r.submittedAt || 0));
+      if (baseTime > 0 && (now - baseTime) >= ONE_WEEK_MS) {
+        return false; // Disappears after 1 week!
+      }
+    }
 
     if (currentRepReqFilter === 'pending') {
       if (status !== 'pending' || isExpired) return false;
@@ -23536,7 +23597,7 @@ window.renderVehicleReportRequestsList = function() {
       if (status !== 'approved' || isExpired) return false;
     } else if (currentRepReqFilter === 'rejected') {
       // User request: 24hr expired ho to rejected me chalaa jaaye / dikhe
-      if (status !== 'rejected' && !isExpired) return false;
+      if (!isRejected) return false;
     }
 
     if (searchVal) {
