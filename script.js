@@ -20568,18 +20568,31 @@ function renderDriverRequestsList() {
   tbody.innerHTML = '';
 
   const now = Date.now();
+  const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+  const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  const EIGHT_DAYS_MS = TWENTY_FOUR_HOURS + ONE_WEEK_MS;
+
   let filtered = driverRequestsList.filter(r => {
-    // Pending or Update-Pending requests MUST ALWAYS be shown regardless of age or missing timestamp
-    if (r.status !== 'pending' && r.status !== 'update_pending') {
-      const subTime = typeof r.submittedAt === 'number' ? r.submittedAt : (r.submittedAt ? new Date(r.submittedAt).getTime() : 0);
-      if (subTime > 0) {
-        const ageMs = now - subTime;
-        if (ageMs < 0 || ageMs > 24 * 60 * 60 * 1000) return false; // 24 hour limit for history items
+    if (statusFilter === 'diesel_not_filled') {
+      if (r.status !== 'approved') return false;
+      const baseTime = r.processedAt || r.approvedAt || r.submittedAt || (r.date && r.time ? new Date(r.date + ' ' + r.time).getTime() : 0);
+      if (!baseTime) return false;
+      const ageMs = now - baseTime;
+      if (ageMs <= TWENTY_FOUR_HOURS || ageMs > EIGHT_DAYS_MS) return false;
+    } else {
+      // Pending or Update-Pending requests MUST ALWAYS be shown regardless of age or missing timestamp
+      if (r.status !== 'pending' && r.status !== 'update_pending') {
+        const subTime = typeof r.submittedAt === 'number' ? r.submittedAt : (r.submittedAt ? new Date(r.submittedAt).getTime() : 0);
+        if (subTime > 0) {
+          const ageMs = now - subTime;
+          if (ageMs < 0 || ageMs > TWENTY_FOUR_HOURS) return false; // 24 hour limit for history items
+        }
       }
     }
 
     const matchesSearch = !searchQuery || String(r.vehicleNo || '').toUpperCase().includes(searchQuery);
-    const matchesStatus = statusFilter === 'ALL' || r.status === statusFilter;
+    const matchesStatus = (statusFilter === 'ALL' || statusFilter === 'all') || 
+      (statusFilter === 'diesel_not_filled' ? true : r.status === statusFilter);
     return matchesSearch && matchesStatus;
   });
 
@@ -20718,13 +20731,19 @@ function renderDriverRequestsList() {
         </div>
       `;
     } else if (r.status === 'approved') {
+      const baseTime = r.processedAt || r.approvedAt || r.submittedAt || (r.date && r.time ? new Date(r.date + ' ' + r.time).getTime() : 0);
+      const isUnfilledOver24h = baseTime > 0 && (now - baseTime > 24 * 60 * 60 * 1000);
       statusActionHtml = `
         <div class="flex items-center justify-center gap-2">
           <button onclick="openFillReceiptCamera('${r.key}')" class="w-8 h-8 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white flex items-center justify-center shadow-md hover:shadow-blue-500/30 text-sm transition-all flex-shrink-0" title="Capture Receipt Details & Mark Successfully Filled">
             <i class="fas fa-gas-pump"></i>
           </button>
           <div class="flex flex-col items-center gap-1">
-            <span class="inline-flex px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">Approved (Pending Fill)</span>
+            ${isUnfilledOver24h ? `
+              <span class="inline-flex px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider bg-rose-500/10 text-rose-500 border border-rose-500/20">Diesel Not Filled (&gt;24h)</span>
+            ` : `
+              <span class="inline-flex px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">Approved (Pending Fill)</span>
+            `}
             <button onclick="revertDriverRequestApproval('${r.key}')" class="px-2 py-0.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 border border-amber-500/30 rounded-md text-[8px] font-black uppercase transition-all shadow-sm flex items-center gap-1" title="Revert to Pending">
               <i class="fas fa-undo text-[7px]"></i> Revert Approval
             </button>
@@ -21631,6 +21650,22 @@ function updateDriverRequestsBadges() {
 
   const elCountManualApproved = document.getElementById('count-manual-approved');
   if (elCountManualApproved) elCountManualApproved.textContent = manualApprovedRequests.length;
+
+  // Diesel Not Filled (>24h to 1 Week Unfilled)
+  const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+  const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  const EIGHT_DAYS_MS = TWENTY_FOUR_HOURS + ONE_WEEK_MS;
+
+  const dieselNotFilledRequests = driverRequestsList.filter(r => {
+    if (r.status !== 'approved') return false;
+    const baseTime = r.processedAt || r.approvedAt || r.submittedAt || (r.date && r.time ? new Date(r.date + ' ' + r.time).getTime() : 0);
+    if (!baseTime) return false;
+    const ageMs = now - baseTime;
+    return ageMs > TWENTY_FOUR_HOURS && ageMs <= EIGHT_DAYS_MS;
+  });
+
+  const elCountDieselNotFilled = document.getElementById('count-diesel-not-filled');
+  if (elCountDieselNotFilled) elCountDieselNotFilled.textContent = dieselNotFilledRequests.length;
 }
 
 // Approval Preview Modal Logic
@@ -21643,28 +21678,51 @@ function showApprovalPreview(type) {
   const tbody = document.getElementById('approval-preview-tbody');
   const emptyDiv = document.getElementById('approval-preview-empty');
 
-  if (title) {
-    title.textContent = type === 'auto' ? 'Auto Approved Requests (Last 24h)' : 'Manual Approved Requests (Last 24h)';
-  }
-  if (icon) {
-    icon.className = type === 'auto' ? 'fas fa-robot text-indigo-500' : 'fas fa-user-shield text-emerald-500';
+  const now = Date.now();
+  const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+  const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  const EIGHT_DAYS_MS = TWENTY_FOUR_HOURS + ONE_WEEK_MS;
+
+  let filtered = [];
+
+  if (type === 'diesel_not_filled') {
+    if (title) title.textContent = 'Diesel Not Filled Requests (>24h Unfilled)';
+    if (icon) icon.className = 'fas fa-gas-pump text-rose-500';
+    if (emptyDiv) emptyDiv.textContent = 'No vehicles pending diesel fill older than 24 hours.';
+
+    cleanOldUnfilledDriverRequests();
+
+    filtered = driverRequestsList.filter(r => {
+      if (r.status !== 'approved') return false;
+      const baseTime = r.processedAt || r.approvedAt || r.submittedAt || (r.date && r.time ? new Date(r.date + ' ' + r.time).getTime() : 0);
+      if (!baseTime) return false;
+      const ageMs = now - baseTime;
+      return ageMs > TWENTY_FOUR_HOURS && ageMs <= EIGHT_DAYS_MS;
+    });
+  } else {
+    if (title) {
+      title.textContent = type === 'auto' ? 'Auto Approved Requests (Last 24h)' : 'Manual Approved Requests (Last 24h)';
+    }
+    if (icon) {
+      icon.className = type === 'auto' ? 'fas fa-robot text-indigo-500' : 'fas fa-user-shield text-emerald-500';
+    }
+    if (emptyDiv) emptyDiv.textContent = 'No vehicles approved under this category.';
+
+    const activeRequests = driverRequestsList.filter(r => {
+      if (!r.submittedAt) return false;
+      const ageMs = now - r.submittedAt;
+      return ageMs >= 0 && ageMs <= TWENTY_FOUR_HOURS; // Strict 24 hour limit for all requests
+    });
+
+    filtered = activeRequests.filter(r => {
+      const isApprovedOrFilled = r.status === 'approved' || r.status === 'filled';
+      if (!isApprovedOrFilled) return false;
+      const isAuto = !!r.autoApproved;
+      return type === 'auto' ? isAuto : !isAuto;
+    });
   }
 
   tbody.innerHTML = '';
-
-  const now = Date.now();
-  const activeRequests = driverRequestsList.filter(r => {
-    if (!r.submittedAt) return false;
-    const ageMs = now - r.submittedAt;
-    return ageMs >= 0 && ageMs <= 24 * 60 * 60 * 1000; // Strict 24 hour limit for all requests
-  });
-
-  const filtered = activeRequests.filter(r => {
-    const isApprovedOrFilled = r.status === 'approved' || r.status === 'filled';
-    if (!isApprovedOrFilled) return false;
-    const isAuto = !!r.autoApproved;
-    return type === 'auto' ? isAuto : !isAuto;
-  });
 
   if (filtered.length === 0) {
     if (emptyDiv) emptyDiv.classList.remove('hidden');
@@ -21680,6 +21738,26 @@ function showApprovalPreview(type) {
       const vendorStr = r.vendorName || '-';
       const noteStr = (r.note && String(r.note).trim().toUpperCase() !== 'DRIVER REQUEST') ? r.note : '';
       const mapIconHtml = (r.location && r.location.lat) ? `<a href="https://www.google.com/maps/search/?api=1&query=${r.location.lat},${r.location.lng}" target="_blank" class="text-rose-500 hover:text-rose-600 text-sm mr-1" title="View Location"><i class="fas fa-map-marker-alt"></i></a>` : '';
+
+      let statusInfoHtml = '';
+      if (type === 'diesel_not_filled') {
+        const baseTime = r.processedAt || r.approvedAt || r.submittedAt || (r.date && r.time ? new Date(r.date + ' ' + r.time).getTime() : 0);
+        const ageMs = Math.max(0, now - baseTime);
+        const ageHours = Math.floor(ageMs / (60 * 60 * 1000));
+        const ageDays = Math.floor(ageMs / (24 * 60 * 60 * 1000));
+        const ageText = ageDays > 0 ? `${ageDays}d ${ageHours % 24}h ago` : `${ageHours}h ago`;
+
+        statusInfoHtml = `
+          <div class="mt-1 flex flex-wrap items-center gap-1.5">
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-rose-500/10 text-rose-500 border border-rose-500/20">
+              <i class="fas fa-exclamation-circle text-[8px]"></i> Diesel Not Filled
+            </span>
+            <span class="text-[9px] font-bold text-amber-500 dark:text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+              Approved ${ageText}
+            </span>
+          </div>
+        `;
+      }
 
       tr.innerHTML = `
         <td class="px-3.5 py-3 whitespace-nowrap">
@@ -21700,7 +21778,8 @@ function showApprovalPreview(type) {
         </td>
         <td class="px-3.5 py-3 text-xs max-w-[180px] sm:max-w-[240px]">
           <div class="font-bold text-slate-800 dark:text-slate-200 truncate" title="${vendorStr}">${vendorStr}</div>
-          ${noteStr ? `<div class="text-[10px] text-slate-400 truncate italic" title="${noteStr}">${noteStr}</div>` : ''}
+          ${statusInfoHtml}
+          ${noteStr ? `<div class="text-[10px] text-slate-400 truncate italic mt-0.5" title="${noteStr}">${noteStr}</div>` : ''}
         </td>
       `;
       tbody.appendChild(tr);
@@ -21715,6 +21794,39 @@ function closeApprovalPreviewModal() {
   if (modal) modal.classList.add('hidden');
 }
 
+// Automatically delete approved driver requests where diesel was not filled and are older than 1 week after 24h (> 8 days)
+function cleanOldUnfilledDriverRequests() {
+  if (!driverRequestsList || driverRequestsList.length === 0) return;
+  const now = Date.now();
+  const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+  const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  const EIGHT_DAYS_MS = TWENTY_FOUR_HOURS + ONE_WEEK_MS;
+
+  const updates = {};
+  let count = 0;
+
+  driverRequestsList.forEach(r => {
+    if (r.status === 'approved') {
+      const baseTime = r.processedAt || r.approvedAt || r.submittedAt || (r.date && r.time ? new Date(r.date + ' ' + r.time).getTime() : 0);
+      if (baseTime > 0 && (now - baseTime) > EIGHT_DAYS_MS) {
+        updates[r.key] = null;
+        count++;
+      }
+    }
+  });
+
+  if (count > 0) {
+    driverRequestsRef.update(updates)
+      .then(() => {
+        console.log(`[Driver Requests] Auto-deleted ${count} unfilled request(s) older than 1 week past 24h.`);
+      })
+      .catch(err => {
+        console.warn("[Driver Requests] Auto-delete unfilled error:", err);
+      });
+  }
+}
+
+window.cleanOldUnfilledDriverRequests = cleanOldUnfilledDriverRequests;
 window.showApprovalPreview = showApprovalPreview;
 window.closeApprovalPreviewModal = closeApprovalPreviewModal;
 
@@ -24614,6 +24726,7 @@ driverRequestsRef.on('value', snapshot => {
   saveCache('rpm_cache_driver_requests', driverRequestsList);
   console.log("[DriverRequests Sync] Value listener fired. Items count:", driverRequestsList.length);
   autoCleanDriverRequests();
+  cleanOldUnfilledDriverRequests();
   checkAndTriggerBackup();
   checkAndAutoApproveRequests();
   updateDriverRequestsBadges();
