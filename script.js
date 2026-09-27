@@ -21592,12 +21592,24 @@ function updateDriverRequestsBadges() {
   const filledKpi = document.getElementById('driver-req-count-filled');
   const rejectedKpi = document.getElementById('driver-req-count-rejected');
   const updatePendingKpi = document.getElementById('driver-req-count-update-pending');
+  const reportPendingKpi = document.getElementById('driver-req-count-report-pending');
   
   if (pendingKpi) pendingKpi.textContent = pendingCount;
   if (approvedKpi) approvedKpi.textContent = approvedCount;
   if (filledKpi) filledKpi.textContent = filledCount;
   if (rejectedKpi) rejectedKpi.textContent = rejectedCount;
   if (updatePendingKpi) updatePendingKpi.textContent = updatePendingCount;
+  if (reportPendingKpi) {
+    const now = Date.now();
+    const allRepReqs = Object.values(vehicleReportRequestsMap || {});
+    const repPendingCount = allRepReqs.filter(r => {
+      if (!r) return false;
+      const exp = r.expiresAt || (r.createdAt ? r.createdAt + 86400000 : 0);
+      const isExpired = exp && exp <= now;
+      return (r.status === 'pending' || !r.status) && !isExpired;
+    }).length;
+    reportPendingKpi.textContent = repPendingCount;
+  }
 
   // Update main Dashboard Overview counterparts
   const dashPendingKpi = document.getElementById('dash-count-pending');
@@ -23493,6 +23505,9 @@ function updateVehicleReportRequestsBadges() {
 
   const badgeModalAll = document.getElementById('rep-req-modal-all-count');
   if (badgeModalAll) badgeModalAll.textContent = validReqs.length;
+
+  const repPendingKpi = document.getElementById('driver-req-count-report-pending');
+  if (repPendingKpi) repPendingKpi.textContent = pendingCount;
 }
 
 window.openVehicleReportRequestsModal = function() {

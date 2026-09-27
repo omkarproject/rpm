@@ -3335,7 +3335,7 @@
           </div>
 
           <!-- KPI Cards Summary -->
-          <div class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-5">
+          <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
             <!-- Pending Requests -->
             <div class="glass-panel p-3 sm:p-5 rounded-2xl sm:rounded-3xl flex items-center justify-between border-l-4 border-amber-500 shadow-md">
               <div class="space-y-1">
@@ -3388,6 +3388,17 @@
               </div>
               <div class="w-9 h-9 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-rose-500/10 text-rose-500 flex items-center justify-center text-sm sm:text-xl">
                 <i class="fas fa-times-circle"></i>
+              </div>
+            </div>
+
+            <!-- Pending Report Requests -->
+            <div onclick="openVehicleReportRequestsModal()" class="glass-panel p-3 sm:p-5 rounded-2xl sm:rounded-3xl flex items-center justify-between border-l-4 border-blue-500 shadow-md cursor-pointer hover:border-blue-400 hover:scale-[1.02] transition-all group" title="Click to view & approve Vehicle Report Requests">
+              <div class="space-y-1">
+                <span class="text-[9px] sm:text-xs font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider group-hover:text-blue-500 transition-colors">Pending Report Requests</span>
+                <h3 id="driver-req-count-report-pending" class="text-2xl sm:text-3xl font-black text-blue-500 leading-none">0</h3>
+              </div>
+              <div class="w-9 h-9 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-blue-500/10 text-blue-500 flex items-center justify-center text-sm sm:text-xl group-hover:bg-blue-500 group-hover:text-white transition-all shadow-sm">
+                <i class="fas fa-file-invoice"></i>
               </div>
             </div>
           </div>
